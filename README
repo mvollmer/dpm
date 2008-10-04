@@ -1,0 +1,43 @@
+dpm - Debian package manager
+----------------------------
+
+I've got some crazy ideas about a unified apt+dpkg implementation, and
+this is the place where early experimentation happens.  I do this
+mostly to write some real code again, not really with the hope of
+replacing dpkg and apt.
+
+This is not about the Debian package or archive formats, it's just
+about the implementation and user interfaces of dpkg and apt.  It's
+maybe a bit about algorithms to compute a package management
+operation.
+
+Initially, dpm will be compatible with the dpkg data base in
+/var/lib/dpkg (if it ever gets as far as actually installing
+packages), but only a crutch: dpm will notice changes in /var/lib/dpkg
+and will keep it up-to-date, but it will not rely on it.
+
+* Steps
+
+- A nice, fast storage for structured data, similar to apt's caches.
+  It will not be a cache, but the primary storage.  It will be binary,
+  with tools to export/import plain text.  Mutations of existing data
+  are not allowed.  Modifications will be journalled, with the
+  occasional garbage collection.
+
+  That store will be used to store package info about available and
+  installed packages and the file lists of installed packages.
+
+  The data structure in the store should be able to deal with a
+  complete archive: multiple distributions and multiple architectures.
+  It should be useable not only for managing a Debian installation but
+  also for tools that rummage around in a Debian archive in general.
+  Thus, it needs to be efficient.
+
+  The store should be extensible so that tools can store their own
+  private information efficiently.  But it's not a general purpose
+  data base.
+
+  The store will of course store the current situation, but it might
+  also store a 'planned future', similar to apt's in-core depcache.
+
+  It's called struct-store.
