@@ -16,43 +16,72 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <struct-store.h>
 
-void
-dump_record (ss_record *r)
+
+ss_object *
+store_file (ss_store *ss, const char *file)
 {
-  int n = ss_record_field_count (r);
-  int l = ss_record_blob_len (r);
+  int c;
+  ss_object *p = NULL;
 
-  printf ("%p:\n", r);
-  for (i = 0; i < n; i++)
-    printf (" %p\n", ss_record_ref (r, i));
-  if (l > 0)
+  FILE *f = fopen (file, "r");
+  if (f == NULL)
     {
-      char *b = ss_record_blob (r);
-      printf (" ");
-      for (i = 0; i < l; i++)
-	printf ("%c", isprint (b[l])? b[l] : '.');
+      fprintf (stderr, "%s: %m\n", file);
+      exit (1);
     }
 
-  if (n > 0)
+  while ((c = fgetc (f)) != EOF)
     {
-      for (i = 0; i < n; i++)
-	{
-	  printf ("\n");
-	  dump_record (ss_record_ref (r, i));
-	}
+      char cc = c;
+      p = ss_new (ss, 0, 2,
+		  ss_from_int (c),
+		  p);
     }
+
+  fclose (f);
+  return p;
 }
 
 void
-main ()
+dump_file (ss_object *o)
+{
+  ss_object *b;
+
+  while (o)
+    {
+      ss_assert (o, 0, 2);
+
+      printf ("%c", ss_ref_int (o, 0));
+      o = ss_ref (o, 1);
+    }
+}
+
+int
+main (int argc, char **argv)
 {
   ss_store *ss;
-  ss_record *r;
-  
-  ss = ss_open ("foo", SS_READ_WRITE, NULL);
-  r = ss_blob_new (4, "foo");
-  ss_set_root (ss, r);
+  ss_object *r;
+  int i;
+
+  ss = ss_open ("foo", SS_WRITE, NULL);
+
+  // ss_dump_store (ss, "load");
+
+  if (argc > 1)
+    {
+      r = store_file (ss, argv[1]);
+      ss_set_root (ss, r);
+    }
+  else
+    {
+      // ss_scan_store (ss);
+      r = ss_get_root (ss);
+      dump_file (r);
+    }
+
   ss_close (ss);
+  return 0;
 }
