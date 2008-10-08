@@ -43,3 +43,5 @@
 /struct-store/struct-store.o
 /struct-store/test
 /struct-store/test.o
+/struct-store/.libs/lt-st-tool
+/struct-store/.libs/lt-test

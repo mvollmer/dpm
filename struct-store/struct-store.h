@@ -24,12 +24,13 @@
    should be easy to remove the last restriction.)
 
    It contains three kinds of objects: null, small integers, records
-   and blobs.  Records contain references to other objects, and blobs
-   contain arbitrary amounts of bytes.  Small integers are limited to
-   30 bits and are mainly an optimization that allows one to avoid
-   creating blobs in many common cases.  There is a single null object
-   that can be used to indicate the absence of a real object.  One of
-   the objects is designated as the root.
+   and blobs.  Four.  Four kinds of objects.  Records contain
+   references to other objects, and blobs contain arbitrary amounts of
+   bytes.  Small integers are limited to 30 bits and are mainly an
+   optimization that allows one to avoid creating blobs in many common
+   cases.  There is a single null object that can be used to indicate
+   the absence of a real object.  One of the objects is designated as
+   the root.
 
    You can not change objects, only create new ones.  Setting a new
    root is guaranteed to leave the struct-store in a consistent state
@@ -48,16 +49,18 @@
    that is actually a small integer will likely crash.
    
 
-   There is special support for string tables and dictionaries. 
+   There is special support for object tables and dictionaries. 
 
-   A string table keeps blobs (usually strings) with the same content
-   unique.  A dictionary maps objects to objects.
+   A string table keeps objects (usually blobs representing string)
+   with the same content unique.  A dictionary maps objects to other
+   objects.
 
    These tables and dictionaries are also immutable, of course; adding
    or removing entries produces a new dictionary.  However, when using
    the offered API, dictionaries are not always stored completely in
    the store: they are only made permanent when you actually ask for
-   the store object that represents them.
+   the store object that represents them.  In this way, creation of
+   garbage is kept somewhat under control.
 
    The dictionaries can use 'weak' references.  A blob is
    automatically removed from the string table when it is no longer
@@ -113,11 +116,12 @@ ss_object *ss_blob_new (ss_store *ss, int blob_len, void *blob);
 
 ss_store *ss_find_object_store (ss_object *);
 
-struct ss_string_table;
-typedef struct ss_string_table ss_string_table;
+struct ss_objtab;
+typedef struct ss_objtab ss_objtab;
 
-ss_string_table *ss_string_table_get (ss_store *ss, ss_object *obj);
-ss_object *ss_string_table_intern (ss_string_table *st, int len, void *blob);
-ss_object *ss_string_table_object (ss_string_table *st);
+ss_objtab *ss_objtab_init (ss_store *ss, ss_object *obj);
+ss_object *ss_objtab_finish (ss_objtab *ot);
+ss_object *ss_objtab_intern (ss_objtab *ot, ss_object *obj);
+ss_object *ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob);
 
 #endif /* !STRUCT_STORE_H */

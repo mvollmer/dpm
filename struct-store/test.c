@@ -16,6 +16,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <struct-store.h>
 
@@ -59,6 +60,39 @@ dump_file (ss_object *o)
     }
 }
 
+void
+intern_file (ss_store *ss, ss_objtab *ot, char *file)
+{
+  FILE *f;
+  char *line = NULL;
+  size_t len = 0;
+  ssize_t n;
+  int found = 0;
+
+  f = fopen (file, "r");
+  if (f)
+    {
+      while ((n = getline (&line, &len, f)) != -1)
+	{
+	  ss_object *b1, *b2;
+
+	  if (n > 0 && line[n-1] == '\n')
+	    n -= 1;
+	  
+	  b1 = ss_blob_new (ss, n, line);
+	  b2 = ss_objtab_intern (ot, b1);
+
+	  if (b1 != b2)
+	    found++;
+	}
+    }
+  
+  free (line);
+  fclose (f);
+
+  printf ("found %d\n", found);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -70,6 +104,7 @@ main (int argc, char **argv)
 
   // ss_dump_store (ss, "load");
 
+#if 0  
   if (argc > 1)
     {
       r = store_file (ss, argv[1]);
@@ -81,6 +116,20 @@ main (int argc, char **argv)
       r = ss_get_root (ss);
       dump_file (r);
     }
+#else
+  
+  {
+    ss_objtab *ot = ss_objtab_init (ss, ss_get_root (ss));
+    while (argc > 1)
+      {
+	intern_file (ss, ot, argv[1]);
+	argc--;
+	argv++;
+      }
+    ss_objtab_dump (ot);
+    ss_set_root (ss, ss_objtab_finish (ot));
+  }
+#endif
 
   ss_close (ss);
   return 0;
