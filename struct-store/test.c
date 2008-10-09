@@ -20,45 +20,16 @@
 #include <stdlib.h>
 #include <struct-store.h>
 
-
-ss_object *
-store_file (ss_store *ss, const char *file)
-{
-  int c;
-  ss_object *p = NULL;
-
-  FILE *f = fopen (file, "r");
-  if (f == NULL)
-    {
-      fprintf (stderr, "%s: %m\n", file);
-      exit (1);
-    }
-
-  while ((c = fgetc (f)) != EOF)
-    {
-      char cc = c;
-      p = ss_new (ss, 0, 2,
-		  ss_from_int (c),
-		  p);
-    }
-
-  fclose (f);
-  return p;
-}
-
 void
-dump_file (ss_object *o)
+usage ()
 {
-  ss_object *b;
-
-  while (o)
-    {
-      ss_assert (o, 0, 2);
-
-      printf ("%c", ss_ref_int (o, 0));
-      o = ss_ref (o, 1);
-    }
+  fprintf (stderr,
+	   "Usage: test add  DB FILE...\n"
+	   "       test dump DB\n");
+  exit (1);
 }
+
+int found = 0;
 
 void
 intern_file (ss_store *ss, ss_objtab *ot, char *file)
@@ -67,7 +38,6 @@ intern_file (ss_store *ss, ss_objtab *ot, char *file)
   char *line = NULL;
   size_t len = 0;
   ssize_t n;
-  int found = 0;
 
   f = fopen (file, "r");
   if (f)
@@ -79,58 +49,68 @@ intern_file (ss_store *ss, ss_objtab *ot, char *file)
 	  if (n > 0 && line[n-1] == '\n')
 	    n -= 1;
 	  
-	  b1 = ss_blob_new (ss, n, line);
+	  b1 = ss_blob_new (NULL, n, line);
 	  b2 = ss_objtab_intern (ot, b1);
 
 	  if (b1 != b2)
 	    found++;
+	  else
+	    printf ("not found: %.*s\n", n, line);
 	}
+      free (line);
+      fclose (f);
     }
+}
   
-  free (line);
-  fclose (f);
-
-  printf ("found %d\n", found);
+void
+grep_blob (ss_object *o, void *data)
+{
+  if (memmem (ss_blob_start (o), ss_len (o),
+	      (char *)data, strlen ((char *)data)))
+    printf ("%.*s\n", ss_len (o), ss_blob_start (o));
 }
 
 int
 main (int argc, char **argv)
 {
   ss_store *ss;
+  ss_objtab *ot;
   ss_object *r;
   int i;
 
-  ss = ss_open ("foo", SS_WRITE, NULL);
+  if (argc < 2)
+    usage ();
 
-  // ss_dump_store (ss, "load");
-
-#if 0  
-  if (argc > 1)
+  if (strcmp (argv[1], "add") == 0)
     {
-      r = store_file (ss, argv[1]);
-      ss_set_root (ss, r);
+      ss = ss_open (argv[2], SS_WRITE, NULL);
+      ot = ss_objtab_init (ss, ss_get_root (ss));
+      
+      ss_dump_store (ss, "load");
+
+      while (argc > 3)
+	{
+	  intern_file (ss, ot, argv[3]);
+	  argc--;
+	  argv++;
+	}
+      
+      ss_objtab_dump (ot);
+      ss_set_root (ss, ss_objtab_finish (ot));
+      ss_close (ss_maybe_gc (ss));
+      printf ("found %d\n", found);
+    }
+  else if (strcmp (argv[1], "grep") == 0)
+    {
+      ss = ss_open (argv[2], SS_READ, NULL);
+      ot = ss_objtab_init (ss, ss_get_root (ss));
+
+      ss_objtab_foreach (ot, grep_blob, argv[3]);
+
+      ss_close (ss);
     }
   else
-    {
-      // ss_scan_store (ss);
-      r = ss_get_root (ss);
-      dump_file (r);
-    }
-#else
-  
-  {
-    ss_objtab *ot = ss_objtab_init (ss, ss_get_root (ss));
-    while (argc > 1)
-      {
-	intern_file (ss, ot, argv[1]);
-	argc--;
-	argv++;
-      }
-    ss_objtab_dump (ot);
-    ss_set_root (ss, ss_objtab_finish (ot));
-  }
-#endif
+    usage ();
 
-  ss_close (ss);
   return 0;
 }

@@ -96,8 +96,9 @@ struct ss_header {
 
   uint32_t root;         // offset to start of header
   uint32_t len;          // in words
-  
-  uint32_t padding[4];
+  uint32_t alloced;      // in words, since last gc
+
+  uint32_t padding[3];
 };
 
 /* The ss_store type
@@ -116,6 +117,7 @@ struct ss_store {
   uint32_t *start;
   uint32_t *next;
   uint32_t *end;
+  int alloced_words;
 };
 
 /* Utilities
@@ -222,6 +224,7 @@ ss_sync (ss_store *ss)
       if (msync (start, (end - start)*sizeof(uint32_t), MS_SYNC) <0)
 	ss_abort (ss, "Can't sync %s: %m", ss->filename);
       ss->head->len = ss->next - ss->start;
+      ss->head->alloced = ss->alloced_words;
     }
 
   if (msync (ss->head, sizeof (struct ss_header), MS_ASYNC) < 0)
@@ -248,6 +251,7 @@ ss_open (const char *filename, int mode,
   ss->start = NULL;
   ss->next = NULL;
   ss->end = NULL;
+  ss->alloced_words = 0;
 
   if (mode == SS_READ)
     ss->fd = open (filename, O_RDONLY);
@@ -290,6 +294,7 @@ ss_open (const char *filename, int mode,
       ss->head->version = SS_VERSION;
       ss->head->root = 0;
       ss->head->len = 0;
+      ss->head->alloced = 0;
     }
   else
     {
@@ -379,6 +384,7 @@ ss_alloc (ss_store *ss, size_t words)
     return xmalloc (words * sizeof(uint32_t));
 
   new_next = ss->next + words;
+  ss->alloced_words += words;
   if (new_next > ss->end)
     ss_grow (ss, (char *)new_next - (char *)ss->head);
 
@@ -388,6 +394,21 @@ ss_alloc (ss_store *ss, size_t words)
   return obj;
 }
 
+int
+ss_is_stored (ss_store *ss, ss_object *obj)
+{
+  uint32_t *w = (uint32_t *)obj;
+  return ss == NULL || (ss->start <= w && w < ss->next);
+}
+
+void
+ss_assert_in_store (ss_store *ss, ss_object *obj)
+{
+  if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
+    return;
+  ss_abort (ss, "Rogue pointer.");
+}
+    
 /* Collecting garbage
  *
  * We use a simple copying collector.  It uses a a lot of temporary
@@ -481,6 +502,7 @@ ss_gc (ss_store *ss)
        to_ptr < (ss_object *)to_store->next;
        to_ptr = ss_gc_scan_and_advance (to_store, to_ptr))
     ;
+  to_store->alloced_words = 0;
   ss_set_root (to_store, new_root);
 
   /* Rename file
@@ -495,6 +517,19 @@ ss_gc (ss_store *ss)
   ss_close (ss);
 
   return to_store;
+}
+
+ss_store *
+ss_maybe_gc (ss_store *ss)
+{
+  if (ss->head->alloced > ss->head->len / 10)
+    {
+      fprintf (stderr, "Allocated %d words, garbage collecting\n", 
+		ss->head->alloced);
+      return ss_gc (ss);
+    }
+  else
+    return ss;
 }
 
 /* Small integers
@@ -581,7 +616,10 @@ ss_newv (ss_store *ss, int tag, int len, ss_object **vals)
 
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
-    ss_set ((ss_object *)w, i, vals[i]);
+    {
+      ss_assert_in_store (ss, vals[i]);
+      ss_set ((ss_object *)w, i, vals[i]);
+    }
 
   return (ss_object *)w;
 }
@@ -596,9 +634,26 @@ ss_new (ss_store *ss, int tag, int len, ...)
   va_start (ap, len);
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
-    ss_set ((ss_object *)w, i, va_arg (ap, ss_object *));
+    {
+      ss_object *val = va_arg (ap, ss_object *);
+      ss_assert_in_store (ss, val);
+      ss_set ((ss_object *)w, i, val);
+    }
   va_end (ap);
 
+  return (ss_object *)w;
+}
+
+ss_object *
+ss_make (ss_store *ss, int tag, int len, ss_object *init)
+{
+  int i;
+  uint32_t *w = ss_alloc (ss, len + 1);
+
+  ss_assert_in_store (ss, init);
+  SS_SET_HEADER (w, tag, len);
+  for (i = 0; i < len; i++)
+    ss_set ((ss_object *)w, i, init);
   return (ss_object *)w;
 }
 
@@ -633,32 +688,54 @@ ss_copy (ss_store *ss, ss_object *obj)
   else if (ss_is_blob (obj))
     return ss_blob_new (ss, ss_len (obj), ss_blob_start (obj));
   else
-    return ss_newv (ss,
-		    ss_tag (obj), ss_len (obj),
-		    (ss_object **)&((uint32_t *)obj)[1]);
-}
-
-int
-ss_is_stored (ss_store *ss, ss_object *obj)
-{
-  uint32_t *w = (uint32_t *)obj;
-  return ss->start <= w && w < ss->next;
+    {
+      int len = ss_len(obj), i;
+      ss_object *vals[len];
+      for (i = 0; i < len; i++)
+	vals[i] = ss_ref (obj, i);
+      return ss_newv (ss, ss_tag (obj), ss_len (obj), vals);
+    }
 }
 
 ss_object *
+ss_insert (ss_store *ss, ss_object *obj, int index, ss_object *val)
+{
+  int len = ss_len (obj), i;
+  ss_object *vals[len+1];
+
+  for (i = 0; i < index; i++)
+    vals[i] = ss_ref (obj, i);
+  vals[index] = val;
+  for (i = index+1; i < len+1; i++)
+    vals[i] = ss_ref (obj, i-1);
+
+  return ss_newv (ss, ss_tag (obj), len + 1, vals);
+}
+
+static ss_object *
 ss_store_object (ss_store *ss, ss_object *obj)
 {
   ss_object *copy;
 
-  if (ss_is_stored (ss, obj))
+  if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
     return obj;
   
-  copy = ss_copy (ss, obj);
+  if (ss_is_blob (obj))
+    copy = ss_blob_new (ss, ss_len (obj), ss_blob_start (obj));
+  else
+    {
+      int len = ss_len(obj), i;
+      ss_object *vals[len];
+      for (i = 0; i < len; i++)
+	vals[i] = ss_store_object (ss, ss_ref (obj, i));
+      copy = ss_newv (ss, ss_tag (obj), ss_len (obj), vals);
+    }
+
   free (obj);
   return copy;
 }
 
-ss_object *
+static ss_object *
 ss_unstore_object (ss_store *ss, ss_object *obj)
 {
   if (ss_is_stored (ss, obj))
@@ -748,162 +825,159 @@ struct ss_objtab {
   ss_object *root;
 };
 
-static ss_objtab_node *
-ss_objtab_read_node (ss_object *o)
-{
-  int len, i;
-  ss_objtab_node *n;
-
-  if (o == NULL || ss_is_int (o))
-    return NULL;
-
-  n = xmalloc (sizeof (ss_objtab_node));
-  n->in_store = o;
-
-  if (ss_tag (o) == 0x7E)
-    {
-      /* Dispatch node */
-      n->hash = NO_HASH;
-      n->len = ss_len (o);
-      n->children.nodes = xmalloc (n->len*sizeof(ss_objtab_node*));
-      for (i = 0; i < n->len; i++)
-	n->children.nodes[i] = ss_objtab_read_node (ss_ref (o, i));
-      return n;
-    }
-  else if (ss_tag (o) == 0x7D)
-    {
-      /* Search node */
-      n->hash = ss_to_int (ss_ref (o, 0));
-      n->len = ss_len (o) - 1;
-      n->children.leaves = xmalloc (n->len*sizeof(ss_object*));
-      for (i = 0; i < n->len; i++)
-	n->children.leaves[i] = ss_ref (o, i+1);
-      return n;
-    }
-  else
-    {
-      free (n);
-      return NULL;
-    }
-}
-
-static ss_object *
-ss_objtab_write_node (ss_store *ss, ss_objtab_node *n)
-{
-  int i;
-
-  if (n == NULL)
-    return NULL;
-
-  if (n->hash == NO_HASH)
-    {
-      /* Dispatch node
-       */
-      ss_object *children_objs[n->len], *node_obj;
-      for (i = 0; i < n->len; i++)
-	children_objs[i] = ss_objtab_write_node (ss, n->children.nodes[i]);
-      node_obj = ss_newv (ss, 0x7E, n->len, children_objs);
-      free (n->children.nodes);
-      free (n);
-      return node_obj;
-    }
-  else
-    {
-      /* Search node
-       */
-      ss_object *children_objs[1+n->len], *node_obj;
-      children_objs[0] = ss_from_int (n->hash);
-      for (i = 0; i < n->len; i++)
-	children_objs[i+1] = n->children.leaves[i];
-      node_obj = ss_newv (ss, 0x7D, 1 + n->len, children_objs);
-      free (n->children.leaves);
-      free (n);
-      return node_obj;
-    }
-}
-
 ss_objtab *
-ss_objtab_init (ss_store *ss, ss_object *in_store)
+ss_objtab_init (ss_store *ss, ss_object *root)
 {
   ss_objtab *ot = xmalloc (sizeof (ss_objtab));
   ot->store = ss;
-  ot->root = ss_objtab_read_node (in_store);
+  ot->root = root;
   return ot;
 }
 
 ss_object *
 ss_objtab_finish (ss_objtab *ot)
 {
-  ss_object *o;
+  ss_object *root;
 
-  o = ss_objtab_write_node (ot->store, ot->root);
+  root = ss_store_object (ot->store, ot->root);
   free (ot);
 
-  return o;
+  return root;
 }
 
 #define BITS_PER_LEVEL 5
-
 #define LEVEL_MASK     ((1<<BITS_PER_LEVEL)-1)
-#define DISPATCH_SLOTS (1<<BITS_PER_LEVEL)
+
+#define DISPATCH_TAG 0x7D
+#define SEARCH_TAG   0x7E
+
+static inline int
+popcnt (uint32_t x)
+{
+  return __builtin_popcount (x);
+}
 
 static ss_object *
-ss_objtab_node_intern (ss_objtab *ot, ss_objtab_node **np,
-		       int shift, uint32_t hash, ss_object *obj)
+ss_objtab_mapvec_new ()
 {
-  int i;
-  ss_objtab_node *n = *np;
+  return ss_new (NULL, DISPATCH_TAG, 3, ss_from_int (0), NULL, NULL);
+}
 
-  if (n == NULL)
+static ss_object *
+ss_objtab_mapvec_get (ss_object *vec, int index)
+{
+  uint32_t map = ss_to_int (ss_ref (vec, 0)) | 0xC0000000;
+  int bit = 1 << index;
+  int pos = (index == 0)? 1 : popcnt (map << (32 - index)) + 1;
+  
+  // fprintf (stderr, "get %p %d with %x (%d, %d)\n",
+  //          vec, index, map, pos, ss_len (vec));
+
+  if (map & bit)
+    return ss_ref (vec, pos);
+  else
+    return NULL;
+}
+
+static ss_object *
+ss_objtab_mapvec_set (ss_store *ss, ss_object *vec, int index, ss_object *val)
+{
+  ss_object *new_vec;
+  uint32_t map = ss_to_int (ss_ref (vec, 0)) | 0xC0000000;
+  int bit = 1 << index;
+  int pos = (index == 0)? 1 : popcnt (map << (32 - index)) + 1;
+
+  // fprintf (stderr, "set %p %d with %x (%d)\n", vec, index, map, pos);
+
+  if (map & bit)
     {
-      /* Create a new leafnode
-       */
-      n = xmalloc (sizeof (ss_objtab_node));
-      n->hash = hash;
-      n->len = 1;
-      n->children.leaves = xmalloc (sizeof (ss_object *));
-      n->children.leaves[0] = obj;
-      *np =n;
-      return obj;
+      new_vec = ss_unstore_object (ss, vec);
+      ss_set (new_vec, pos, val);
     }
-  else if (n->hash == hash)
+  else
     {
-      /* Add to this leave node if not found.
-       */
-      for (i = 0; i < n->len; i++)
-	if (ss_equal (n->children.leaves[i], obj))
-	  return n->children.leaves[i];
-      n->len += 1;
-      n->children.leaves = xremalloc (n->children.leaves,
-				      n->len * sizeof (ss_object *));
-      n->children.leaves[n->len-1] = obj;
-      return obj;
+      new_vec = ss_insert (NULL, vec, pos, val);
+      if (!ss_is_stored (ss, vec))
+	free (vec);
+      map |= bit;
+      ss_set (new_vec, 0, ss_from_int (map));
     }
-  else if (n->hash != NO_HASH)
+  return new_vec;
+}
+
+static ss_object *
+ss_objtab_node_intern (ss_store *ss,
+		       ss_object *node, int shift,
+		       uint32_t hash, ss_object **objp)
+{
+  ss_object *obj = *objp;
+
+  if (node == NULL)
     {
-      /* Create a new dispatch node and move this leaf node one level
-	 down.
+      /* Create a new search node
        */
-      ss_objtab_node *d = xmalloc (sizeof (ss_objtab_node));
-      d->hash = NO_HASH;
-      d->len = DISPATCH_SLOTS;
-      d->children.nodes = xmalloc (DISPATCH_SLOTS*sizeof (ss_objtab_node *));
-      memset (d->children.nodes, 0, DISPATCH_SLOTS*sizeof (ss_objtab_node *));
-      d->children.nodes[(n->hash >> shift) & LEVEL_MASK] = n;
-      *np = d;
-      return ss_objtab_node_intern (ot,
-				    (d->children.nodes
-				     + ((hash >> shift) & LEVEL_MASK)),
-				    shift + BITS_PER_LEVEL, hash, obj);
+      // printf ("N\n");
+      obj = ss_store_object (ss, obj);
+      *objp = obj;
+      return ss_new (NULL, SEARCH_TAG, 2, ss_from_int (hash), obj);
+    }
+  else if (ss_is (node, SEARCH_TAG))
+    {
+      if (ss_to_int (ss_ref (node, 0)) == hash)
+	{
+	  /* This is our destination.  Add to this search node if not
+	     found.
+	   */
+	  int len = ss_len (node), i;
+	  for (i = 1; i < len; i++)
+	    if (ss_equal (ss_ref (node, i), obj))
+	      {
+		*objp = ss_ref (node, i);
+		// printf ("F\n");
+		return node;
+	      }
+	  // printf ("I\n");
+	  obj = ss_store_object (ss, obj);
+	  *objp = obj;
+	  return ss_insert (NULL, node, len, obj);
+	}
+      else
+	{
+	  /* Create a new dispatch node and move this search node one
+	     level down.
+	  */
+	  ss_object *entry, *new_entry, *new_node;
+	  int obj_index = (hash >> shift) & LEVEL_MASK;
+	  int node_index = ss_to_int (ss_ref (node, 0)) >> shift & LEVEL_MASK;
+
+	  /* XXX - optimize this to create the new_node in one go.
+	   */
+	  new_node = ss_objtab_mapvec_new ();
+	  new_node = ss_objtab_mapvec_set (ss, new_node, node_index, node);
+	  entry = ss_objtab_mapvec_get (new_node, obj_index);
+	  new_entry = ss_objtab_node_intern (ss,
+					     entry,
+					     shift + BITS_PER_LEVEL,
+					     hash, objp);
+	  new_node = ss_objtab_mapvec_set (ss, new_node, obj_index, new_entry);
+	  return new_node;
+	}
     }
   else
     {
       /* Recurse through this dispatch node
        */
-      return ss_objtab_node_intern (ot,
-				    (n->children.nodes
-				     + ((hash >> shift) & LEVEL_MASK)),
-				    shift + BITS_PER_LEVEL, hash, obj);
+      ss_object *entry, *new_entry;
+      int index = (hash >> shift) & LEVEL_MASK;
+
+      entry = ss_objtab_mapvec_get (node, index);
+      new_entry = ss_objtab_node_intern (ss,
+					 entry,
+					 shift + BITS_PER_LEVEL,
+					 hash, objp);
+      if (new_entry != entry)
+	node = ss_objtab_mapvec_set (ss, node, index, new_entry);
+      return node;
     }
 }
 
@@ -911,7 +985,41 @@ ss_object *
 ss_objtab_intern (ss_objtab *ot, ss_object *obj)
 {
   uint32_t h = ss_hash (obj);
-  return ss_objtab_node_intern (ot, &ot->root, 0, h, obj);
+  ot->root = ss_objtab_node_intern (ot->store, ot->root, 0, h, &obj);
+  return obj;
+}
+
+ss_object *
+ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob)
+{
+  return ss_objtab_intern (ot, ss_blob_new (NULL, len, blob));
+}
+
+void
+ss_objtab_node_foreach (ss_object *node,
+			void (*func) (ss_object *, void *data), void *data)
+{
+  if (node == NULL)
+    ;
+  else if (ss_is (node, SEARCH_TAG))
+    {
+      int len = ss_len(node), i;
+      for (i = 1; i < len; i++)
+	func (ss_ref (node, i), data);
+    }
+  else
+    {
+      int len = ss_len(node), i;
+      for (i = 1; i < len; i++)
+	ss_objtab_node_foreach (ss_ref (node, i), func, data);
+    }
+}
+
+void
+ss_objtab_foreach (ss_objtab *ot,
+		   void (*func) (ss_object *, void *data), void *data)
+{
+  ss_objtab_node_foreach (ot->root, func, data);
 }
 
 typedef struct {
@@ -919,12 +1027,13 @@ typedef struct {
   int n_leaf_nodes;
   int n_dispatches;
   int n_dispatch_nodes;
+  int n_dispatch_slots;
   int max_level;
   int max_collisions;
 } ss_objtab_stats;
 
 static void
-ss_objtab_dump_node (ss_objtab_node *n, int level, ss_objtab_stats *stats)
+ss_objtab_dump_node (ss_object *n, int level, ss_objtab_stats *stats)
 {
   int i;
   static char spaces[21] = "                    ";
@@ -938,34 +1047,24 @@ ss_objtab_dump_node (ss_objtab_node *n, int level, ss_objtab_stats *stats)
       if (level > stats->max_level)
 	stats->max_level = level;
       
-      if (n->hash != NO_HASH)
+      if (ss_tag (n) == SEARCH_TAG)
 	{
 	  // printf ("%.*s%d leaves of %x\n", level, spaces, n->len, n->hash);
 	  stats->n_leaf_nodes++;
-	  stats->n_leaves += n->len;
-	  if (n->len > stats->max_collisions)
-	    stats->max_collisions = n->len;
-#if 0
-	  for (i = 0; i < n->len; i++)
-	    {
-	      ss_object *obj = n->children.leaves[i];
-	      if (obj && !ss_is_int (obj) && ss_is_blob (obj))
-		printf ("%.*s  %.*s\n", level, spaces,
-			ss_len (obj), ss_blob_start (obj));
-	      else
-		printf ("%.*s  %p\n", level, spaces, obj);
-	    }
-#endif
+	  stats->n_leaves += ss_len (n) - 1;
+	  if (ss_len(n)-1 > stats->max_collisions)
+	    stats->max_collisions = ss_len(n)-1;
 	}
       else
 	{
 	  //  printf ("%.*s%d nodes\n", level, spaces, n->len);
 	  stats->n_dispatch_nodes++;
-	  for (i = 0; i < n->len; i++)
-	    if (n->children.nodes[i])
+	  stats->n_dispatch_slots += ss_len (n) - 1;
+	  for (i = 1; i < ss_len (n); i++)
+	    if (ss_ref (n, i))
 	      {
 		stats->n_dispatches++;
-		ss_objtab_dump_node (n->children.nodes[i], level+1, stats);
+		ss_objtab_dump_node (ss_ref (n, i), level+1, stats);
 	      }
 	}
     }
@@ -978,12 +1077,12 @@ ss_objtab_dump (ss_objtab *ot)
   ss_objtab_dump_node (ot->root, 0, &stats);
 
   printf ("Stats:\n");
-  printf (" %d leaves in %d leave nodes, %d collisions max\n",
-	  stats.n_leaves, stats.n_leaf_nodes, stats.max_collisions);
+  printf (" %d leaves in %d search nodes, %d collisions max\n",
+	  stats.n_leaves, stats.n_leaf_nodes, stats.max_collisions-1);
   printf (" %d dispatches in %d dispatch nodes on %d levels\n",
 	  stats.n_dispatches, stats.n_dispatch_nodes, stats.max_level);
   printf (" %g%% dispatch slots used\n",
-	  stats.n_dispatches * 100.0 / (stats.n_dispatch_nodes*DISPATCH_SLOTS));
+	  stats.n_dispatches * 100.0 / (stats.n_dispatch_slots));
   printf (" %g dispatch slots used per node\n",
 	  1.0*stats.n_dispatches / stats.n_dispatch_nodes);
 }
@@ -1006,6 +1105,7 @@ ss_dump_store (ss_store *ss, const char *header)
     {
       printf (" head root: %d\n", ss->head->root);
       printf (" head len:  %d\n", ss->head->len);
+      printf (" head allc: %d\n", ss->head->alloced);
     }
 }
 
