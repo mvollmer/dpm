@@ -20,53 +20,67 @@
 /* A struct-store is a file-backed region of memory.
 
    A struct-store is not portable across different architectures.
-   Only a single client can have a given struct-store open.  (But it
-   should be easy to remove the last restriction.)
+   Only a single client can have a given struct-store open.
 
-   It contains three kinds of objects: null, small integers, records
-   and blobs.  Four.  Four kinds of objects.  Records contain
-   references to other objects, and blobs contain arbitrary amounts of
-   bytes.  Small integers are limited to 30 bits and are mainly an
-   optimization that allows one to avoid creating blobs in many common
-   cases.  There is a single null object that can be used to indicate
-   the absence of a real object.  One of the objects is designated as
-   the root.
+   It contains three kinds of va: null, small integers, records
+   and blobs.  Four.  Four kinds of values.
 
-   You can not change objects, only create new ones.  Setting a new
+   Records contain references to other values, and blobs contain
+   arbitrary bytes.  Small integers are limited to 30 bits and are
+   mainly an optimization that allows one to avoid creating blobs in
+   many common cases.  There is a single null value that can be used
+   to indicate the absence of a real value.  One of the values is
+   designated as the root.
+
+   You can not change values, only create new ones.  Setting a new
    root is guaranteed to leave the struct-store in a consistent state
    on disk: either the new root has been set and all referenced
-   objects are present, or the old root is still set.
+   values are present, or the old root is still set.
    
    A garbage collection is performed from time to time to remove
-   unreferenced objects.
+   unreferenced values.
 
    None of the struct-store functions return failure indications: they
    either succeed or abort.  You can specify an error callback if you
    want to control how to abort, but abort you must.
 
-   Accessing store objects is generally done without checking whether
-   the access is valid.  I.e., getting a record field of an object
+   Accessing store values is generally done without checking whether
+   the access is valid.  I.e., getting a record field of an value
    that is actually a small integer will likely crash.
    
+   Each record has a 'tag'.  A tag is a very small integer that you
+   can use as you see fit.
 
-   There is special support for object tables and dictionaries. 
+   There are 128 different tags.  A few of them have special meaning:
+   the tag SS_BLOB_TAG is reserved and indicates a blob.  (Thus, a
+   blob also has a tag, but it is always SS_BLOB_TAG.)
 
-   A string table keeps objects (usually blobs representing string)
-   with the same content unique.  A dictionary maps objects to other
-   objects.
+   The SS_WEAK_TAG tag causes the record to be treated specially
+   during garbage collection: if some other record is only referenced
+   by fields in weak records, that other record is collected and the
+   references to it are replaced with null.
+
+   A SS_COLLAPSE_TAG record is also handled specially: if a field of
+   such a record points to another record that has only null or small
+   integers in its fields, that reference is replaced with null.
+
+   There is special support for 'tables' and 'dictionaries'.
+
+   A table keeps values (usually blobs representing string) with the
+   same content unique.  A dictionary maps values to other values.
 
    These tables and dictionaries are also immutable, of course; adding
    or removing entries produces a new dictionary.  However, when using
    the offered API, dictionaries are not always stored completely in
    the store: they are only made permanent when you actually ask for
-   the store object that represents them.  In this way, creation of
+   the store value that represents them.  In this way, creation of
    garbage is kept somewhat under control.
 
-   The dictionaries can use 'weak' references.  A blob is
-   automatically removed from the string table when it is no longer
-   referenced in a 'strong' way.  Other dictionaries can be instructed
-   to have weak keys: when the object used as the key is no longer
-   strongly referenced, the key/value association is removed.
+   The dictionaries can use 'weak' references.  A value is
+   automatically removed from a table when it is no longer referenced
+   in a 'strong' way.  Other dictionaries can be instructed to have
+   weak keys: when the value used as the key is no longer strongly
+   referenced, the key/value association is removed.
  */
 
 struct ss_store;
@@ -84,44 +98,54 @@ void ss_close (ss_store *ss);
 
 void ss_abort (ss_store *ss, const char *fmt, ...);
 
-void ss_reset (ss_store *ss);
+ss_store *ss_maybe_gc (ss_store *ss);
 ss_store *ss_gc (ss_store *ss);
 
-struct ss_object;
-typedef struct ss_object ss_object;
+struct ss_opaque;
+typedef struct ss_opaque *ss_val;
 
-ss_object *ss_get_root (ss_store *ss);
-void ss_set_root (ss_store *ss, ss_object *root);
+ss_val ss_get_root (ss_store *ss);
+void ss_set_root (ss_store *ss, ss_val root);
 
 #define SS_BLOB_TAG 0x7F
 
-int ss_tag (ss_object *o);
-int ss_len (ss_object *o);
-int ss_is (ss_object *o, int tag);
-void ss_assert (ss_object *o, int tag, int min_len);
+int ss_tag (ss_val v);
+int ss_len (ss_val v);
+int ss_is (ss_val v, int tag);
+void ss_assert (ss_val o, int tag, int min_len);
 
-int ss_is_int (ss_object *);
-ss_object *ss_from_int (int x);
-int ss_to_int (ss_object *);
+int ss_is_int (ss_val v);
+ss_val ss_from_int (int x);
+int ss_to_int (ss_val v);
 
-ss_object *ss_ref (ss_object *obj, int index);
-int ss_ref_int (ss_object *obj, int index);
+ss_val ss_ref (ss_val v, int index);
+int ss_ref_int (ss_val v, int index);
 
-int ss_is_blob (ss_object *o);
-void *ss_blob_start (ss_object *b);
+int ss_is_blob (ss_val v);
+void *ss_blob_start (ss_val b);
 
-ss_object *ss_new (ss_store *ss, int tag, int n, ...);
-ss_object *ss_newv (ss_store *ss, int tag, int n, ss_object **refs);
-ss_object *ss_blob_new (ss_store *ss, int blob_len, void *blob);
+ss_val ss_new (ss_store *ss, int tag, int n, ...);
+ss_val ss_newv (ss_store *ss, int tag, int n, ss_val *refs);
+ss_val ss_blob_new (ss_store *ss, int blob_len, void *blob);
 
-ss_store *ss_find_object_store (ss_object *);
+ss_store *ss_find_object_store (ss_val v);
 
 struct ss_objtab;
 typedef struct ss_objtab ss_objtab;
 
-ss_objtab *ss_objtab_init (ss_store *ss, ss_object *obj);
-ss_object *ss_objtab_finish (ss_objtab *ot);
-ss_object *ss_objtab_intern (ss_objtab *ot, ss_object *obj);
-ss_object *ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob);
+ss_objtab *ss_objtab_init (ss_store *ss, ss_val tab);
+ss_val ss_objtab_finish (ss_objtab *ot);
+ss_val ss_objtab_intern (ss_objtab *ot, ss_val v);
+ss_val ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob);
+
+struct ss_dict;
+typedef struct ss_dict ss_dict;
+
+ss_dict *ss_dict_init (ss_store *ss, ss_val dict);
+ss_val ss_dict_finish (ss_dict *d);
+void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
+ss_val ss_dict_get (ss_dict *d, ss_val key);
+void ss_dict_add (ss_dict *d, ss_val key, ss_val val);
+void ss_dict_del (ss_dict *d, ss_val key, ss_val val);
 
 #endif /* !STRUCT_STORE_H */

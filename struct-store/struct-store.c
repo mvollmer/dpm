@@ -338,7 +338,7 @@ ss_close (ss_store *ss)
 }
 
 ss_store *
-ss_find_object_store (ss_object *o)
+ss_find_object_store (ss_val o)
 {
   ss_store *ss;
 
@@ -352,17 +352,17 @@ ss_find_object_store (ss_object *o)
 /* The root
  */
 
-ss_object *
+ss_val 
 ss_get_root (ss_store *ss)
 {
   if (ss->head->root == 0 || SS_IS_INT (ss->head->root))
-    return (ss_object *)ss->head->root;
+    return (ss_val )ss->head->root;
   else
-    return (ss_object *)((char *)(ss->head) + ss->head->root);
+    return (ss_val )((char *)(ss->head) + ss->head->root);
 }
 
 void
-ss_set_root (ss_store *ss, ss_object *root)
+ss_set_root (ss_store *ss, ss_val root)
 {
   if (root == NULL || SS_IS_INT (root))
     ss->head->root = (uint32_t)root;
@@ -395,14 +395,14 @@ ss_alloc (ss_store *ss, size_t words)
 }
 
 int
-ss_is_stored (ss_store *ss, ss_object *obj)
+ss_is_stored (ss_store *ss, ss_val obj)
 {
   uint32_t *w = (uint32_t *)obj;
   return ss == NULL || (ss->start <= w && w < ss->next);
 }
 
 void
-ss_assert_in_store (ss_store *ss, ss_object *obj)
+ss_assert_in_store (ss_store *ss, ss_val obj)
 {
   if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
     return;
@@ -418,10 +418,10 @@ ss_assert_in_store (ss_store *ss, ss_object *obj)
  * to disconnect it from the file to prevent destroying it.
  */
 
-static void ss_set (ss_object *obj, int i, ss_object *ref);
+static void ss_set (ss_val obj, int i, ss_val ref);
 
-static ss_object *
-ss_gc_copy (ss_store *to_store, ss_object *obj)
+static ss_val 
+ss_gc_copy (ss_store *to_store, ss_val obj)
 {
   uint32_t len;
   uint32_t *copy;
@@ -435,7 +435,7 @@ ss_gc_copy (ss_store *to_store, ss_object *obj)
   if (SS_IS_FORWARD (obj))
     {
       // fprintf (stderr, "FORW %p -> %p\n", obj, SS_GET_FORWARD (obj));
-      return (ss_object *)SS_GET_FORWARD (obj);
+      return (ss_val )SS_GET_FORWARD (obj);
     }
 
   len = SS_LEN (obj);
@@ -458,11 +458,11 @@ ss_gc_copy (ss_store *to_store, ss_object *obj)
   
   SS_SET_FORWARD (obj, copy);
 
-  return (ss_object *)copy;
+  return (ss_val )copy;
 }
 
-static ss_object *
-ss_gc_scan_and_advance (ss_store *to_store, ss_object *obj)
+static ss_val 
+ss_gc_scan_and_advance (ss_store *to_store, ss_val obj)
 {
   uint32_t len = SS_LEN (obj), i;
 
@@ -472,19 +472,19 @@ ss_gc_scan_and_advance (ss_store *to_store, ss_object *obj)
     {
       uint32_t *w = (uint32_t *)obj;
       for (i = 0; i < len; i++)
-	ss_set (obj, i, ss_gc_copy (to_store, (ss_object *)w[i+1]));
+	ss_set (obj, i, ss_gc_copy (to_store, (ss_val )w[i+1]));
     }
   else
     len = SS_BLOB_LEN_TO_WORDS (len);
   
-  return (ss_object *)(((uint32_t *)obj) + len + 1);
+  return (ss_val )(((uint32_t *)obj) + len + 1);
 }
 
 ss_store *
 ss_gc (ss_store *ss)
 {
   ss_store *to_store;
-  ss_object *new_root, *to_ptr;
+  ss_val new_root, to_ptr;
   char *newfile;
 
   /* Disconnect old store from file.
@@ -498,8 +498,8 @@ ss_gc (ss_store *ss)
   to_store = ss_open (newfile, SS_TRUNC, NULL);
   
   new_root = ss_gc_copy (to_store, ss_get_root (ss));
-  for (to_ptr = (ss_object *)to_store->start;
-       to_ptr < (ss_object *)to_store->next;
+  for (to_ptr = (ss_val)to_store->start;
+       to_ptr < (ss_val)to_store->next;
        to_ptr = ss_gc_scan_and_advance (to_store, to_ptr))
     ;
   to_store->alloced_words = 0;
@@ -536,19 +536,19 @@ ss_maybe_gc (ss_store *ss)
  */
 
 int
-ss_is_int (ss_object *obj)
+ss_is_int (ss_val obj)
 {
   return SS_IS_INT (obj);
 }
 
-ss_object *
+ss_val 
 ss_from_int (int i)
 {
-  return (ss_object *)SS_FROM_INT (i);
+  return (ss_val )SS_FROM_INT (i);
 }
 
 int
-ss_to_int (ss_object *obj)
+ss_to_int (ss_val obj)
 {
   return SS_TO_INT (obj);
 }
@@ -557,25 +557,25 @@ ss_to_int (ss_object *obj)
 */
 
 int
-ss_tag (ss_object *obj)
+ss_tag (ss_val obj)
 {
   return SS_TAG(obj);
 }
 
 int
-ss_len (ss_object *obj)
+ss_len (ss_val obj)
 {
   return SS_LEN(obj);
 }
 
 int
-ss_is (ss_object *obj, int tag)
+ss_is (ss_val obj, int tag)
 {
   return obj && SS_TAG(obj) == tag;
 }
 
 void
-ss_assert (ss_object *obj, int tag, int min_len)
+ss_assert (ss_val obj, int tag, int min_len)
 {
   if (obj == NULL
       || SS_TAG(obj) != tag
@@ -583,24 +583,24 @@ ss_assert (ss_object *obj, int tag, int min_len)
     ss_abort (ss_find_object_store (obj), "Object of wrong type.");
 }
 
-ss_object *
-ss_ref (ss_object *obj, int i)
+ss_val 
+ss_ref (ss_val obj, int i)
 {
   uint32_t val = SS_WORD(obj,i+1);
   if (val == 0 || SS_IS_INT (val))
-    return (ss_object *)val;
+    return (ss_val )val;
   else
-    return (ss_object *)((uint32_t *)obj + (val>>2));
+    return (ss_val )((uint32_t *)obj + (val>>2));
 }
 
 int
-ss_ref_int (ss_object *obj, int i)
+ss_ref_int (ss_val obj, int i)
 {
   return SS_TO_INT (ss_ref (obj, i));
 }
 
 void
-ss_set (ss_object *obj, int i, ss_object *val)
+ss_set (ss_val obj, int i, ss_val val)
 {
   if (val == NULL || SS_IS_INT (val))
     SS_SET_WORD (obj, i+1, (uint32_t)val);
@@ -608,8 +608,8 @@ ss_set (ss_object *obj, int i, ss_object *val)
     SS_SET_WORD (obj, i+1, ((uint32_t *)val - (uint32_t *)obj) << 2);
 }
 
-ss_object *
-ss_newv (ss_store *ss, int tag, int len, ss_object **vals)
+ss_val 
+ss_newv (ss_store *ss, int tag, int len, ss_val *vals)
 {
   uint32_t *w = ss_alloc (ss, len + 1);
   int i;
@@ -618,13 +618,13 @@ ss_newv (ss_store *ss, int tag, int len, ss_object **vals)
   for (i = 0; i < len; i++)
     {
       ss_assert_in_store (ss, vals[i]);
-      ss_set ((ss_object *)w, i, vals[i]);
+      ss_set ((ss_val )w, i, vals[i]);
     }
 
-  return (ss_object *)w;
+  return (ss_val )w;
 }
 
-ss_object *
+ss_val 
 ss_new (ss_store *ss, int tag, int len, ...)
 {
   uint32_t *w = ss_alloc (ss, len + 1);
@@ -635,17 +635,17 @@ ss_new (ss_store *ss, int tag, int len, ...)
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
     {
-      ss_object *val = va_arg (ap, ss_object *);
+      ss_val val = va_arg (ap, ss_val );
       ss_assert_in_store (ss, val);
-      ss_set ((ss_object *)w, i, val);
+      ss_set ((ss_val )w, i, val);
     }
   va_end (ap);
 
-  return (ss_object *)w;
+  return (ss_val )w;
 }
 
-ss_object *
-ss_make (ss_store *ss, int tag, int len, ss_object *init)
+ss_val 
+ss_make (ss_store *ss, int tag, int len, ss_val init)
 {
   int i;
   uint32_t *w = ss_alloc (ss, len + 1);
@@ -653,23 +653,23 @@ ss_make (ss_store *ss, int tag, int len, ss_object *init)
   ss_assert_in_store (ss, init);
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
-    ss_set ((ss_object *)w, i, init);
-  return (ss_object *)w;
+    ss_set ((ss_val )w, i, init);
+  return (ss_val )w;
 }
 
 int
-ss_is_blob (ss_object *o)
+ss_is_blob (ss_val o)
 {
   return SS_TAG(o) == SS_BLOB_TAG;
 }
 
 void *
-ss_blob_start (ss_object *b)
+ss_blob_start (ss_val b)
 {
   return ((uint32_t *)b) + 1;
 }
 
-ss_object *
+ss_val 
 ss_blob_new (ss_store *ss, int len, void *blob)
 {
   uint32_t *w = ss_alloc (ss, SS_BLOB_LEN_TO_WORDS(len) + 1);
@@ -677,11 +677,11 @@ ss_blob_new (ss_store *ss, int len, void *blob)
   SS_SET_HEADER(w, SS_BLOB_TAG, len);
   memcpy (w+1, blob, len);
 
-  return (ss_object *)w;
+  return (ss_val )w;
 }
 
-ss_object *
-ss_copy (ss_store *ss, ss_object *obj)
+ss_val 
+ss_copy (ss_store *ss, ss_val obj)
 {
   if (obj == NULL || ss_is_int (obj))
     return obj;
@@ -690,32 +690,52 @@ ss_copy (ss_store *ss, ss_object *obj)
   else
     {
       int len = ss_len(obj), i;
-      ss_object *vals[len];
+      ss_val vals[len];
       for (i = 0; i < len; i++)
 	vals[i] = ss_ref (obj, i);
       return ss_newv (ss, ss_tag (obj), ss_len (obj), vals);
     }
 }
 
-ss_object *
-ss_insert (ss_store *ss, ss_object *obj, int index, ss_object *val)
+ss_val 
+ss_insert_many (ss_store *ss, ss_val obj, int index, int n, ...)
 {
   int len = ss_len (obj), i;
-  ss_object *vals[len+1];
+  ss_val vals[len+n];
+  va_list ap;
 
-  for (i = 0; i < index; i++)
-    vals[i] = ss_ref (obj, i);
-  vals[index] = val;
-  for (i = index+1; i < len+1; i++)
-    vals[i] = ss_ref (obj, i-1);
+  i = 0;
+  while (i < index)
+    {
+      vals[i] = ss_ref (obj, i);
+      i++;
+    }
+  va_start (ap, n);
+  while (i < index + n)
+    {
+      vals[i] = va_arg (ap, ss_val);
+      i++;
+    }
+  va_end (ap);
+  while (i < len + n)
+    {
+      vals[i] = ss_ref (obj, i-n);
+      i++;
+    }
 
-  return ss_newv (ss, ss_tag (obj), len + 1, vals);
+  return ss_newv (ss, ss_tag (obj), len + n, vals);
 }
 
-static ss_object *
-ss_store_object (ss_store *ss, ss_object *obj)
+ss_val 
+ss_insert (ss_store *ss, ss_val obj, int index, ss_val val)
 {
-  ss_object *copy;
+  return ss_insert_many (ss, obj, index, 1, val);
+}
+
+static ss_val 
+ss_store_object (ss_store *ss, ss_val obj)
+{
+  ss_val copy;
 
   if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
     return obj;
@@ -725,7 +745,7 @@ ss_store_object (ss_store *ss, ss_object *obj)
   else
     {
       int len = ss_len(obj), i;
-      ss_object *vals[len];
+      ss_val vals[len];
       for (i = 0; i < len; i++)
 	vals[i] = ss_store_object (ss, ss_ref (obj, i));
       copy = ss_newv (ss, ss_tag (obj), ss_len (obj), vals);
@@ -735,8 +755,8 @@ ss_store_object (ss_store *ss, ss_object *obj)
   return copy;
 }
 
-static ss_object *
-ss_unstore_object (ss_store *ss, ss_object *obj)
+static ss_val 
+ss_unstore_object (ss_store *ss, ss_val obj)
 {
   if (ss_is_stored (ss, obj))
     return ss_copy (NULL, obj);
@@ -744,24 +764,7 @@ ss_unstore_object (ss_store *ss, ss_object *obj)
     return obj;
 }
 
-/* Object tables
-
-   Bit partitioned hash tries.  I don't know what that means exactly,
-   but it sounds good.
-
-   Anyway, we store our hash table as a tree where each level of the
-   tree is indexed by N bits of the hash value.  Each node is either a
-   "dispatch node" that dispatches to 2^N other nodes (according to
-   the N bits of the hash value that belong to its level), or a
-   "search node" which contains a number of blobs with the same hash
-   value.
-
-   Dispatch nodes are distinguished from search nodes by their tag.
-   In order to not waste memory, dispatch nodes are stored in
-   compressed form: a bitmap identifies which entries are used, and
-   the unused ones are not stored.
-
-   (See Phil Bagwell's paper "Ideal Hash Trees" for more about this.)
+/* Hashing and equality
  */
 
 static uint32_t
@@ -776,7 +779,7 @@ ss_hash_blob (int len, void *blob)
 }
 
 static uint32_t
-ss_hash (ss_object *o)
+ss_hash (ss_val o)
 {
   if (o == NULL)
     return 0;
@@ -796,8 +799,14 @@ ss_hash (ss_object *o)
     }
 }
 
+static uint32_t
+ss_id_hash (ss_store *ss, ss_val o)
+{
+  return ((uint32_t)o - (uint32_t)(ss->start)) & 0x3FFFFFFF;
+}
+
 static int
-ss_equal (ss_object *a, ss_object *b)
+ss_equal (ss_val a, ss_val b)
 {
   if (a == NULL)
     return b == NULL;
@@ -820,36 +829,8 @@ ss_equal (ss_object *a, ss_object *b)
   }
 }
 
-struct ss_objtab {
-  ss_store *store;
-  ss_object *root;
-};
-
-ss_objtab *
-ss_objtab_init (ss_store *ss, ss_object *root)
-{
-  ss_objtab *ot = xmalloc (sizeof (ss_objtab));
-  ot->store = ss;
-  ot->root = root;
-  return ot;
-}
-
-ss_object *
-ss_objtab_finish (ss_objtab *ot)
-{
-  ss_object *root;
-
-  root = ss_store_object (ot->store, ot->root);
-  free (ot);
-
-  return root;
-}
-
-#define BITS_PER_LEVEL 5
-#define LEVEL_MASK     ((1<<BITS_PER_LEVEL)-1)
-
-#define DISPATCH_TAG 0x7D
-#define SEARCH_TAG   0x7E
+/* Small, sparse vectors.
+ */
 
 static inline int
 popcnt (uint32_t x)
@@ -857,37 +838,32 @@ popcnt (uint32_t x)
   return __builtin_popcount (x);
 }
 
-static ss_object *
-ss_objtab_mapvec_new ()
+static ss_val 
+ss_mapvec_new (int tag)
 {
-  return ss_new (NULL, DISPATCH_TAG, 3, ss_from_int (0), NULL, NULL);
+  return ss_new (NULL, tag, 3, ss_from_int (0), NULL, NULL);
 }
 
-static ss_object *
-ss_objtab_mapvec_get (ss_object *vec, int index)
+static ss_val 
+ss_mapvec_get (ss_val vec, int index)
 {
   uint32_t map = ss_to_int (ss_ref (vec, 0)) | 0xC0000000;
   int bit = 1 << index;
   int pos = (index == 0)? 1 : popcnt (map << (32 - index)) + 1;
   
-  // fprintf (stderr, "get %p %d with %x (%d, %d)\n",
-  //          vec, index, map, pos, ss_len (vec));
-
   if (map & bit)
     return ss_ref (vec, pos);
   else
     return NULL;
 }
 
-static ss_object *
-ss_objtab_mapvec_set (ss_store *ss, ss_object *vec, int index, ss_object *val)
+static ss_val 
+ss_mapvec_set (ss_store *ss, ss_val vec, int index, ss_val val)
 {
-  ss_object *new_vec;
+  ss_val new_vec;
   uint32_t map = ss_to_int (ss_ref (vec, 0)) | 0xC0000000;
   int bit = 1 << index;
   int pos = (index == 0)? 1 : popcnt (map << (32 - index)) + 1;
-
-  // fprintf (stderr, "set %p %d with %x (%d)\n", vec, index, map, pos);
 
   if (map & bit)
     {
@@ -905,61 +881,66 @@ ss_objtab_mapvec_set (ss_store *ss, ss_object *vec, int index, ss_object *val)
   return new_vec;
 }
 
-static ss_object *
-ss_objtab_node_intern (ss_store *ss,
-		       ss_object *node, int shift,
-		       uint32_t hash, ss_object **objp)
-{
-  ss_object *obj = *objp;
+/* Hash tables
 
+   Bit partitioned hash tries.  I don't know what that means exactly,
+   but it sounds good.
+
+   Anyway, we store our hash table as a tree where each level of the
+   tree is indexed by N bits of the hash value.  Each node is either a
+   "dispatch node" that dispatches to 2^N other nodes (according to
+   the N bits of the hash value that belong to its level), or a
+   "search node" which contains a number of blobs with the same hash
+   value.
+
+   Dispatch nodes are distinguished from search nodes by their tag.
+   In order to not waste memory, dispatch nodes are stored in
+   compressed form: a bitmap identifies which entries are used, and
+   the unused ones are not stored.
+
+   (See Phil Bagwell's paper "Ideal Hash Trees" for more about this.)
+ */
+
+#define BITS_PER_LEVEL 5
+#define LEVEL_MASK     ((1<<BITS_PER_LEVEL)-1)
+
+typedef struct ss_hash_class {
+  int dispatch_tag;
+  int search_tag;
+  ss_val (*action) (ss_store *ss, ss_val node, int hash, void *data);
+} ss_hash_class;
+
+static ss_val 
+ss_hash_node_lookup (ss_hash_class *class,
+		     ss_store *ss,
+		     ss_val node, int shift,
+		     uint32_t hash, void *data)
+{
   if (node == NULL)
-    {
-      /* Create a new search node
-       */
-      // printf ("N\n");
-      obj = ss_store_object (ss, obj);
-      *objp = obj;
-      return ss_new (NULL, SEARCH_TAG, 2, ss_from_int (hash), obj);
-    }
-  else if (ss_is (node, SEARCH_TAG))
+    return class->action (ss, node, hash, data);
+  else if (ss_is (node, class->search_tag))
     {
       if (ss_to_int (ss_ref (node, 0)) == hash)
-	{
-	  /* This is our destination.  Add to this search node if not
-	     found.
-	   */
-	  int len = ss_len (node), i;
-	  for (i = 1; i < len; i++)
-	    if (ss_equal (ss_ref (node, i), obj))
-	      {
-		*objp = ss_ref (node, i);
-		// printf ("F\n");
-		return node;
-	      }
-	  // printf ("I\n");
-	  obj = ss_store_object (ss, obj);
-	  *objp = obj;
-	  return ss_insert (NULL, node, len, obj);
-	}
+	return class->action (ss, node, hash, data);
       else
 	{
 	  /* Create a new dispatch node and move this search node one
 	     level down.
 	  */
-	  ss_object *entry, *new_entry, *new_node;
+	  ss_val entry, new_entry, new_node;
 	  int obj_index = (hash >> shift) & LEVEL_MASK;
 	  int node_index = ss_to_int (ss_ref (node, 0)) >> shift & LEVEL_MASK;
 
 	  /* XXX - optimize this to create the new_node in one go.
 	   */
-	  new_node = ss_objtab_mapvec_new ();
-	  new_node = ss_objtab_mapvec_set (ss, new_node, node_index, node);
-	  entry = ss_objtab_mapvec_get (new_node, obj_index);
-	  new_entry = ss_objtab_node_intern (ss,
-					     entry,
-					     shift + BITS_PER_LEVEL,
-					     hash, objp);
-	  new_node = ss_objtab_mapvec_set (ss, new_node, obj_index, new_entry);
+	  new_node = ss_mapvec_new (class->dispatch_tag);
+	  new_node = ss_mapvec_set (ss, new_node, node_index, node);
+	  entry = ss_mapvec_get (new_node, obj_index);
+	  new_entry = ss_hash_node_lookup (class, ss,
+					   entry,
+					   shift + BITS_PER_LEVEL,
+					   hash, data);
+	  new_node = ss_mapvec_set (ss, new_node, obj_index, new_entry);
 	  return new_node;
 	}
     }
@@ -967,37 +948,106 @@ ss_objtab_node_intern (ss_store *ss,
     {
       /* Recurse through this dispatch node
        */
-      ss_object *entry, *new_entry;
+      ss_val entry, new_entry;
       int index = (hash >> shift) & LEVEL_MASK;
 
-      entry = ss_objtab_mapvec_get (node, index);
-      new_entry = ss_objtab_node_intern (ss,
-					 entry,
-					 shift + BITS_PER_LEVEL,
-					 hash, objp);
+      entry = ss_mapvec_get (node, index);
+      new_entry = ss_hash_node_lookup (class, ss,
+				       entry,
+				       shift + BITS_PER_LEVEL,
+				       hash, data);
       if (new_entry != entry)
-	node = ss_objtab_mapvec_set (ss, node, index, new_entry);
+	node = ss_mapvec_set (ss, node, index, new_entry);
       return node;
     }
 }
 
-ss_object *
-ss_objtab_intern (ss_objtab *ot, ss_object *obj)
+/* Object tables
+ */
+
+#define DISPATCH_TAG 0x7D
+#define SEARCH_TAG   0x7E
+
+ss_val
+ss_objtab_intern_action (ss_store *ss, ss_val node, int hash, void *data)
+{
+  ss_val *objp = (ss_val *)data;
+  ss_val obj = *objp;
+
+  if (node == NULL)
+    {
+      /* Create a new search node
+       */
+      obj = ss_store_object (ss, obj);
+      *objp = obj;
+      return ss_new (NULL, SEARCH_TAG, 2, ss_from_int (hash), obj);
+    }
+  else
+    {
+      /* Add to this search node if not found.
+      */
+      int len = ss_len (node), i;
+      for (i = 1; i < len; i++)
+	if (ss_equal (ss_ref (node, i), obj))
+	  {
+	    *objp = ss_ref (node, i);
+	    return node;
+	  }
+      obj = ss_store_object (ss, obj);
+      *objp = obj;
+      return ss_insert (NULL, node, len, obj);
+    }
+}
+
+ss_hash_class ss_objtab_intern_class = {
+  DISPATCH_TAG,
+  SEARCH_TAG,
+  ss_objtab_intern_action
+};
+    
+struct ss_objtab {
+  ss_store *store;
+  ss_val root;
+};
+
+ss_objtab *
+ss_objtab_init (ss_store *ss, ss_val root)
+{
+  ss_objtab *ot = xmalloc (sizeof (ss_objtab));
+  ot->store = ss;
+  ot->root = root;
+  return ot;
+}
+
+ss_val 
+ss_objtab_finish (ss_objtab *ot)
+{
+  ss_val root;
+
+  root = ss_store_object (ot->store, ot->root);
+  free (ot);
+
+  return root;
+}
+
+ss_val 
+ss_objtab_intern (ss_objtab *ot, ss_val obj)
 {
   uint32_t h = ss_hash (obj);
-  ot->root = ss_objtab_node_intern (ot->store, ot->root, 0, h, &obj);
+  ot->root = ss_hash_node_lookup (&ss_objtab_intern_class,
+				  ot->store, ot->root, 0, h, &obj);
   return obj;
 }
 
-ss_object *
+ss_val 
 ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob)
 {
   return ss_objtab_intern (ot, ss_blob_new (NULL, len, blob));
 }
 
 void
-ss_objtab_node_foreach (ss_object *node,
-			void (*func) (ss_object *, void *data), void *data)
+ss_objtab_node_foreach (ss_val node,
+			void (*func) (ss_val , void *data), void *data)
 {
   if (node == NULL)
     ;
@@ -1017,7 +1067,7 @@ ss_objtab_node_foreach (ss_object *node,
 
 void
 ss_objtab_foreach (ss_objtab *ot,
-		   void (*func) (ss_object *, void *data), void *data)
+		   void (*func) (ss_val , void *data), void *data)
 {
   ss_objtab_node_foreach (ot->root, func, data);
 }
@@ -1033,7 +1083,7 @@ typedef struct {
 } ss_objtab_stats;
 
 static void
-ss_objtab_dump_node (ss_object *n, int level, ss_objtab_stats *stats)
+ss_objtab_dump_node (ss_val n, int level, ss_objtab_stats *stats)
 {
   int i;
   static char spaces[21] = "                    ";
@@ -1085,6 +1135,124 @@ ss_objtab_dump (ss_objtab *ot)
 	  stats.n_dispatches * 100.0 / (stats.n_dispatch_slots));
   printf (" %g dispatch slots used per node\n",
 	  1.0*stats.n_dispatches / stats.n_dispatch_nodes);
+}
+
+/* Dictionaries
+ */
+
+typedef struct {
+  ss_val key;
+  ss_val val;
+} ss_dict_action_data;
+
+ss_val
+ss_dict_get_action (ss_store *ss, ss_val node, int hash, void *data)
+{
+  ss_dict_action_data *d = (ss_dict_action_data *)data;
+
+  if (node == NULL)
+    {
+      d->val = NULL;
+      return node;
+    }
+  else
+    {
+      int len = ss_len (node), i;
+      for (i = 1; i < len; i += 2)
+	if (ss_ref (node, i) == d->key)
+	  {
+	    d->val = ss_ref (node, i+1);
+	    return node;
+	  }
+
+      d->val = NULL;
+      return node;
+    }
+}
+
+ss_hash_class ss_dict_get_class = {
+  DISPATCH_TAG,
+  SEARCH_TAG,
+  ss_dict_get_action
+};
+
+ss_val
+ss_dict_set_action (ss_store *ss, ss_val node, int hash, void *data)
+{
+  ss_dict_action_data *d = (ss_dict_action_data *)data;
+
+  if (node == NULL)
+    {
+      if (d->val == NULL)
+	return NULL;
+      else
+	return ss_new (NULL, SEARCH_TAG, 3, ss_from_int (hash), d->key, d->val);
+    }
+  else
+    {
+      int len = ss_len (node), i;
+      for (i = 1; i < len; i += 2)
+	if (ss_ref (node, i) == d->key)
+	  {
+	    /* XXX - shrink node when d.val == NULL
+	     */
+	    node = ss_unstore_object (ss, node);
+	    ss_set (node, i+1, d->val);
+	    return node;
+	  }
+      
+      return ss_insert_many (NULL, node, len, 2, d->key, d->val);
+    }
+}
+
+ss_hash_class ss_dict_set_class = {
+  DISPATCH_TAG,
+  SEARCH_TAG,
+  ss_dict_set_action
+};
+
+struct ss_dict {
+  ss_store *store;
+  ss_val root;
+};
+
+ss_dict *
+ss_dict_init (ss_store *ss, ss_val root)
+{
+  ss_dict *d = xmalloc (sizeof (ss_dict));
+  d->store = ss;
+  d->root = root;
+  return d;
+}
+
+ss_val 
+ss_dict_finish (ss_dict *d)
+{
+  ss_val root;
+
+  root = ss_store_object (d->store, d->root);
+  free (d);
+
+  return root;
+}
+
+ss_val
+ss_dict_get (ss_dict *d, ss_val key)
+{
+  ss_dict_action_data ad = { key, NULL };
+  uint32_t h = ss_id_hash (d->store, key);
+  ss_hash_node_lookup (&ss_dict_get_class, d->store, 
+		       d->root, 0, h, &ad);
+  return ad.val;
+}
+
+void
+ss_dict_set (ss_dict *d, ss_val key, ss_val val)
+{
+  ss_dict_action_data ad = { key, val };
+  uint32_t h = ss_id_hash (d->store, key);
+  d->root = ss_hash_node_lookup (&ss_dict_set_class, d->store, 
+				 d->root, 0, h, &ad);
 }
 
 /* Debugging

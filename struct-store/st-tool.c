@@ -47,7 +47,7 @@ cmd_scan (char *file)
 }
 
 void
-dump_reference (ss_object *o)
+dump_reference (ss_val o)
 {
   int i;
 
@@ -69,7 +69,7 @@ dump_reference (ss_object *o)
 }
 
 void
-dump_object (ss_object *o)
+dump_object (ss_val o)
 {
   int i;
 
@@ -94,7 +94,7 @@ dump_object (ss_object *o)
 	{
 	  for (i = 0; i < n; i++)
 	    {
-	      ss_object *r = ss_ref (o, i);
+	      ss_val r = ss_ref (o, i);
 	      if (r && !ss_is_int (r) && !ss_is_blob (r))
 		{
 		  printf ("\n");
