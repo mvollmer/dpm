@@ -130,6 +130,10 @@ ss_val ss_blob_new (ss_store *ss, int blob_len, void *blob);
 
 ss_store *ss_find_object_store (ss_val v);
 
+ss_val ss_copy (ss_store *ss, ss_val v);
+ss_val ss_insert (ss_store *ss, ss_val obj, int index, ss_val v);
+ss_val ss_insert_many (ss_store *ss, ss_val obj, int index, int n, ...);
+
 struct ss_objtab;
 typedef struct ss_objtab ss_objtab;
 
@@ -137,6 +141,7 @@ ss_objtab *ss_objtab_init (ss_store *ss, ss_val tab);
 ss_val ss_objtab_finish (ss_objtab *ot);
 ss_val ss_objtab_intern (ss_objtab *ot, ss_val v);
 ss_val ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob);
+ss_val ss_objtab_intern_soft (ss_objtab *ot, int len, void *blob);
 
 struct ss_dict;
 typedef struct ss_dict ss_dict;
@@ -147,5 +152,8 @@ void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
 ss_val ss_dict_get (ss_dict *d, ss_val key);
 void ss_dict_add (ss_dict *d, ss_val key, ss_val val);
 void ss_dict_del (ss_dict *d, ss_val key, ss_val val);
+void ss_dict_foreach (ss_dict *d,
+		      void (*func) (ss_val key, ss_val val, void *data),
+		      void *data);
 
 #endif /* !STRUCT_STORE_H */

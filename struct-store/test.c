@@ -31,30 +31,31 @@ usage ()
 
 int found = 0;
 
-ss_store *ss;
-ss_objtab *ot;
-ss_dict *d;
+ss_store *store;
+ss_objtab *table;
+ss_dict *files_dict;
+ss_dict *packages_dict;
 
 void
 init (const char *file, int mode)
 {
   ss_val r;
 
-  ss = ss_open (file, mode, NULL);
-  r = ss_get_root (ss);
+  store = ss_open (file, mode, NULL);
+  r = ss_get_root (store);
 
-  if (r)
+  if (r && ss_len (r) == 3)
     {
-      ot = ss_objtab_init (ss, ss_ref (r, 0));
-      d = ss_dict_init (ss, ss_ref (r, 1));
+      table = ss_objtab_init (store, ss_ref (r, 0));
+      files_dict = ss_dict_init (store, ss_ref (r, 1));
+      packages_dict = ss_dict_init (store, ss_ref (r, 2));
     }
   else
     {
-      ot = ss_objtab_init (ss, NULL);
-      d = ss_dict_init (ss, NULL);
+      table = ss_objtab_init (store, NULL);
+      files_dict = ss_dict_init (store, NULL);
+      packages_dict = ss_dict_init (store, NULL);
     }
-  
-  // ss_dump_store (ss, "load");
 }
 
 void
@@ -62,63 +63,140 @@ finish (int mode)
 {
   if (mode == SS_WRITE)
     {
-      ss_val r = ss_new (ss, 0, 2,
-			 ss_objtab_finish (ot), 
-			 ss_dict_finish (d));
-      ss_set_root (ss, r);
-      // ss_close (ss_maybe_gc (ss));
-      ss_close (ss);
+      ss_val r = ss_new (store, 0, 3,
+			 ss_objtab_finish (table), 
+			 ss_dict_finish (files_dict),
+			 ss_dict_finish (packages_dict));
+      ss_set_root (store, r);
+      ss_close (ss_maybe_gc (store));
     }
   else
-    ss_close (ss);
+    ss_close (store);
 }
 
 ss_val
 intern (const char *str)
 {
   if (str)
-    return ss_objtab_intern_blob (ot, strlen (str), (void *)str);
+    return ss_objtab_intern_blob (table, strlen (str), (void *)str);
   else
     return NULL;
 }
 
+ss_val
+intern_soft (const char *str)
+{
+  if (str)
+    return ss_objtab_intern_soft (table, strlen (str), (void *)str);
+  else
+    return NULL;
+}
+
+ss_val
+cons (ss_val car, ss_val cdr)
+{
+  return ss_new (store, 0, 2, car, cdr);
+}
+
+ss_val
+delq (ss_val val, ss_val list)
+{
+  if (!list)
+    return NULL;
+  else if (ss_ref (list, 0) == val)
+    return ss_ref (list, 1);
+  else
+    return cons (ss_ref (list, 0), delq (val, ss_ref (list, 1)));
+}
+
+int
+memq (ss_val val, ss_val list)
+{
+  while (list)
+    {
+      if (ss_ref (list, 0) == val)
+	return 1;
+      list = ss_ref (list, 1);
+    }
+  return 0;
+}
+
 void
-intern_file (ss_store *ss, ss_objtab *ot, char *file)
+add_list (char *package)
 {
   FILE *f;
+  char *file;
   char *line = NULL;
   size_t len = 0;
-  ssize_t n;
+  ssize_t l;
 
+  int n;
+  ss_val lines[1024];
+  ss_val pkg;
+
+  asprintf (&file, "/var/lib/dpkg/info/%s.list", package);
+
+  pkg = intern (package);
+
+  n = 0;
   f = fopen (file, "r");
   if (f)
     {
-      while ((n = getline (&line, &len, f)) != -1)
+      while ((l = getline (&line, &len, f)) != -1)
 	{
-	  ss_val b1, b2;
+	  if (l > 0 && line[l-1] == '\n')
+	    l -= 1;
 
-	  if (n > 0 && line[n-1] == '\n')
-	    n -= 1;
-	  
-	  b1 = ss_blob_new (NULL, n, line);
-	  b2 = ss_objtab_intern (ot, b1);
-
-	  if (b1 != b2)
-	    found++;
-	  else
-	    printf ("not found: %.*s\n", n, line);
+	  if (n < 1024)
+	    {
+	      ss_val file = ss_objtab_intern_blob (table, l, line);
+	      ss_val pkgs = ss_dict_get (packages_dict, file);
+	      lines[n++] = file;
+	      if (!memq (pkg, pkgs))
+		ss_dict_set (packages_dict, file, cons (pkg, pkgs));
+	    }
 	}
       free (line);
       fclose (f);
     }
+
+  printf ("%s: %d files\n", package, n);
+  ss_dict_set (files_dict, pkg, ss_newv (store, 0, n, lines));
+  free (file);
 }
   
 void
-grep_blob (ss_val o, void *data)
+dump_entry (ss_val key, ss_val val, void *data)
 {
-  if (memmem (ss_blob_start (o), ss_len (o),
+  if (ss_is_blob (val))
+    printf ("%.*s: %.*s\n",
+ 	    ss_len (key), ss_blob_start (key),
+	    ss_len (val), ss_blob_start (val));
+  else
+    printf ("%.*s: %p\n",
+ 	    ss_len (key), ss_blob_start (key), val);
+}
+
+void
+dump_packages (ss_val file)
+{
+  ss_val packages = ss_dict_get (packages_dict, file);
+  printf ("%.*s:", ss_len (file), ss_blob_start (file));
+  while (packages)
+    {
+      ss_val pkg = ss_ref (packages, 0);
+      printf (" %.*s", ss_len (pkg), ss_blob_start (pkg));
+      packages = ss_ref (packages, 1);
+    }
+  printf ("\n");
+}
+
+void
+grep_blob (ss_val val, void *data)
+{
+  if (memmem (ss_blob_start (val), ss_len (val),
 	      (char *)data, strlen ((char *)data)))
-    printf ("%.*s\n", ss_len (o), ss_blob_start (o));
+    dump_packages (val);
 }
 
 int
@@ -135,41 +213,17 @@ main (int argc, char **argv)
 
       while (argc > 3)
 	{
-	  intern_file (ss, ot, argv[3]);
+	  add_list (argv[3]);
 	  argc--;
 	  argv++;
 	}
       
-      ss_objtab_dump (ot);
+      ss_objtab_dump (table);
       printf ("found %d\n", found);
 
       finish (SS_WRITE);
     }
-  else if (strcmp (argv[1], "grep") == 0)
-    {
-      init (argv[2], SS_READ);
-
-      ss_objtab_foreach (ot, grep_blob, argv[3]);
-
-      finish (SS_READ);
-    }
-  else if (strcmp (argv[1], "set") == 0)
-    {
-      ss_val key, val;
-
-      init (argv[2], SS_WRITE);
-
-      if (argc > 4)
-	{
-	  key = intern (argv[3]);
-	  val = ss_blob_new (ss, strlen (argv[4]), argv[4]);
-
-	  ss_dict_set (d, key, val);
-	}
-
-      finish (SS_WRITE);
-    }
-  else if (strcmp (argv[1], "get") == 0)
+  else if (strcmp (argv[1], "list") == 0)
     {
       ss_val key, val;
 
@@ -177,13 +231,34 @@ main (int argc, char **argv)
 
       if (argc > 3)
 	{
-	  key = intern (argv[3]);
-	  val = ss_dict_get (d, key);
-	  
-	  if (val && !ss_is_int (val) && ss_is_blob (val))
-	    printf ("%.*s\n", ss_len (val), ss_blob_start (val));
+	  int i;
+
+	  ss_val files = ss_dict_get (files_dict, intern_soft (argv[3]));
+	  if (files)
+	    {
+	      for (i = 0; i < ss_len (files); i++)
+		{
+		  ss_val b = ss_ref (files, i);
+		  printf ("%.*s\n", ss_len (b), ss_blob_start (b));
+		}
+	    }
 	  else
-	    printf ("%p\n", val);
+	    printf ("%s not found\n", argv[3]);
+	}
+
+      finish (SS_READ);
+    }
+  else if (strcmp (argv[1], "search") == 0)
+    {
+      init (argv[2], SS_READ);
+
+      if (argc > 3)
+	{
+	  ss_val file = intern_soft (argv[3]);
+	  if (file)
+	    dump_packages (file);
+	  else
+	    ss_objtab_foreach (table, grep_blob, argv[3]);
 	}
 
       finish (SS_READ);
