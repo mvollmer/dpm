@@ -419,6 +419,7 @@ ss_assert_in_store (ss_store *ss, ss_val obj)
  */
 
 #define DICT_DISPATCH_TAG 0x7C
+#define DICT_SEARCH_TAG   0x7B
 
 static void ss_set (ss_val obj, int i, ss_val ref);
 static ss_val ss_dict_gc_copy (ss_store *to_store, ss_val dict);
@@ -438,7 +439,8 @@ ss_gc_copy (ss_store *to_store, ss_val obj)
   if (ss_is_stored (to_store, obj))
     return obj;
 
-  if (ss_is (obj, DICT_DISPATCH_TAG))
+  if (ss_is (obj, DICT_DISPATCH_TAG)
+      || ss_is (obj, DICT_SEARCH_TAG))
     copy = (uint32_t *)ss_dict_gc_copy (to_store, obj);
   else
     {
@@ -1263,7 +1265,7 @@ ss_dict_get_action (ss_store *ss, ss_val node, int hash, void *data)
 
 ss_hash_class ss_dict_get_class = {
   DICT_DISPATCH_TAG,
-  SEARCH_TAG,
+  DICT_SEARCH_TAG,
   ss_dict_get_action
 };
 
@@ -1277,7 +1279,8 @@ ss_dict_set_action (ss_store *ss, ss_val node, int hash, void *data)
       if (d->val == NULL)
 	return NULL;
       else
-	return ss_new (NULL, SEARCH_TAG, 3, ss_from_int (hash), d->key, d->val);
+	return ss_new (NULL, DICT_SEARCH_TAG, 3, ss_from_int (hash),
+		       d->key, d->val);
     }
   else
     {
@@ -1298,7 +1301,7 @@ ss_dict_set_action (ss_store *ss, ss_val node, int hash, void *data)
 
 ss_hash_class ss_dict_set_class = {
   DICT_DISPATCH_TAG,
-  SEARCH_TAG,
+  DICT_SEARCH_TAG,
   ss_dict_set_action
 };
 
@@ -1353,7 +1356,7 @@ ss_dict_node_foreach (ss_val node,
 {
   if (node == NULL)
     ;
-  else if (ss_is (node, SEARCH_TAG))
+  else if (ss_is (node, DICT_SEARCH_TAG))
     {
       int len = ss_len(node), i;
       for (i = 1; i < len; i += 2)
