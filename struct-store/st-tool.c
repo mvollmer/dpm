@@ -16,6 +16,7 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <struct-store.h>
 
@@ -47,7 +48,7 @@ cmd_scan (char *file)
 }
 
 void
-dump_reference (ss_val o)
+dump_reference (ss_store *ss, ss_val o)
 {
   int i;
 
@@ -59,37 +60,37 @@ dump_reference (ss_val o)
     {
       int l = ss_len (o);
       char *b = ss_blob_start (o);
-      printf (" ");
+      printf (" (b%d) ", ss_id (ss, o));
       for (i = 0; i < l; i++)
 	printf ("%c", isprint(b[i])? b[i] : '.');
       printf ("\n");
     }
   else
-    printf (" %p (%d)\n", o, ss_tag (o));
+    printf (" r%d (%d)\n", ss_id (ss, o), ss_tag (o));
 }
 
 void
-dump_object (ss_val o)
+dump_object (ss_store *ss, ss_val o)
 {
   int i;
 
   if (o == NULL)
     printf ("NULL\n");
   else if (ss_is_int (o))
-    printf ("%p: (int %d)\n", o, ss_to_int (o));
+    printf ("%d\n", ss_to_int (o));
   else if (ss_is_blob (o))
     {
       int l = ss_len (o);
       char *b = ss_blob_start (o);
-      printf ("%p: (blob, %d bytes)\n", o, l);
-      dump_reference (o);
+      printf ("b%d: (blob, %d bytes)\n", ss_id (ss, o), l);
+      dump_reference (ss, o);
     }
   else
     {
       int n = ss_len (o);
-      printf ("%p: (tag %d, %d fields)\n", o, ss_tag (o), n);
+      printf ("r%d: (tag %d, %d fields)\n", ss_id (ss, o), ss_tag (o), n);
       for (i = 0; i < n; i++)
-	dump_reference (ss_ref (o, i));
+	dump_reference (ss, ss_ref (o, i));
       if (n > 0)
 	{
 	  for (i = 0; i < n; i++)
@@ -98,7 +99,7 @@ dump_object (ss_val o)
 	      if (r && !ss_is_int (r) && !ss_is_blob (r))
 		{
 		  printf ("\n");
-		  dump_object (r);
+		  dump_object (ss, r);
 		}
 	    }
 	}
@@ -110,7 +111,7 @@ cmd_dump (char *file)
 {
   ss_store *ss = ss_open (file, SS_READ, NULL);
   
-  dump_object (ss_get_root (ss));
+  dump_object (ss, ss_get_root (ss));
 }
 
 int

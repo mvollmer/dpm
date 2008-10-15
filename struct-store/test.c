@@ -68,7 +68,8 @@ finish (int mode)
 			 ss_dict_finish (files_dict),
 			 ss_dict_finish (packages_dict));
       ss_set_root (store, r);
-      ss_close (ss_maybe_gc (store));
+      // ss_close (ss_maybe_gc (store));
+      ss_close (store);
     }
   else
     ss_close (store);
@@ -78,7 +79,7 @@ ss_val
 intern (const char *str)
 {
   if (str)
-    return ss_objtab_intern_blob (table, strlen (str), (void *)str);
+    return ss_objtab_intern_blob (table, strlen (str) + 1, (void *)str);
   else
     return NULL;
 }
@@ -87,9 +88,15 @@ ss_val
 intern_soft (const char *str)
 {
   if (str)
-    return ss_objtab_intern_soft (table, strlen (str), (void *)str);
+    return ss_objtab_intern_soft (table, strlen (str) + 1, (void *)str);
   else
     return NULL;
+}
+
+char *
+string (ss_val blob)
+{
+  return (char *)ss_blob_start (blob);
 }
 
 ss_val
@@ -122,21 +129,39 @@ memq (ss_val val, ss_val list)
 }
 
 void
-add_list (char *package)
+rem_list (ss_val pkg)
+{
+  ss_val files = ss_dict_get (files_dict, pkg);
+  if (files)
+    {
+      int len = ss_len (files), i;
+      for (i = 0; i < len; i++)
+	{
+	  ss_val file = ss_ref (files, i);
+	  ss_dict_set (packages_dict, file, 
+		       delq (pkg, ss_dict_get (packages_dict, file)));
+	}
+      printf ("%s: removed %d files\n", string (pkg), len);
+    }
+
+  ss_dict_set (files_dict, pkg, NULL);
+}
+
+void
+set_list (ss_val pkg, char *file)
 {
   FILE *f;
-  char *file;
   char *line = NULL;
   size_t len = 0;
   ssize_t l;
 
   int n;
   ss_val lines[1024];
-  ss_val pkg;
+  
+  rem_list (pkg);
 
-  asprintf (&file, "/var/lib/dpkg/info/%s.list", package);
-
-  pkg = intern (package);
+  if (file == NULL)
+    asprintf (&file, "/var/lib/dpkg/info/%s.list", string (pkg));
 
   n = 0;
   f = fopen (file, "r");
@@ -146,10 +171,11 @@ add_list (char *package)
 	{
 	  if (l > 0 && line[l-1] == '\n')
 	    l -= 1;
+	  line[l] = 0;
 
 	  if (n < 1024)
 	    {
-	      ss_val file = ss_objtab_intern_blob (table, l, line);
+	      ss_val file = intern (line);
 	      ss_val pkgs = ss_dict_get (packages_dict, file);
 	      lines[n++] = file;
 	      if (!memq (pkg, pkgs))
@@ -160,9 +186,8 @@ add_list (char *package)
       fclose (f);
     }
 
-  printf ("%s: %d files\n", package, n);
+  printf ("%s: added %d files\n", string (pkg), n);
   ss_dict_set (files_dict, pkg, ss_newv (store, 0, n, lines));
-  free (file);
 }
   
 void
@@ -199,6 +224,18 @@ grep_blob (ss_val val, void *data)
     dump_packages (val);
 }
 
+void
+dump_package (ss_val key, ss_val val, void *data)
+{
+  printf ("%s: %d files\n", string (key), ss_len (val));
+}
+
+void
+dump_file (ss_val key, ss_val val, void *data)
+{
+  printf ("%.*s\n", ss_len (key), ss_blob_start (key));
+}
+
 int
 main (int argc, char **argv)
 {
@@ -213,14 +250,36 @@ main (int argc, char **argv)
 
       while (argc > 3)
 	{
-	  add_list (argv[3]);
+	  set_list (intern (argv[3]), NULL);
 	  argc--;
 	  argv++;
 	}
       
       ss_objtab_dump (table);
-      printf ("found %d\n", found);
+      finish (SS_WRITE);
+    }
+  else if (strcmp (argv[1], "rem") == 0)
+    {
+      init (argv[2], SS_WRITE);
 
+      while (argc > 3)
+	{
+	  rem_list (intern (argv[3]));
+	  argc--;
+	  argv++;
+	}
+      
+      ss_objtab_dump (table);
+      finish (SS_WRITE);
+    }
+  else if (strcmp (argv[1], "set-list") == 0)
+    {
+      init (argv[2], SS_WRITE);
+
+      if (argc > 4)
+	set_list (intern (argv[3]), argv[4]);
+      
+      ss_objtab_dump (table);
       finish (SS_WRITE);
     }
   else if (strcmp (argv[1], "list") == 0)
@@ -260,6 +319,22 @@ main (int argc, char **argv)
 	  else
 	    ss_objtab_foreach (table, grep_blob, argv[3]);
 	}
+
+      finish (SS_READ);
+    }
+  else if (strcmp (argv[1], "packages") == 0)
+    {
+      init (argv[2], SS_READ);
+
+      ss_dict_foreach (files_dict, dump_package, NULL);
+
+      finish (SS_READ);
+    }
+  else if (strcmp (argv[1], "files") == 0)
+    {
+      init (argv[2], SS_READ);
+
+      ss_dict_foreach (packages_dict, dump_file, NULL);
 
       finish (SS_READ);
     }
