@@ -51,18 +51,7 @@
    Each record has a 'tag'.  A tag is a very small integer that you
    can use as you see fit.
 
-   There are 128 different tags.  A few of them have special meaning:
-   the tag SS_BLOB_TAG is reserved and indicates a blob.  (Thus, a
-   blob also has a tag, but it is always SS_BLOB_TAG.)
-
-   The SS_WEAK_TAG tag causes the record to be treated specially
-   during garbage collection: if some other record is only referenced
-   by fields in weak records, that other record is collected and the
-   references to it are replaced with null.
-
-   A SS_COLLAPSE_TAG record is also handled specially: if a field of
-   such a record points to another record that has only null or small
-   integers in its fields, that reference is replaced with null.
+   There are 127 different tags. [...]
 
    There is special support for 'tables' and 'dictionaries'.
 
@@ -76,11 +65,18 @@
    the store value that represents them.  In this way, creation of
    garbage is kept somewhat under control.
 
-   The dictionaries can use 'weak' references.  A value is
-   automatically removed from a table when it is no longer referenced
-   in a 'strong' way.  Other dictionaries can be instructed to have
-   weak keys: when the value used as the key is no longer strongly
-   referenced, the key/value association is removed.
+   A value is automatically removed from all tables when it is no
+   longer referenced from any other place.  Dictionaries can
+   optionally have weak keys or weak value sets.  When the last
+   non-weak reference to a key disappears, it is removed (together
+   with its values) from all dictionaries.  When the last non-weak
+   reference to a value disappears, it is removed from all weak value
+   sets.  If the set becomes empty, it and its key are removed from
+   the dictionary.
+
+   This removal of table and dictionary entries is purely done to
+   collect garbage.  You should not rely on it in the design of your
+   data structures and algorithms.
  */
 
 struct ss_store;
@@ -134,19 +130,23 @@ ss_val ss_copy (ss_store *ss, ss_val v);
 ss_val ss_insert (ss_store *ss, ss_val obj, int index, ss_val v);
 ss_val ss_insert_many (ss_store *ss, ss_val obj, int index, int n, ...);
 
-struct ss_objtab;
-typedef struct ss_objtab ss_objtab;
+struct ss_tab;
+typedef struct ss_tab ss_tab;
 
-ss_objtab *ss_objtab_init (ss_store *ss, ss_val tab);
-ss_val ss_objtab_finish (ss_objtab *ot);
-ss_val ss_objtab_intern (ss_objtab *ot, ss_val v);
-ss_val ss_objtab_intern_blob (ss_objtab *ot, int len, void *blob);
-ss_val ss_objtab_intern_soft (ss_objtab *ot, int len, void *blob);
+ss_tab *ss_tab_init (ss_store *ss, ss_val tab);
+ss_val ss_tab_finish (ss_tab *ot);
+ss_val ss_tab_intern (ss_tab *ot, ss_val v);
+ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
+ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
 
 struct ss_dict;
 typedef struct ss_dict ss_dict;
 
-ss_dict *ss_dict_init (ss_store *ss, ss_val dict);
+#define SS_DICT_STRONG          0
+#define SS_DICT_WEAK_KEYS       1
+#define SS_DICT_WEAK_VALUE_SETS 2
+
+ss_dict *ss_dict_init (ss_store *ss, ss_val dict, int weak);
 ss_val ss_dict_finish (ss_dict *d);
 void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
 ss_val ss_dict_get (ss_dict *d, ss_val key);
