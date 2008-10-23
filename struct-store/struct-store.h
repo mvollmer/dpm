@@ -22,7 +22,7 @@
    A struct-store is not portable across different architectures.
    Only a single client can have a given struct-store open.
 
-   It contains three kinds of va: null, small integers, records
+   It contains three kinds of values: null, small integers, records
    and blobs.  Four.  Four kinds of values.
 
    Records contain references to other values, and blobs contain
