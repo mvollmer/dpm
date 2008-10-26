@@ -34,11 +34,13 @@
 
    You can not change values, only create new ones.  Setting a new
    root is guaranteed to leave the struct-store in a consistent state
-   on disk: either the new root has been set and all referenced
-   values are present, or the old root is still set.
-   
+   on disk: either the new root has been set and all referenced values
+   are present, or the old root is still set.  When ss_set_root
+   returns, the store hase been written to disk.
+
    A garbage collection is performed from time to time to remove
-   unreferenced values.
+   unreferenced values.  Since a garbage collection moves objects
+   around, it has to be requested explicitly.
 
    None of the struct-store functions return failure indications: they
    either succeed or abort.  You can specify an error callback if you
@@ -55,7 +57,7 @@
 
    There is special support for 'tables' and 'dictionaries'.
 
-   A table keeps values (usually blobs representing string) with the
+   A table keeps values (usually blobs representing strings) with the
    same content unique.  A dictionary maps values to other values.
 
    These tables and dictionaries are also immutable, of course; adding

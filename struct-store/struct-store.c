@@ -30,12 +30,7 @@
 
 #include "struct-store.h"
 
-/* XXX - guard a bit against corruption via rogue pointers: map as
-         much of the file read-only as possible.  As soon as next
-         crosses a page boundary.
-
-   XXX - free unstored objects in all the right places.
-
+/* XXX - free unstored objects in all the right places.
  */
 
 /* Object layout 
@@ -212,11 +207,11 @@ ss_grow (ss_store *ss, size_t size)
 }
 
 static void
-ss_sync (ss_store *ss)
+ss_sync (ss_store *ss, uint32_t root_off)
 {
   uint32_t *start = ss->start + ss->head->len;
   uint32_t *end = ss->next;
-
+  
   if (end > start)
     {
       start = (uint32_t *)(((int)start) & ~4095);
@@ -226,12 +221,24 @@ ss_sync (ss_store *ss)
 
       if (msync (start, (end - start)*sizeof(uint32_t), MS_SYNC) <0)
 	ss_abort (ss, "Can't sync %s: %m", ss->filename);
-      ss->head->len = ss->next - ss->start;
-      ss->head->alloced = ss->alloced_words;
     }
+
+  if (mmap (ss->head, sizeof (struct ss_header), PROT_READ | PROT_WRITE, 
+	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
+      == MAP_FAILED)
+    ss_abort (ss, "Can't write-enable header of %s: %m", ss->filename);
+  
+  ss->head->len = ss->next - ss->start;
+  ss->head->alloced = ss->alloced_words;
+  ss->head->root = root_off;
 
   if (msync (ss->head, sizeof (struct ss_header), MS_ASYNC) < 0)
     ss_abort (ss, "Can't sync %s header: %m", ss->filename);
+
+  if (mmap (ss->head, sizeof (struct ss_header), PROT_READ, 
+	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
+      == MAP_FAILED)
+    ss_abort (ss, "Can't write-protect header of %s: %m", ss->filename);
 }
 
 ss_store *
@@ -241,7 +248,6 @@ ss_open (const char *filename, int mode,
   int fd;
   struct stat buf;
   int prot;
-  int create_header;
 
   ss_store *ss;
 
@@ -263,6 +269,18 @@ ss_open (const char *filename, int mode,
 
   if (ss->fd < 0)
     ss_abort (ss, "Can't open %s: %m", filename);
+
+  if (mode != SS_READ)
+    {
+      struct flock lock;
+      lock.l_type = F_WRLCK;
+      lock.l_whence = SEEK_SET;
+      lock.l_start = 0;
+      lock.l_len = sizeof (struct ss_header);
+
+      if (fcntl (ss->fd, F_SETLK, &lock) == -1)
+	ss_abort (ss, "Can't lock %s: %m", filename);
+    }
 
   if (mode == SS_READ)
     prot = PROT_READ;
@@ -312,7 +330,12 @@ ss_open (const char *filename, int mode,
 		  ss->filename, ss->head->version, SS_VERSION);
     }
 
-  ss->next = ss->start + ss->head->len;
+  ss->next = (uint32_t *)(((uint32_t)(ss->start + ss->head->len)+4095) & ~4095);
+
+  if (mmap (ss->head, (uint32_t)ss->next - (uint32_t)ss->head, PROT_READ, 
+	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
+      == MAP_FAILED)
+    ss_abort (ss, "Can't write-protect %s: %m", ss->filename);
 
   ss->next_store = all_stores;
   all_stores = ss;
@@ -367,12 +390,14 @@ ss_get_root (ss_store *ss)
 void
 ss_set_root (ss_store *ss, ss_val root)
 {
-  if (root == NULL || SS_IS_INT (root))
-    ss->head->root = (uint32_t)root;
-  else
-    ss->head->root = (char *)root - (char *)(ss->head);
+  uint32_t off;
 
-  ss_sync (ss);
+  if (root == NULL || SS_IS_INT (root))
+    off = (uint32_t)root;
+  else
+    off = (char *)root - (char *)(ss->head);
+
+  ss_sync (ss, off);
 }
 
 /* Allocating new objects.
