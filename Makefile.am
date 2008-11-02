@@ -1,1 +1,1 @@
-SUBDIRS = struct-store
+SUBDIRS = libdpm struct-store 

@@ -216,9 +216,6 @@ ss_sync (ss_store *ss, uint32_t root_off)
     {
       start = (uint32_t *)(((int)start) & ~4095);
 
-      fprintf (stderr, 
-	       "SYNC %p - %d\n", start, (end - start)*sizeof(uint32_t));
-
       if (msync (start, (end - start)*sizeof(uint32_t), MS_SYNC) <0)
 	ss_abort (ss, "Can't sync %s: %m", ss->filename);
     }
@@ -830,12 +827,13 @@ ss_maybe_gc (ss_store *ss)
 {
   if (ss->head->alloced > ss->head->len / 10)
     {
-      fprintf (stderr, "Allocated %d words, garbage collecting\n", 
-		ss->head->alloced);
-      return ss_gc (ss);
+      fprintf (stderr, "(Garbage collecting...");
+      fflush (stderr);
+      ss = ss_gc (ss);
+      fprintf (stderr, ")\n");
     }
-  else
-    return ss;
+
+  return ss;
 }
 
 /* Small integers

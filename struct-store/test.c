@@ -18,7 +18,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
 #include <struct-store.h>
+#include <dpm.h>
 
 void
 usage ()
@@ -53,7 +55,7 @@ init (const char *file, int mode)
   file_packages_dict = ss_dict_init (store, (len > 2)? ss_ref (r, 2) : NULL,
 				     SS_DICT_STRONG);
   package_info_dict = ss_dict_init (store, (len > 2)? ss_ref (r, 3) : NULL,
-				    SS_DICT_WEAK_KEYS);
+				    SS_DICT_STRONG);
 }
 
 void
@@ -67,8 +69,7 @@ finish (int mode)
 			 ss_dict_finish (file_packages_dict),
 			 ss_dict_finish (package_info_dict));
       ss_set_root (store, r);
-      // ss_close (ss_maybe_gc (store));
-      ss_close (store);
+      ss_close (ss_maybe_gc (store));
     }
   else
     ss_close (store);
@@ -78,7 +79,7 @@ ss_val
 intern (const char *str)
 {
   if (str)
-    return ss_tab_intern_blob (table, strlen (str) + 1, (void *)str);
+    return ss_tab_intern_blob (table, strlen (str), (void *)str);
   else
     return NULL;
 }
@@ -87,15 +88,15 @@ ss_val
 intern_soft (const char *str)
 {
   if (str)
-    return ss_tab_intern_soft (table, strlen (str) + 1, (void *)str);
+    return ss_tab_intern_soft (table, strlen (str), (void *)str);
   else
     return NULL;
 }
 
-char *
-string (ss_val blob)
+void
+print_blob (ss_val v)
 {
-  return (char *)ss_blob_start (blob);
+  printf ("%.*s", ss_len (v), ss_blob_start (v));
 }
 
 ss_val
@@ -139,7 +140,10 @@ rem_list (ss_val pkg)
 	  ss_val file = ss_ref (files, i);
 	  ss_dict_del (file_packages_dict, file, pkg);
 	}
-      printf ("%s: removed %d files\n", string (pkg), len);
+#if 0
+      print_blob (pkg);
+      printf (": removed %d files\n", len);
+#endif
     }
 
   ss_dict_set (package_files_dict, pkg, NULL);
@@ -159,7 +163,8 @@ set_list (ss_val pkg, char *file)
   rem_list (pkg);
 
   if (file == NULL)
-    asprintf (&file, "/var/lib/dpkg/info/%s.list", string (pkg));
+    asprintf (&file, "/var/lib/dpkg/info/%.*s.list",
+	      ss_len (pkg), ss_blob_start (pkg));
 
   n = 0;
   f = fopen (file, "r");
@@ -182,15 +187,18 @@ set_list (ss_val pkg, char *file)
       fclose (f);
     }
 
-  printf ("%s: added %d files\n", string (pkg), n);
+#if 0
+  print_blob (pkg);
+  printf (": added %d files\n", n);
+#endif
+
   ss_dict_set (package_files_dict, pkg, ss_newv (store, 0, n, lines));
 }
 
 void
-set_info (ss_val pkg, char *info)
+set_info (ss_val pkg, ss_val info)
 {
-  ss_dict_set (package_info_dict, pkg,
-	       ss_blob_new (store, strlen (info)+1, info));
+  ss_dict_set (package_info_dict, pkg, info);
 }
 
 void
@@ -230,20 +238,105 @@ grep_blob (ss_val val, void *data)
 void
 dump_package (ss_val key, ss_val val, void *data)
 {
-  printf ("%s: %d files\n", string (key), ss_len (val));
+  print_blob (key);
+  printf (": %d files\n", ss_len (val));
 }
 
 void
-dump_package_info (ss_val pkg)
+dump_package_info (ss_val pkg, const char *field)
 {
   ss_val info = ss_dict_get (package_info_dict, pkg);
-  printf ("%s: %s\n", string (pkg), info? string (info) : NULL);
+  if (info)
+    {
+      if (field)
+	{
+	  ss_val key = intern_soft (field);
+	  int n = ss_len (info), i;
+	  for (i = 0; i < n; i += 2)
+	    {
+	      if (ss_ref (info, i) == key)
+		{
+		  print_blob (ss_ref (info, i+1));
+		  printf ("\n");
+		}
+	    }
+	}
+      else
+	{
+	  int n = ss_len (info), i;
+	  for (i = 0; i < n; i += 2)
+	    {
+	      print_blob (ss_ref (info, i));
+	      printf (": ");
+	      print_blob (ss_ref (info, i+1));
+	      printf ("\n");
+	    }
+	}
+    }
 }
 
 void
 dump_file (ss_val key, ss_val val, void *data)
 {
   printf ("%.*s\n", ss_len (key), ss_blob_start (key));
+}
+
+ss_val
+parse_intern (dpm_parse_state *ps)
+{
+  return ss_tab_intern_blob (table,
+			     dpm_parse_len (ps), (void *)dpm_parse_start (ps));
+}
+
+ss_val package_key = NULL;
+
+typedef struct {
+  ss_val pkg;
+  ss_val info[512];
+  int n;
+} parse_data;
+
+void
+header (dpm_parse_state *ps,
+	const char *name, int name_len,
+	const char *value, int value_len,
+	void *data)
+{
+  parse_data *pd = (parse_data *)data;
+
+  pd->info[pd->n]   = ss_tab_intern_blob (table, name_len, (void *)name);
+  pd->info[pd->n+1] = ss_blob_new (store, value_len, (void *)value);
+
+  if (pd->info[pd->n] == package_key)
+    pd->pkg = ss_tab_intern (table, pd->info[pd->n+1]);
+
+  pd->n += 2;
+  if (pd->n > 511)
+    dpm_parse_abort (ps, "too many fields");
+}
+
+int
+parse_package_stanza (dpm_parse_state *ps, ss_val *pkg, ss_val *pkg_info)
+{
+  parse_data pd;
+
+  if (package_key == NULL)
+    package_key = intern ("Package");
+
+  pd.n = 0;
+  pd.pkg = NULL;
+
+  if (dpm_parse_header (ps, header, &pd))
+    {
+      if (pd.pkg == NULL)
+	dpm_parse_abort (ps, "stanza without package");
+
+      *pkg = pd.pkg;
+      *pkg_info = ss_newv (store, 0, pd.n, pd.info);
+      return 1;
+    }
+  else
+    return 0;
 }
 
 int
@@ -261,7 +354,6 @@ main (int argc, char **argv)
       while (argc > 3)
 	{
 	  set_list (intern (argv[3]), NULL);
-	  set_info (intern (argv[3]), "INFO");
 	  argc--;
 	  argv++;
 	}
@@ -341,7 +433,9 @@ main (int argc, char **argv)
 	{
 	  ss_val pkg = intern_soft (argv[3]);
 	  if (pkg)
-	    dump_package_info (pkg);
+	    dump_package_info (pkg, argv[4]);
+	  else
+	    printf ("%s not found\n", argv[3]);
 	}
 
       finish (SS_READ);
@@ -361,6 +455,24 @@ main (int argc, char **argv)
       ss_dict_foreach (file_packages_dict, dump_file, NULL);
 
       finish (SS_READ);
+    }
+  else if (strcmp (argv[1], "import") == 0)
+    {
+      init (argv[2], SS_WRITE);
+
+      if (argc > 2)
+	{
+	  ss_val pkg, info;
+	  dpm_parse_state *ps = dpm_parse_open_file (argv[3], NULL);
+	  while (parse_package_stanza (ps, &pkg, &info))
+	    {
+	      set_info (pkg, info);
+	      set_list (pkg, NULL);
+	    }
+	  dpm_parse_close (ps);
+	}
+
+      finish (SS_WRITE);
     }
   else
     usage ();

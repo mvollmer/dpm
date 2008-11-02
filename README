@@ -41,3 +41,11 @@ packages), but only as a crutch: dpm will notice changes in
   also store a 'planned future', similar to apt's in-core depcache.
 
   It's called struct-store.
+
+- A nice simple library for parsing the file formats commonly
+  encountered with Debian packages.
+
+  Particularily files like /var/lib/dpkg/status and .deb archives, of
+  course.
+
+  Included in libdpm.
