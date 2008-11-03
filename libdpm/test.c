@@ -29,12 +29,35 @@ usage ()
 }
 
 void
-header (dpm_parse_state *ps,
-	const char *name, int name_len,
-	const char *value, int value_len,
-	void *data)
+control_field (dpm_parse_state *ps,
+	       const char *name, int name_len,
+	       const char *value, int value_len,
+	       void *data)
 {
   printf ("%.*s = >%.*s<\n", name_len, name, value_len, value);
+}
+
+void
+tar_member (dpm_parse_state *ps,
+	    const char *name,
+	    void *data)
+{
+  printf ("tar: %s\n", name);
+  if (strcmp (name, "./control") == 0)
+    dpm_parse_control (ps, control_field, NULL);
+}
+
+void
+ar_member (dpm_parse_state *ps,
+	const char *name,
+	void *data)
+{
+  if (strcmp (name, "control.tar.gz") == 0
+      || strcmp (name, "data.tar.gz") == 0)
+    {
+      dpm_parse_state *pp = dpm_parse_open_zlib (ps);
+      dpm_parse_tar (pp, tar_member, NULL);
+    }
 }
 
 int
@@ -46,8 +69,7 @@ main (int argc, char **argv)
     usage ();
 
   ps = dpm_parse_open_file (argv[1], NULL);
-  while (dpm_parse_header (ps, header, NULL))
-    printf ("- - - - - -\n");
+  dpm_parse_ar (ps, ar_member, NULL);
   dpm_parse_close (ps);
 
   return 0;

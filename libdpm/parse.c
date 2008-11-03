@@ -77,7 +77,7 @@ struct dpm_parse_state {
   void *stream;
 
   int bufstatic;
-  char *buf, *bufend;
+  char *buf, *bufend, *buflimit;
   int bufsize;
 
   char *start;
@@ -134,6 +134,7 @@ dpm_parse_new (dpm_parse_state *parent)
   ps->buf = NULL;
   ps->bufsize = 0;
   ps->bufend = ps->buf;
+  ps->buflimit = NULL;
 
   ps->start = ps->buf;
   ps->pos = ps->start;
@@ -157,6 +158,23 @@ dpm_parse_set_static_buffer (dpm_parse_state *ps, char *buf, int len)
 
   ps->start = ps->buf;
   ps->pos = ps->start;
+}
+
+void
+dpm_parse_push_limit (dpm_parse_state *ps, int len)
+{
+  if (ps->buflimit)
+    dpm_parse_abort (ps, "limit already set");
+  ps->buflimit = ps->pos + len;
+}
+
+void
+dpm_parse_pop_limit (dpm_parse_state *ps)
+{
+  if (!ps->buflimit)
+    dpm_parse_abort (ps, "limit not set");
+  dpm_parse_skip_n (ps, ps->buflimit - ps->pos);
+  ps->buflimit = NULL;
 }
 
 //#define BUFMASK 0xF
@@ -331,13 +349,10 @@ dpm_parse_try_grow (dpm_parse_state *ps, int n)
 	   ps->bufend - ps->buf);
 #endif
 
-  if (ps->pos + n > ps->bufend)
+  if (!ps->bufstatic && ps->pos + n > ps->bufend)
     {
       /* Need to read more input
        */
-
-      if (ps->bufstatic)
-	return ps->bufend - ps->pos;
 
       if (ps->pos + n - ps->start > ps->bufsize)
 	{
@@ -346,7 +361,9 @@ dpm_parse_try_grow (dpm_parse_state *ps, int n)
 	  int newsize = ((ps->pos + n - ps->start) + BUFMASK) & ~BUFMASK;
 	  char *newbuf = dpm_xmalloc (newsize);
 	  memcpy (newbuf, ps->start, ps->bufend - ps->start);
-	  ps->bufend = newbuf + (ps->bufend - ps->buf);
+	  ps->bufend = newbuf + (ps->bufend - ps->start);
+	  if (ps->buflimit)
+	    ps->buflimit = newbuf + (ps->buflimit - ps->start);
 	  ps->pos = newbuf + (ps->pos - ps->start);
 	  ps->start = newbuf;
 	  free (ps->buf);
@@ -360,6 +377,8 @@ dpm_parse_try_grow (dpm_parse_state *ps, int n)
 	  int d = ps->start - ps->buf;
 	  memcpy (ps->buf, ps->start, ps->bufend - ps->start);
 	  ps->bufend -= d;
+	  if (ps->buflimit)
+	    ps->buflimit -= d;
 	  ps->start -= d;
 	  ps->pos -= d;
 	}
@@ -389,7 +408,12 @@ dpm_parse_try_grow (dpm_parse_state *ps, int n)
 	   ps->bufend - ps->buf);
 #endif
 
-  return ps->bufend - ps->pos;
+  {
+    char *end = ps->bufend;
+    if (ps->buflimit && ps->buflimit < ps->bufend)
+      end = ps->buflimit;
+    return end - ps->pos;
+  }
 }
 
 int
@@ -480,12 +504,12 @@ dpm_parse_skip (dpm_parse_state *ps, const char *chars)
 
 
 int
-dpm_parse_header (dpm_parse_state *ps,
-		  void (*func) (dpm_parse_state *ps,
-				const char *name, int name_len,
-				const char *value, int value_len,
-				void *data),
-		  void *data)
+dpm_parse_control (dpm_parse_state *ps,
+		   void (*func) (dpm_parse_state *ps,
+				 const char *name, int name_len,
+				 const char *value, int value_len,
+				 void *data),
+		   void *data)
 {
   int in_header = 0;
 
@@ -543,4 +567,139 @@ dpm_parse_header (dpm_parse_state *ps,
     }
 
   return in_header;
+}
+
+typedef struct {
+  char name[16];
+  char mtime[12];
+  char uid[6];
+  char gid[6];
+  char mode[8];
+  char size[10];
+  char magic[2];
+} ar_header;
+
+void
+dpm_parse_ar (dpm_parse_state *ps,
+	      void (*func) (dpm_parse_state *ps,
+			    const char *member_name,
+			    void *data),
+	      void *data)
+{
+  dpm_parse_grow (ps, 8);
+  if (memcmp (dpm_parse_start (ps), "!<arch>\n", 8) != 0)
+    dpm_parse_abort (ps, "Not a deb file");
+  dpm_parse_skip_n (ps, 8);
+  dpm_parse_next (ps);
+
+  while (dpm_parse_try_grow (ps, sizeof (ar_header)) >= sizeof (ar_header))
+    {
+      int size, name_len;
+      char *name;
+      ar_header *head = (ar_header *)dpm_parse_start (ps);
+    
+      size = atoi (head->size);
+
+      if (size == 0)
+	dpm_parse_abort (ps, "huh?");
+
+      if (memcmp (head->name, "#1/", 3) == 0)
+	{
+	  dpm_parse_abort (ps, "long names not supported yet");
+	}
+      else
+	{
+	  name_len = sizeof (head->name);
+	  while (name_len > 0 && head->name[name_len-1] == ' ')
+	    name_len--;
+
+	  name = dpm_xmalloc (name_len + 1);
+	  memcpy (name, head->name, name_len);
+	  name[name_len] = 0;
+	}
+
+      dpm_parse_skip_n (ps, sizeof (ar_header));
+      dpm_parse_next (ps);
+
+      dpm_parse_push_limit (ps, size);
+      func (ps, name, data);
+      dpm_parse_pop_limit (ps);
+
+      if (size % 2)
+	dpm_parse_skip_n (ps, 1);
+      dpm_parse_next (ps);
+
+      free (name);
+    }
+}
+
+typedef struct {
+  char name[100];
+  char mode[8];
+  char userid[8];
+  char groupid[8];
+  char size[12];
+  char mtime[12];
+  char checksum[8];
+  char linkflag;
+  char linkname[100];
+  char magicnumber[8];
+  char username[32];
+  char groupname[32];
+  char major[8];
+  char minor[8];      
+} tar_header;
+
+void
+dpm_parse_tar (dpm_parse_state *ps,
+	       void (*func) (dpm_parse_state *ps,
+			     const char *member_name,
+			     void *data),
+	       void *data)
+{
+  char *name = NULL, *target = NULL;
+
+  while (dpm_parse_try_grow (ps, 1) > 0)
+    {
+      unsigned char *block;
+      tar_header *head;
+      int size, checksum, wantsum, i;
+
+      dpm_parse_grow (ps, 512);
+      block = (unsigned char *)dpm_parse_start (ps);
+      head = (tar_header *)block;
+
+      /* Compute checksum, pretending the checksum field itself is
+	 filled with blanks.
+       */
+      wantsum = strtol (head->checksum, NULL, 8);
+
+      checksum = 0;
+      for (i = 0; i < 512; i++)
+	checksum += block[i];
+      if (checksum == 0)
+	return;
+      for (i = 0; i < sizeof (head->checksum); i++)
+	checksum -= head->checksum[i];
+      checksum += ' '*sizeof (head->checksum);
+
+      if (checksum != wantsum)
+	dpm_parse_abort (ps, "checksum mismatch in tar header");
+
+      size = strtol (head->size, NULL, 8);
+
+      name = dpm_xstrdup (head->name);
+
+      // printf ("%c %s %d\n", head->linkflag, name, size);
+      dpm_parse_skip_n (ps, 512);
+      dpm_parse_next (ps);
+
+      dpm_parse_push_limit (ps, size);
+      func (ps, name, data);
+      dpm_parse_pop_limit (ps);
+      
+      dpm_parse_skip_n (ps, ((size + 511) & ~511) - size);
+      dpm_parse_next (ps);
+      free (name);
+    }
 }

@@ -326,7 +326,7 @@ parse_package_stanza (dpm_parse_state *ps, ss_val *pkg, ss_val *pkg_info)
   pd.n = 0;
   pd.pkg = NULL;
 
-  if (dpm_parse_header (ps, header, &pd))
+  if (dpm_parse_control (ps, header, &pd))
     {
       if (pd.pkg == NULL)
 	dpm_parse_abort (ps, "stanza without package");

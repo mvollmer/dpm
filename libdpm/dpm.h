@@ -55,16 +55,31 @@ void dpm_parse_next (dpm_parse_state *ps);
 int dpm_parse_try_grow (dpm_parse_state *ps, int len);
 int dpm_parse_grow (dpm_parse_state *ps, int n);
 
+void dpm_parse_push_limit (dpm_parse_state *ps, int len);
+void dpm_parse_pop_limit (dpm_parse_state *ps);
+
 int dpm_parse_find (dpm_parse_state *p, const char *delims);
 void dpm_parse_skip (dpm_parse_state *p, const char *chars);
 void dpm_parse_skip_n (dpm_parse_state *ps, int n);
 int dpm_parse_looking_at (dpm_parse_state *p, const char *str);
 
-int dpm_parse_header (dpm_parse_state *ps,
-		      void (*func) (dpm_parse_state *ps,
-				    const char *name, int name_len,
-				    const char *value, int value_len,
-				    void *data),
-		      void *data);
+int dpm_parse_control (dpm_parse_state *ps,
+		       void (*func) (dpm_parse_state *ps,
+				     const char *name, int name_len,
+				     const char *value, int value_len,
+				     void *data),
+		       void *data);
+
+void dpm_parse_ar (dpm_parse_state *ps,
+		   void (*func) (dpm_parse_state *ps,
+				 const char *member_name,
+				 void *data),
+		   void *data);
+
+void dpm_parse_tar (dpm_parse_state *ps,
+		    void (*func) (dpm_parse_state *ps,
+				  const char *member_name,
+				  void *data),
+		    void *data);
 
 #endif /* !DPM_H */
