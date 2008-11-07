@@ -29,7 +29,7 @@ usage ()
 }
 
 void
-control_field (dpm_parse_state *ps,
+control_field (dpm_stream *ps,
 	       const char *name, int name_len,
 	       const char *value, int value_len,
 	       void *data)
@@ -38,7 +38,7 @@ control_field (dpm_parse_state *ps,
 }
 
 void
-tar_member (dpm_parse_state *ps,
+tar_member (dpm_stream *ps,
 	    const char *name,
 	    void *data)
 {
@@ -48,14 +48,14 @@ tar_member (dpm_parse_state *ps,
 }
 
 void
-ar_member (dpm_parse_state *ps,
-	const char *name,
-	void *data)
+ar_member (dpm_stream *ps,
+	   const char *name,
+	   void *data)
 {
   if (strcmp (name, "control.tar.gz") == 0
       || strcmp (name, "data.tar.gz") == 0)
     {
-      dpm_parse_state *pp = dpm_parse_open_zlib (ps);
+      dpm_stream *pp = dpm_stream_open_zlib (ps);
       dpm_parse_tar (pp, tar_member, NULL);
     }
 }
@@ -63,14 +63,14 @@ ar_member (dpm_parse_state *ps,
 int
 main (int argc, char **argv)
 {
-  dpm_parse_state *ps;
+  dpm_stream *ps;
 
   if (argc < 2)
     usage ();
 
-  ps = dpm_parse_open_file (argv[1], NULL);
+  ps = dpm_stream_open_file (argv[1], NULL);
   dpm_parse_ar (ps, ar_member, NULL);
-  dpm_parse_close (ps);
+  dpm_stream_close (ps);
 
   return 0;
 }
