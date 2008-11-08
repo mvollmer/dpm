@@ -48,4 +48,8 @@ packages), but only as a crutch: dpm will notice changes in
   Particularily files like /var/lib/dpkg/status and .deb archives, of
   course.
 
-  Included in libdpm.
+  Included in libdpm, with a stream abstraction as well.
+
+- Importing the existing apt and dpkg state into a struct-store.
+
+  This includes defining the data structure of the store.
