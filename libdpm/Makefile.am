@@ -1,12 +1,13 @@
 lib_LTLIBRARIES = libdpm.la
 
-libdpm_la_SOURCES = dpm.h \
-		    util.h \
-		    store.h \
+libdpm_la_SOURCES = util.h \
 		    util.c \
+		    store.h \
+                    store.c \
+                    stream.h \
                     stream.c \
-                    parse.c \
-                    store.c
+                    parse.h \
+                    parse.c
 libdpm_la_LIBADD = -lz -lbz2
 
 noinst_PROGRAMS = test test-store store-tool

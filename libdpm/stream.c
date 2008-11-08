@@ -28,8 +28,8 @@
 #include <zlib.h>
 #include <bzlib.h>
 
-#include "dpm.h"
 #include "util.h"
+#include "stream.h"
 
 struct dpm_stream {
   dpm_stream *parent;

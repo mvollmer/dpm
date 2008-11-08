@@ -28,8 +28,9 @@
 
 #include <zlib.h>
 
-#include "dpm.h"
 #include "util.h"
+#include "stream.h"
+#include "parse.h"
 
 static int
 linear_whitespace_p (char c)
