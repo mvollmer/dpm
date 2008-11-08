@@ -54,3 +54,13 @@
 /libdpm/parse.o
 /libdpm/test
 /libdpm/test.o
+/libdpm/util.lo
+/libdpm/util.o
+/libdpm/test-store
+/libdpm/test-store.o
+/libdpm/stream.lo
+/libdpm/stream.o
+/libdpm/store.lo
+/libdpm/store.o
+/libdpm/store-tool
+/libdpm/store-tool.o

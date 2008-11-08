@@ -40,7 +40,7 @@ packages), but only as a crutch: dpm will notice changes in
   The store will of course store the current situation, but it might
   also store a 'planned future', similar to apt's in-core depcache.
 
-  It's called struct-store.
+  In libdpm, store.h
 
 - A nice simple library for parsing the file formats commonly
   encountered with Debian packages.
@@ -48,8 +48,8 @@ packages), but only as a crutch: dpm will notice changes in
   Particularily files like /var/lib/dpkg/status and .deb archives, of
   course.
 
-  Included in libdpm, with a stream abstraction as well.
+  In libdpm, dpm.h
 
-- Importing the existing apt and dpkg state into a struct-store.
+- Importing the existing apt and dpkg state into a store.
 
   This includes defining the data structure of the store.
