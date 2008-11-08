@@ -5,7 +5,7 @@ libdpm_la_SOURCES = dpm.h \
 		    util.c \
                     stream.c \
                     parse.c
-libdpm_la_LIBADD = -lz
+libdpm_la_LIBADD = -lz -lbz2
 
 noinst_PROGRAMS = test
 

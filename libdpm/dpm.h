@@ -18,6 +18,8 @@
 #ifndef DPM_H
 #define DPM_H
 
+#include <sys/types.h>
+
 /* Streams
  *
  * This is a little abstraction for buffered I/O that can replace
@@ -47,6 +49,7 @@ dpm_stream *dpm_stream_open_file (const char *filename,
 				  dpm_stream_error_callback *on_error);
 dpm_stream *dpm_stream_open_string (const char *str, int len);
 dpm_stream *dpm_stream_open_zlib (dpm_stream *ps);
+dpm_stream *dpm_stream_open_bz2 (dpm_stream *ps);
 void dpm_stream_close_parent (dpm_stream *ps);
 
 void dpm_stream_on_error (dpm_stream *ps,
@@ -70,6 +73,7 @@ int dpm_stream_grow (dpm_stream *ps, int n);
 /* Higher level, safer */
 void dpm_stream_advance (dpm_stream *ps, int n);
 int dpm_stream_find (dpm_stream *p, const char *delims);
+int dpm_stream_find_after (dpm_stream *p, const char *delims);
 void dpm_stream_skip (dpm_stream *p, const char *chars);
 int dpm_stream_looking_at (dpm_stream *p, const char *str);
 
@@ -104,9 +108,32 @@ void dpm_parse_ar (dpm_stream *ps,
 				 void *data),
 		   void *data);
 
+typedef enum {
+  DPM_TAR_FILE = '0',
+  DPM_TAR_HARDLINK = '1',
+  DPM_TAR_SYMLINK = '2',
+  DPM_TAR_CHAR_DEVICE = '3',
+  DPM_TAR_BLOCK_DEVICE = '4',
+  DPM_TAR_DIRECTORY = '5',
+  DPM_TAR_FIFO = '6'
+} dpm_tar_type;
+
+typedef struct {
+  dpm_tar_type type;
+  char        *name;
+  char        *target;
+  mode_t       mode;
+  uid_t        uid;
+  gid_t        gid;
+  off_t        size;
+  time_t       mtime;
+  int          major;
+  int          minor;
+} dpm_tar_member;
+
 void dpm_parse_tar (dpm_stream *ps,
 		    void (*func) (dpm_stream *ps,
-				  const char *member_name,
+				  dpm_tar_member *info,
 				  void *data),
 		    void *data);
 

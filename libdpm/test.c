@@ -39,11 +39,14 @@ control_field (dpm_stream *ps,
 
 void
 tar_member (dpm_stream *ps,
-	    const char *name,
+	    dpm_tar_member *info,
 	    void *data)
 {
-  printf ("tar: %s\n", name);
-  if (strcmp (name, "./control") == 0)
+  printf ("%c %8d %5o %5d %5d %s -> %s\n", 
+	  info->type,
+	  info->size, info->mode, info->uid, info->gid,
+	  info->name, info->target);
+  if (strcmp (info->name, "./control") == 0)
     dpm_parse_control (ps, control_field, NULL);
 }
 
@@ -56,6 +59,11 @@ ar_member (dpm_stream *ps,
       || strcmp (name, "data.tar.gz") == 0)
     {
       dpm_stream *pp = dpm_stream_open_zlib (ps);
+      dpm_parse_tar (pp, tar_member, NULL);
+    }
+  else if (strcmp (name, "data.tar.bz2") == 0)
+    {
+      dpm_stream *pp = dpm_stream_open_bz2 (ps);
       dpm_parse_tar (pp, tar_member, NULL);
     }
 }

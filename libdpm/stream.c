@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 
 #include <zlib.h>
+#include <bzlib.h>
 
 #include "dpm.h"
 #include "util.h"
@@ -188,6 +189,11 @@ dpm_stream_open_file (const char *filename,
       ps = dpm_stream_open_zlib (ps);
       dpm_stream_close_parent (ps);
     }
+  else if (has_suffix (filename, ".bz2"))
+    {
+      ps = dpm_stream_open_bz2 (ps);
+      dpm_stream_close_parent (ps);
+    }
 
   return ps;
 }
@@ -225,24 +231,31 @@ dpm_zlib_read (dpm_stream *ps, char *buf, int n)
 {
   dpm_stream *pp = ps->parent;
   z_stream *stream = (z_stream *)ps->stream;
-  int avail, ret;
+  int ret;
 
-  avail = dpm_stream_try_grow (pp, 1);
-  
-  if (avail == 0)
-    return 0;
-
-  stream->avail_in = avail;
-  stream->next_in = (char *)dpm_stream_start (pp);
-  stream->avail_out = n;
   stream->next_out = buf;
+  stream->avail_out = n;
 
-  ret = inflate (stream, Z_NO_FLUSH);
-  if (ret != Z_OK && ret != Z_STREAM_END)
-    dpm_stream_abort (ps, zerr (ret), ret);
+  /* Loop until we have produced some output */
+  while (stream->avail_out == n)
+    {
+      /* Get more input if needed. */
+      if (stream->avail_in == 0)
+	{
+	  dpm_stream_next (pp);
+	  dpm_stream_advance (pp, dpm_stream_try_grow (pp, 1));
+	  stream->next_in = dpm_stream_start (pp);
+	  stream->avail_in = dpm_stream_len (pp);
+	}
 
-  dpm_stream_advance (pp, avail - stream->avail_in);
-  dpm_stream_next (pp);
+      /* Make some progress */
+      ret = inflate (stream, Z_NO_FLUSH);
+      if (ret != Z_OK && ret != Z_STREAM_END)
+	dpm_stream_abort (ps, zerr (ret), ret);
+
+      if (ret == Z_STREAM_END)
+	break;
+    }
 
   return n - stream->avail_out;
 }
@@ -276,6 +289,80 @@ dpm_stream_open_zlib (dpm_stream *parent)
   ret = inflateInit2 (stream, 32+15);
   if (ret != Z_OK)
     dpm_stream_abort (ps, zerr (ret), ret);
+
+  return ps;
+}
+
+static const char *
+bzerr (int ret)
+{
+  switch (ret) 
+    {
+    default:
+      return "bz2 error %d";
+    }
+}
+
+static int
+dpm_bz2_read (dpm_stream *ps, char *buf, int n)
+{
+  dpm_stream *pp = ps->parent;
+  bz_stream *stream = (bz_stream *)ps->stream;
+  int ret;
+
+  stream->next_out = buf;
+  stream->avail_out = n;
+
+  /* Loop until we have produced some output */
+  while (stream->avail_out == n)
+    {
+      /* Get more input if needed. */
+      if (stream->avail_in == 0)
+	{
+	  dpm_stream_next (pp);
+	  dpm_stream_advance (pp, dpm_stream_try_grow (pp, 1));
+	  stream->next_in = dpm_stream_start (pp);
+	  stream->avail_in = dpm_stream_len (pp);
+	}
+
+      /* Make some progress */
+      ret = BZ2_bzDecompress (stream);
+      if (ret != BZ_OK && ret != BZ_STREAM_END)
+	dpm_stream_abort (ps, bzerr (ret), ret);
+
+      if (ret == BZ_STREAM_END)
+	break;
+    }
+
+  return n - stream->avail_out;
+}
+
+static void
+dpm_bz2_close (void *stream)
+{
+  bz_stream *bz = (bz_stream *)stream;
+  BZ2_bzDecompressEnd (bz);
+  free (bz);
+}
+
+dpm_stream *
+dpm_stream_open_bz2 (dpm_stream *parent)
+{
+  dpm_stream *ps = dpm_stream_new (parent);
+  bz_stream *stream = dpm_xmalloc (sizeof (bz_stream));
+  int ret;
+
+  ps->stream = stream;
+  ps->read = dpm_bz2_read;
+  ps->close = dpm_bz2_close;
+
+  stream->bzalloc = NULL;
+  stream->bzfree = NULL;
+  stream->opaque = NULL;
+
+  ret = BZ2_bzDecompressInit (stream, 0, 0);
+  if (ret != BZ_OK)
+    dpm_stream_abort (ps, bzerr (ret), ret);
 
   return ps;
 }
@@ -455,6 +542,13 @@ dpm_stream_find (dpm_stream *ps, const char *delims)
       if (ptr < end)
 	return 1;
     }
+}
+
+int
+dpm_stream_find_after (dpm_stream *ps, const char *delims)
+{
+  if (dpm_stream_find (ps, delims))
+    dpm_stream_advance (ps, 1);
 }
 
 void

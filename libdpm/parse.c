@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <limits.h>
 
 #include <sys/fcntl.h>
 #include <sys/stat.h>
@@ -29,6 +30,83 @@
 
 #include "dpm.h"
 #include "util.h"
+
+static int
+linear_whitespace_p (char c)
+{
+  return c == ' ' || c == '\t';
+}
+
+static int
+whitespace_p (char c)
+{
+  return c == ' ' || c == '\t' || c == '\n';
+}
+
+static int
+decode_extended_value (char *value, int len)
+{
+  /* For all lines, the first space is removed. If after that a line
+     consists solely of a '.', that dot is removed as well.
+
+     XXX - skip trailing whitespace of lines.
+  */
+
+  char *src = value, *dst = value;
+  char *bol = src;
+
+  while (src < value + len)
+    {
+      if (src == bol && linear_whitespace_p (*src))
+	{
+	  src++;
+	  continue;
+	}
+
+      if (*src == '\n')
+	{
+	  if (bol+2 == src
+	      && linear_whitespace_p (bol[0])
+	      && bol[1] == '.')
+	    dst--;
+	  bol = src + 1;
+	}
+
+      *dst++ = *src++;
+    }
+
+  return dst - value;
+}
+
+static void
+decode_value (char **value_ptr, int *value_len_ptr)
+{
+  char *value = *value_ptr, *rest;
+  int len = *value_len_ptr;
+
+  while (len > 0 && linear_whitespace_p (value[0]))
+    {
+      value++;
+      len--;
+    }
+
+  *value_ptr = value;
+  *value_len_ptr = len;
+
+  rest = memchr (value, '\n', len);
+  if (rest && rest < value+len-1)
+    {
+      int skip = rest + 1 - value;
+      *value_len_ptr = (decode_extended_value (rest + 1, len - skip)
+			+ skip);
+    }
+  else
+    {
+      while (len > 0 && whitespace_p (value[len-1]))
+	len--;
+      *value_len_ptr = len;
+    }
+}
 
 int
 dpm_parse_control (dpm_stream *ps,
@@ -40,9 +118,11 @@ dpm_parse_control (dpm_stream *ps,
 {
   int in_header = 0;
 
+  dpm_stream_next (ps);
+
  again:
-  if (dpm_stream_find (ps, ":\n")
-      || dpm_stream_len (ps) > 0)
+  while (dpm_stream_find (ps, ":\n")
+	 || dpm_stream_len (ps) > 0)
     {
       if (dpm_stream_len (ps) == 0)
 	{
@@ -52,14 +132,13 @@ dpm_parse_control (dpm_stream *ps,
 	    {
 	      dpm_stream_advance (ps, 1);
 	      dpm_stream_next (ps);
-	      goto again;
 	    }
 	  else
 	    return 1;
 	}
       else
 	{
-	  const char *name;
+	  char *name, *value;
 	  int name_len, value_off, value_len;
 
 	  if (!dpm_stream_looking_at (ps, ":"))
@@ -69,32 +148,65 @@ dpm_parse_control (dpm_stream *ps,
 	  name_len = dpm_stream_len (ps);
 
 	  dpm_stream_advance (ps, 1);
-	  dpm_stream_skip (ps, " \t");
 
 	  value_off = dpm_stream_len (ps);
 
-	  dpm_stream_find (ps, "\n");
-	  dpm_stream_advance (ps, 1);
+	  dpm_stream_find_after (ps, "\n");
 	  while (dpm_stream_looking_at (ps, " ")
 		 || dpm_stream_looking_at (ps, "\t"))
-	    {
-	      dpm_stream_find (ps, "\n");
-	      dpm_stream_advance (ps, 1);
-	    }
+	    dpm_stream_find_after (ps, "\n");
 
-	  value_len = dpm_stream_len (ps) - value_off - 1;
+	  value_len = dpm_stream_len (ps) - value_off;
 
 	  name = dpm_stream_start (ps);
-	  func (ps, name, name_len, name + value_off, value_len, data);
+	  value = name + value_off;
+	  decode_value (&value, &value_len);
+	  func (ps, name, name_len, value, value_len, data);
 
 	  dpm_stream_next (ps);
 	  in_header = 1;
-	  goto again;
 	}
     }
 
   return in_header;
 }
+
+static uintmax_t
+dpm_parse_uint (dpm_stream *ps,
+		const char *str, int len, int base,
+		uintmax_t max)
+{
+  uintmax_t val;
+  const char *ptr = str, *end = str + len;
+
+  while (ptr < end && whitespace_p (*ptr))
+    ptr++;
+  
+  val = 0;
+  while (ptr < end && *ptr >= '0' && *ptr < '0' + base)
+    {
+      uintmax_t old = val;
+      val = val * base + *ptr - '0';
+      if (val < old)
+	goto out_of_range;
+      ptr++;
+    }
+  if (val > max)
+    {
+    out_of_range:
+      dpm_stream_abort (ps, "value out of range: %.*s", len, str);
+    }
+  
+  while (ptr < end && whitespace_p (*ptr))
+    ptr++;
+  
+  if (*ptr && ptr != end)
+    dpm_stream_abort (ps, "junk at end of number: %.*s", len, str);
+
+  return val;
+}
+
+#define OFF_T_MAX ((off_t)-1)
 
 typedef struct {
   char name[16];
@@ -121,11 +233,13 @@ dpm_parse_ar (dpm_stream *ps,
 
   while (dpm_stream_try_grow (ps, sizeof (ar_header)) >= sizeof (ar_header))
     {
-      int size, name_len;
+      off_t size;
       char *name;
+      int name_len;
       ar_header *head = (ar_header *)dpm_stream_start (ps);
     
-      size = atoi (head->size);
+      size = dpm_parse_uint (ps, head->size, sizeof (head->size), 10, 
+			     OFF_T_MAX);
 
       if (size == 0)
 	dpm_stream_abort (ps, "huh?");
@@ -179,17 +293,20 @@ typedef struct {
 void
 dpm_parse_tar (dpm_stream *ps,
 	       void (*func) (dpm_stream *ps,
-			     const char *member_name,
+			     dpm_tar_member *info,
 			     void *data),
 	       void *data)
 {
-  char *name = NULL, *target = NULL;
+  dpm_tar_member info;
+
+  info.name = NULL;
+  info.target = NULL;
 
   while (dpm_stream_try_grow (ps, 1) > 0)
     {
       unsigned char *block;
       tar_header *head;
-      int size, checksum, wantsum, i;
+      int checksum, wantsum, i;
 
       dpm_stream_grow (ps, 512);
       block = (unsigned char *)dpm_stream_start (ps);
@@ -198,7 +315,9 @@ dpm_parse_tar (dpm_stream *ps,
       /* Compute checksum, pretending the checksum field itself is
 	 filled with blanks.
        */
-      wantsum = strtol (head->checksum, NULL, 8);
+      wantsum = dpm_parse_uint (ps,
+				head->checksum, sizeof (head->checksum), 8,
+				INT_MAX);
 
       checksum = 0;
       for (i = 0; i < 512; i++)
@@ -212,20 +331,69 @@ dpm_parse_tar (dpm_stream *ps,
       if (checksum != wantsum)
 	dpm_stream_abort (ps, "checksum mismatch in tar header");
 
-      size = strtol (head->size, NULL, 8);
+      info.size  = dpm_parse_uint (ps,
+				   head->size, sizeof (head->size), 8,
+				   OFF_T_MAX);
+      info.mode  = dpm_parse_uint (ps,
+				   head->mode, sizeof (head->mode), 8,
+				   INT_MAX);
+      info.uid   = dpm_parse_uint (ps,
+				   head->userid, sizeof (head->userid), 8,
+				   INT_MAX);
+      info.gid   = dpm_parse_uint (ps,
+				   head->groupid, sizeof (head->groupid), 8,
+				   INT_MAX);
+      info.mtime = dpm_parse_uint (ps,
+				   head->mtime, sizeof (head->mtime), 8,
+				   INT_MAX);
+      info.major = dpm_parse_uint (ps,
+				   head->major, sizeof (head->major), 8,
+				   INT_MAX);
+      info.minor = dpm_parse_uint (ps,
+				   head->minor, sizeof (head->minor), 8,
+				   INT_MAX);
 
-      name = dpm_xstrdup (head->name);
+      if (info.name == NULL)
+	info.name = dpm_xstrndup (head->name, sizeof (head->name));
+      if (info.target == NULL)
+	info.target = dpm_xstrndup (head->linkname, sizeof (head->linkname));
 
-      // printf ("%c %s %d\n", head->linkflag, name, size);
+      info.type = head->linkflag;
+      if (info.type == 0)
+	info.type = '0';
+
       dpm_stream_advance (ps, 512);
       dpm_stream_next (ps);
 
-      dpm_stream_push_limit (ps, size);
-      func (ps, name, data);
+      dpm_stream_push_limit (ps, info.size);
+
+      if (info.type == 'L')
+	{
+	  dpm_stream_advance (ps, info.size);
+	  info.name = dpm_xstrndup (dpm_stream_start (ps), info.size);
+	}
+      else if (info.type == 'K')
+	{
+	  dpm_stream_advance (ps, info.size);
+	  info.target = dpm_xstrndup (dpm_stream_start (ps), info.size);
+	}
+      else
+	func (ps, &info, data);
+
       dpm_stream_pop_limit (ps);
       
-      dpm_stream_advance (ps, ((size + 511) & ~511) - size);
+      dpm_stream_advance (ps, ((info.size + 511) & ~511) - info.size);
       dpm_stream_next (ps);
-      free (name);
+
+      if (info.type != 'L')
+	{
+	  free (info.name);
+	  info.name = NULL;
+	}
+      if (info.type != 'K')
+	{
+	  free (info.target);
+	  info.target = NULL;
+	}
     }
 }
