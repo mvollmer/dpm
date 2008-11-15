@@ -64,3 +64,7 @@
 /libdpm/store.o
 /libdpm/store-tool
 /libdpm/store-tool.o
+/libdpm/dyn.lo
+/libdpm/dyn.o
+/libdpm/test-dyn
+/libdpm/test-dyn.o

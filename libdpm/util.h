@@ -19,10 +19,14 @@
 #define DPM_UTIL_H
 
 #include <stddef.h>
+#include <stdarg.h>
 
 void *dpm_xmalloc (size_t size);
 void *dpm_xremalloc (void *old, size_t size);
 void *dpm_xstrdup (const char *str);
 void *dpm_xstrndup (const char *str, int n);
+
+char *dpm_sprintf (const char *fmt, ...);
+char *dpm_vsprintf (const char *fmt, va_list ap);
 
 #endif /* !DPM_UTIL_H */

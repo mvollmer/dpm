@@ -24,15 +24,19 @@
 
 #include "dpm.h"
 
+static void
+dpm_oom ()
+{
+  fprintf (stderr, "Out of memory.\n");
+  abort ();
+}
+
 void *
 dpm_xmalloc (size_t size)
 {
   void *mem = malloc (size);
   if (mem == NULL)
-    {
-      fprintf (stderr, "Out of memory.\n");
-      abort ();
-    }
+    dpm_oom ();
   return mem;
 }
 
@@ -41,10 +45,7 @@ dpm_xremalloc (void *old, size_t size)
 {
   void *mem = realloc (old, size);
   if (mem == NULL)
-    {
-      fprintf (stderr, "Out of memory.\n");
-      abort ();
-    }
+    dpm_oom ();
   return mem;
 }
 
@@ -71,9 +72,26 @@ dpm_xstrndup (const char *str, int n)
 
   dup = strndup (str, n);
   if (dup == NULL)
-    {
-      fprintf (stderr, "Out of memory.\n");
-      abort ();
-    }
+    dpm_oom ();
   return dup;
+}
+
+char *
+dpm_sprintf (const char *fmt, ...)
+{
+  char *result;
+  va_list ap;
+  va_start (ap, fmt);
+  result = dpm_vsprintf (fmt, ap);
+  va_end (ap);
+  return result;
+}
+
+char *
+dpm_vsprintf (const char *fmt, va_list ap)
+{
+  char *result;
+  if (vasprintf (&result, fmt, ap) < 0)
+    dpm_oom ();
+  return result;
 }

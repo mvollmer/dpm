@@ -416,7 +416,7 @@ main (int argc, char **argv)
       if (argc > 3)
 	{
 	  ss_val file = intern_soft (argv[3]);
-	  if (file)
+	  if (file && ss_dict_get (file_packages_dict, file))
 	    dump_packages (file);
 	  else
 	    ss_tab_foreach (table, grep_blob, argv[3]);

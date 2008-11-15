@@ -31,7 +31,8 @@
 #include "util.h"
 #include "store.h"
 
-/* XXX - free unstored objects in all the right places.
+/* XXX - better support for unstored objects, including some form of
+         garbage collection.
  */
 
 /* Object layout 
