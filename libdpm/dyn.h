@@ -52,6 +52,7 @@ typedef struct {
 
 void *dpm_dyn_get (dpm_dyn_var *var);
 void dpm_dyn_set (dpm_dyn_var *var, void *value);
+void dpm_dyn_let (dpm_dyn_var *var, void *value);
 
 void dpm_dyn_free (void *mem);
 

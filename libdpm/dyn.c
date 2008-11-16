@@ -53,7 +53,7 @@ typedef struct dpm_dyn_item {
   } val;
 } dpm_dyn_item;
 
-/* XXX - use thread local variables instead of globals.
+/* XXX - use a thread local variable instead of a global.
  */
 
 static dpm_dyn_item *windlist;
@@ -117,6 +117,12 @@ dpm_dyn_get (dpm_dyn_var *var)
 
 void
 dpm_dyn_set (dpm_dyn_var *var, void *val)
+{
+  var->opaque[0] = val;
+}
+
+void
+dpm_dyn_let (dpm_dyn_var *var, void *val)
 {
   dpm_dyn_item *item = dpm_xmalloc (sizeof (dpm_dyn_item));
   item->kind = dpm_dyn_kind_var;
