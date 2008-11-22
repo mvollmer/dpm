@@ -174,7 +174,7 @@ dpm_dyn_throw (char *message)
 }
 
 void
-dpm_dyn_error (const char *fmt, ...)
+dpm_error (const char *fmt, ...)
 {
   char *message;
   va_list ap;

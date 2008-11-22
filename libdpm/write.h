@@ -15,14 +15,33 @@
  * along with this program.  If not, see http://www.gnu.org/licenses/.
  */
 
-#ifndef DPM_H
-#define DPM_H
+#ifndef DPM_WRITE_H
+#define DPM_WRITE_H
 
-#include "util.h"
-#include "dyn.h"
-#include "write.h"
-#include "stream.h"
-#include "parse.h"
+#include <stdio.h>
+#include <stdarg.h>
+
 #include "store.h"
 
-#endif /* !DPM_H */
+/* Convenient writing of struct-store values and other things.
+
+   These functions use the familiar printf-style formatting codes, but
+   they use a much smaller set:
+
+   %s -- nul-terminated string, char *
+   %S -- nul-terminated string, char *, quoted
+   %d -- decimal signed integer, int
+   %v -- store value, dispatches
+   %V -- store value, quoted, dispatches
+
+ */
+
+void dpm_write (FILE *, const char *fmt, ...);
+void dpm_writev (FILE *, const char *fmt, va_list ap);
+
+void dpm_print (const char *fmt, ...);
+
+void dpm_register_tag_writer (int tag,
+			      void (*func) (FILE *, ss_val, int quoted));
+
+#endif /* !DPM_WRITE_H */

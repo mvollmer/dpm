@@ -6,7 +6,7 @@ void
 process (void *data)
 {
   dpm_dyn_set (&var, "ho");
-  dpm_dyn_error ("nothing to do for %s", dpm_dyn_get (&var));
+  dpm_error ("nothing to do for %s", dpm_dyn_get (&var));
 }
 
 int

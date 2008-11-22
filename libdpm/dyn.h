@@ -59,6 +59,6 @@ void dpm_dyn_free (void *mem);
 char *dpm_dyn_catch (void (*func) (void *data), void *data);
 
 void dpm_dyn_throw (char *message);
-void dpm_dyn_error (const char *fmt, ...);
+void dpm_error (const char *fmt, ...);
 
 #endif /* !DPM_DYN_H */

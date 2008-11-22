@@ -4,6 +4,8 @@ libdpm_la_SOURCES = util.h    \
 		    util.c    \
 		    dyn.h     \
                     dyn.c     \
+		    write.h   \
+                    write.c   \
 		    store.h   \
                     store.c   \
                     stream.h  \

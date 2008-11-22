@@ -19,7 +19,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "store.h"
 #include "dpm.h"
 
 void
@@ -140,10 +139,7 @@ rem_list (ss_val pkg)
 	  ss_val file = ss_ref (files, i);
 	  ss_dict_del (file_packages_dict, file, pkg);
 	}
-#if 0
-      print_blob (pkg);
-      printf (": removed %d files\n", len);
-#endif
+      dpm_print ("%v: removed %d files\n", pkg, len);
     }
 
   ss_dict_set (package_files_dict, pkg, NULL);
@@ -163,8 +159,8 @@ set_list (ss_val pkg, char *file)
   rem_list (pkg);
 
   if (file == NULL)
-    asprintf (&file, "/var/lib/dpkg/info/%.*s.list",
-	      ss_len (pkg), ss_blob_start (pkg));
+    file = dpm_sprintf ("/var/lib/dpkg/info/%.*s.list",
+			ss_len (pkg), ss_blob_start (pkg));
 
   n = 0;
   f = fopen (file, "r");
@@ -187,10 +183,7 @@ set_list (ss_val pkg, char *file)
       fclose (f);
     }
 
-#if 0
-  print_blob (pkg);
-  printf (": added %d files\n", n);
-#endif
+  dpm_print ("%v: added %d files\n", pkg, n);
 
   ss_dict_set (package_files_dict, pkg, ss_newv (store, 0, n, lines));
 }
@@ -204,13 +197,7 @@ set_info (ss_val pkg, ss_val info)
 void
 dump_entry (ss_val key, ss_val val, void *data)
 {
-  if (ss_is_blob (val))
-    printf ("%.*s: %.*s\n",
- 	    ss_len (key), ss_blob_start (key),
-	    ss_len (val), ss_blob_start (val));
-  else
-    printf ("%.*s: %p\n",
- 	    ss_len (key), ss_blob_start (key), val);
+  dpm_print ("%v: %v\n", key, val);
 }
 
 void
@@ -219,13 +206,13 @@ dump_packages (ss_val file)
   ss_val packages = ss_dict_get (file_packages_dict, file);
   int len = packages? ss_len (packages) : 0, i;
 
-  printf ("%.*s:", ss_len (file), ss_blob_start (file));
+  dpm_print ("%v:", file);
   for (i = 0; i < len; i++)
     {
       ss_val pkg = ss_ref (packages, i);
-      printf (" %.*s", ss_len (pkg), ss_blob_start (pkg));
+      dpm_print (" %v", pkg);
     }
-  printf ("\n");
+  dpm_print ("\n");
 }
 
 void
@@ -238,8 +225,7 @@ grep_blob (ss_val val, void *data)
 void
 dump_package (ss_val key, ss_val val, void *data)
 {
-  print_blob (key);
-  printf (": %d files\n", ss_len (val));
+  dpm_print ("%v: %d files\n", key, ss_len (val));
 }
 
 void
@@ -255,22 +241,14 @@ dump_package_info (ss_val pkg, const char *field)
 	  for (i = 0; i < n; i += 2)
 	    {
 	      if (ss_ref (info, i) == key)
-		{
-		  print_blob (ss_ref (info, i+1));
-		  printf ("\n");
-		}
+		dpm_print ("%v\n", ss_ref (info, i+1));
 	    }
 	}
       else
 	{
 	  int n = ss_len (info), i;
 	  for (i = 0; i < n; i += 2)
-	    {
-	      print_blob (ss_ref (info, i));
-	      printf (": ");
-	      print_blob (ss_ref (info, i+1));
-	      printf ("\n");
-	    }
+	    dpm_print ("%v: %v\n", ss_ref (info, i), ss_ref (info, i+1));
 	}
     }
 }
@@ -278,7 +256,7 @@ dump_package_info (ss_val pkg, const char *field)
 void
 dump_file (ss_val key, ss_val val, void *data)
 {
-  printf ("%.*s\n", ss_len (key), ss_blob_start (key));
+  dpm_print ("%v\n", key);
 }
 
 ss_val
@@ -394,13 +372,14 @@ main (int argc, char **argv)
 	{
 	  int i;
 
-	  ss_val files = ss_dict_get (package_files_dict, intern_soft (argv[3]));
+	  ss_val files = ss_dict_get (package_files_dict,
+				      intern_soft (argv[3]));
 	  if (files)
 	    {
 	      for (i = 0; i < ss_len (files); i++)
 		{
 		  ss_val b = ss_ref (files, i);
-		  printf ("%.*s\n", ss_len (b), ss_blob_start (b));
+		  dpm_print ("%v\n", b);
 		}
 	    }
 	  else
@@ -466,7 +445,7 @@ main (int argc, char **argv)
 	  while (parse_package_stanza (ps, &pkg, &info))
 	    {
 	      set_info (pkg, info);
-	      set_list (pkg, NULL);
+	      // set_list (pkg, NULL);
 	    }
 	  dpm_stream_close (ps);
 	}

@@ -37,18 +37,26 @@
    different from the list of files in the package), etc.  The status
    is not available in a single record, it is too volatile for this.
    Instead, a set of accessor functions is used to maintain it.
+
+   
+   Most functions work on the 'current database'.  The current
+   database is kept in a dynamic variable, and can thus be controlled
+   with dpm_dyn_begin and dpm_dyn_end.
  */
 
-typedef struct dpm_db dpm_db;
+void dpm_db_begin ();
+void dpm_db_checkpoint ();
+void dpm_db_end ();
 
-dpm_db *dpm_db_open (const char *filename);
-void dpm_db_checkpoint (dpm_db *db);
-void dpm_db_close (dpm_db *db);
+void dpm_db_import_apt_sources ();
 
-typedef ss_val dpm_pinfo;
+typedef ss_val dpm_package;
+typedef ss_val dpm_version;
+typedef ss_val dpm_vector;
 
-void dpm_db_set_avail (dpm_db *db, ss_val avail);
-void dpm_db_add_avail (dpm_db *db, dpm_pinfo pi);
-ss_val dpm_db_get_avail (dpm_db *db);
+dpm_package dpm_db_find_package (const char *name);
+dpm_vector  dpm_db_get_available (dpm_package pkg);
+
+ss_val dpm_db_get_field (dpm_version ver);
 
 #endif /* !DPM_DB_H */

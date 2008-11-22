@@ -68,3 +68,5 @@
 /libdpm/dyn.o
 /libdpm/test-dyn
 /libdpm/test-dyn.o
+/libdpm/write.lo
+/libdpm/write.o
