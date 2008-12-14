@@ -22,43 +22,43 @@
    dynamic extents, and useful global state.  Sadly, no garbage
    collection.  Maybe later.
 
-   The dpm_dyn_begin and dpm_dyn_end function delimit a dynamic
-   extent.  They need to be called in a strictly nested fashion.
-   Within a dynamic extent, you can register certain actions that
-   should be carried out when the dynamic extent ends.  This is useful
-   for cleanup actions.
+   The dyn_begin and dyn_end functions delimit a dynamic extent.  They
+   need to be called in a strictly nested fashion.  Within a dynamic
+   extent, you can register certain actions that should be carried out
+   when the dynamic extent ends.
 
-   Dynamic extents can also be use together with dynamic variables.  A
-   dynamic variable is like a thread local variable, but it will
+   Dynamic extents can also be used together with dynamic variables.
+   A dynamic variable is like a thread local variable, but it will
    revert to its previous value when a dynamic extent ends.
 
    You can directly return to an arbitrary point in the call stack
-   with dpm_dyn_throw and dpm_dyn_error.  These functions will return
-   control to the most recent scm_dyn_catch.  Such a catch point is
-   also delimited by dynamic extents.
-
-   Before returning control, all intervening dynammic extents are
-   ended.
+   with dyn_catch and dyn_throw.
  */
 
-void dpm_dyn_begin ();
-void dpm_dyn_end ();
+void dyn_begin ();
+void dyn_end ();
 
-void dpm_dyn_wind (void (*func) (int for_throw, void *data), void *data);
+void dyn_wind (void (*func) (int for_throw, void *data), void *data);
 
 typedef struct {
   void *opaque[1];
-} dpm_dyn_var;
+} dyn_var;
 
-void *dpm_dyn_get (dpm_dyn_var *var);
-void dpm_dyn_set (dpm_dyn_var *var, void *value);
-void dpm_dyn_let (dpm_dyn_var *var, void *value);
+void *dyn_get (dyn_var *var);
+void dyn_set (dyn_var *var, void *value);
+void dyn_let (dyn_var *var, void *value);
 
-void dpm_dyn_free (void *mem);
+void dyn_free (void *mem);
 
-char *dpm_dyn_catch (void (*func) (void *data), void *data);
+typedef struct {
+  const char *name;
+  void (*free) (void *value);
+  void (*uncaught) (void *value);
+} dyn_condition;
 
-void dpm_dyn_throw (char *message);
-void dpm_error (const char *fmt, ...);
+void *dyn_catch (dyn_condition *condition,
+		 void (*func) (void *data), void *data);
+
+void dyn_throw (dyn_condition *condition, void *value);
 
 #endif /* !DPM_DYN_H */

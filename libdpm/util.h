@@ -29,4 +29,11 @@ void *dpm_xstrndup (const char *str, int n);
 char *dpm_sprintf (const char *fmt, ...);
 char *dpm_vsprintf (const char *fmt, va_list ap);
 
+char *dpm_catch_error (void (*func) (void *data), void *data);
+void dpm_error (const char *fmt, ...);
+
+void dpm_let_error_context (char *(*func) (const char *message, int level,
+					   void *data),
+			    void *data);
+
 #endif /* !DPM_UTIL_H */

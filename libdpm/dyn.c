@@ -28,63 +28,66 @@
 #include "dyn.h"
 
 typedef enum {
-  dpm_dyn_kind_extent,
-  dpm_dyn_kind_func,
-  dpm_dyn_kind_var,
-  dpm_dyn_kind_catch
-} dpm_dyn_kind;
+  dyn_kind_extent,
+  dyn_kind_func,
+  dyn_kind_var,
+  dyn_kind_catch
+} dyn_kind;
 
-typedef struct dpm_dyn_item {
-  struct dpm_dyn_item *up;
-  dpm_dyn_kind kind;
+typedef struct dyn_item {
+  struct dyn_item *up;
+  dyn_kind kind;
   union {
     struct {
       void (*func) (int for_throw, void *data);
       void *data;
     } func;
     struct {
-      dpm_dyn_var *var;
+      dyn_var *var;
       void *oldval;
     } var;
     struct {
       jmp_buf *target;
-      char *message;
+      dyn_condition *condition;
+      void *value;
     } catch;
   } val;
-} dpm_dyn_item;
+} dyn_item;
 
 /* XXX - use a thread local variable instead of a global.
  */
 
-static dpm_dyn_item *windlist;
+static dyn_item *windlist;
 
 static void
-dpm_dyn_add (dpm_dyn_item *item)
+dyn_add (dyn_item *item)
 {
   item->up = windlist;
   windlist = item;
 }
 
 static void
-dpm_dyn_unwind (dpm_dyn_item *goal, int for_throw)
+dyn_unwind (dyn_item *goal, int for_throw)
 {
   while (windlist != goal)
     {
-      dpm_dyn_item *w = windlist;
+      dyn_item *w = windlist;
 
       switch (w->kind)
 	{
-	case dpm_dyn_kind_extent:
+	case dyn_kind_extent:
 	  break;
-	case dpm_dyn_kind_func:
+	case dyn_kind_func:
 	  w->val.func.func (for_throw, w->val.func.data);
 	  break;
-	case dpm_dyn_kind_var:
+	case dyn_kind_var:
 	  w->val.var.var->opaque[0] = w->val.var.oldval;
 	  break;
-	case dpm_dyn_kind_catch:
+	case dyn_kind_catch:
 	  free (w->val.catch.target);
-	  free (w->val.catch.message);
+	  if (w->val.catch.value
+	      && w->val.catch.condition->free)
+	    w->val.catch.condition->free (w->val.catch.value);
 	  break;
 	}
       windlist = w->up;
@@ -93,93 +96,120 @@ dpm_dyn_unwind (dpm_dyn_item *goal, int for_throw)
 }
 
 void
-dpm_dyn_begin ()
+dyn_begin ()
 {
-  dpm_dyn_item *item = dpm_xmalloc (sizeof (dpm_dyn_item));
-  item->kind = dpm_dyn_kind_extent;
-  dpm_dyn_add (item);
+  dyn_item *item = dpm_xmalloc (sizeof (dyn_item));
+  item->kind = dyn_kind_extent;
+  dyn_add (item);
 }
 
 void
-dpm_dyn_end ()
+dyn_end ()
 {
-  dpm_dyn_item *w = windlist;
-  while (w->kind != dpm_dyn_kind_extent)
+  dyn_item *w = windlist;
+  while (w->kind != dyn_kind_extent)
     w = w->up;
-  dpm_dyn_unwind (w->up, 0);
+  dyn_unwind (w->up, 0);
+}
+
+void
+dyn_wind (void (*func) (int for_throw, void *data), void *data)
+{
+  dyn_item *item = dpm_xmalloc (sizeof (dyn_item));
+  item->kind = dyn_kind_func;
+  item->val.func.func = func;
+  item->val.func.data = data;
+  dyn_add (item);
+}
+
+static void
+unwind_free (int for_throw, void *data)
+{
+  free (data);
+}
+
+void
+dyn_free (void *mem)
+{
+  dyn_wind (unwind_free, mem);
 }
 
 void *
-dpm_dyn_get (dpm_dyn_var *var)
+dyn_get (dyn_var *var)
 {
   return var->opaque[0];
 }
 
 void
-dpm_dyn_set (dpm_dyn_var *var, void *val)
+dyn_set (dyn_var *var, void *val)
 {
   var->opaque[0] = val;
 }
 
 void
-dpm_dyn_let (dpm_dyn_var *var, void *val)
+dyn_let (dyn_var *var, void *val)
 {
-  dpm_dyn_item *item = dpm_xmalloc (sizeof (dpm_dyn_item));
-  item->kind = dpm_dyn_kind_var;
+  dyn_item *item = dpm_xmalloc (sizeof (dyn_item));
+  item->kind = dyn_kind_var;
   item->val.var.var = var;
   item->val.var.oldval = var->opaque[0];
-  dpm_dyn_add (item);
+  dyn_add (item);
   var->opaque[0] = val;
 }
 
-char *
-dpm_dyn_catch (void (*func) (void *data), void *data)
+void *
+dyn_catch (dyn_condition *condition,
+	   void (*func) (void *data), void *data)
 {
-  dpm_dyn_item *item = dpm_xmalloc (sizeof (dpm_dyn_item));
-  item->kind = dpm_dyn_kind_catch;
+  dyn_item *item = dpm_xmalloc (sizeof (dyn_item));
+
+  item->kind = dyn_kind_catch;
   item->val.catch.target = dpm_xmalloc (sizeof (jmp_buf));
-  item->val.catch.message = NULL;
-  dpm_dyn_add (item);
-  if (setjmp (*(item->val.catch.target)))
+  item->val.catch.condition = condition;
+  item->val.catch.value = NULL;
+  dyn_add (item);
+
+  /* If we caught something, we leave our entry in the windlist so
+     that the value is freed later.  When we didn't catch anything, we
+     have to remove our entry so that dyn_throw doesn't think it is
+     still active.
+  */
+
+  if (setjmp (*(item->val.catch.target)) == 0)
     {
-      char *message = item->val.catch.message;
-      item->val.catch.message = NULL;
-      dpm_dyn_unwind (item->up, 1);
-      return message;
+      func (data);
+      dyn_unwind (item->up, 0);
+      return NULL;
     }
   else
     {
-      func (data);
-      return NULL;
+      dyn_unwind (item, 1);
+      return item->val.catch.value;
     }
 }
 
 void
-dpm_dyn_throw (char *message)
+dyn_throw (dyn_condition *condition, void *value)
 {
-  dpm_dyn_item *w = windlist;
-  while (w && (w->kind != dpm_dyn_kind_catch || !w->val.catch.target))
+  dyn_item *w = windlist;
+  while (w && (w->kind != dyn_kind_catch
+	       || w->val.catch.condition != condition
+	       || w->val.catch.value != NULL))
     w = w->up;
 
   if (w)
     {
-      w->val.catch.message = message;
+      w->val.catch.value = value;
       longjmp (*(w->val.catch.target), 1);
+    }
+  else if (condition->uncaught)
+    {
+      condition->uncaught (value);
+      exit (1);
     }
   else
     {
-      fprintf (stderr, "%s\n", message);
+      fprintf (stderr, "Uncaught condition '%s'\n", condition->name);
       exit (1);
     }
-}
-
-void
-dpm_error (const char *fmt, ...)
-{
-  char *message;
-  va_list ap;
-  va_start (ap, fmt);
-  message = dpm_vsprintf (fmt, ap);
-  va_end (ap);
-  dpm_dyn_throw (message);
 }

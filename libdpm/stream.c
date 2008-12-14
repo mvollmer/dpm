@@ -35,6 +35,7 @@ struct dpm_stream {
   dpm_stream *parent;
   int close_parent;
   char *filename;
+  int lineno;
   dpm_stream_error_callback *on_error;
 
   int (*read) (dpm_stream *ps, char *buf, int n);
@@ -91,6 +92,7 @@ dpm_stream_new (dpm_stream *parent)
   ps->parent = parent;
   ps->close_parent = 0;
   ps->filename = NULL;
+  ps->lineno = 0;
   ps->on_error = NULL;
   ps->read = NULL;
   ps->close = NULL;
@@ -140,6 +142,24 @@ dpm_stream_pop_limit (dpm_stream *ps)
     dpm_stream_abort (ps, "limit not set");
   dpm_stream_advance (ps, ps->buflimit - ps->pos);
   ps->buflimit = NULL;
+}
+
+void
+dpm_stream_count_lines (dpm_stream *stream)
+{
+  stream->lineno = 1;
+}
+
+int
+dpm_stream_lineno (dpm_stream *stream)
+{
+  return stream->lineno;
+}
+
+const char *
+dpm_stream_filename (dpm_stream *stream)
+{
+  return stream->filename;
 }
 
 //#define BUFMASK 0xF
@@ -503,6 +523,14 @@ dpm_stream_pos (dpm_stream *ps)
 void
 dpm_stream_set_pos (dpm_stream *ps, const char *pos)
 {
+  if (ps->lineno > 0)
+    {
+      char *p;
+      for (p = ps->pos; p < pos; p++)
+	if (*p == '\n')
+	  ps->lineno++;
+    }
+      
   ps->pos = (char *)pos;
 }
 
@@ -510,7 +538,7 @@ void
 dpm_stream_advance (dpm_stream *ps, int n)
 {
   dpm_stream_grow (ps, n);
-  ps->pos += n;
+  dpm_stream_set_pos (ps, ps->pos + n);
 }
 
 int

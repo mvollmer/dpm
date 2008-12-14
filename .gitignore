@@ -70,3 +70,7 @@
 /libdpm/test-dyn.o
 /libdpm/write.lo
 /libdpm/write.o
+/libdpm/test-conf
+/libdpm/test-conf.o
+/libdpm/conf.lo
+/libdpm/conf.o

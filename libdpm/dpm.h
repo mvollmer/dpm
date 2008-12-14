@@ -24,5 +24,6 @@
 #include "stream.h"
 #include "parse.h"
 #include "store.h"
+#include "conf.h"
 
 #endif /* !DPM_H */

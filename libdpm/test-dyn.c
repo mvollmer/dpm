@@ -1,12 +1,40 @@
-#include "dyn.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
 
-dpm_dyn_var var;
+#include "dyn.h"
+#include "util.h"
+
+dyn_var var;
+
+void
+my_free (void *value)
+{
+  fprintf (stderr, "freeing %p\n", value);
+  free (value);
+}
+
+dyn_condition error_cond = {
+ .name = "error",
+ .free = my_free
+};
+
+void
+error (const char *fmt, ...)
+{
+  char *message;
+  va_list ap;
+  va_start (ap, fmt);
+  message = dpm_vsprintf (fmt, ap);
+  va_end (ap);
+  dyn_throw (&error_cond, message);
+}
 
 void
 process (void *data)
 {
-  dpm_dyn_set (&var, "ho");
-  dpm_error ("nothing to do for %s", dpm_dyn_get (&var));
+  dyn_let (&var, "ho");
+  error ("nothing to do for %s", dyn_get (&var));
 }
 
 int
@@ -16,19 +44,16 @@ main ()
 
   while (n++ < 3)
     {
-      char *message;
+      void *ball;
 
-      dpm_dyn_begin ();
-      dpm_dyn_set (&var, "hi");
+      dyn_begin ();
+      dyn_set (&var, "hi");
 
-      if (message = dpm_dyn_catch (process, 0))
-	{
-	  printf ("caught: %s\n", message);
-	  free (message);
-	}
+      if (ball = dyn_catch (&error_cond, process, 0))
+	printf ("caught: %s\n", ball);
 
-      printf ("main %s\n", dpm_dyn_get (&var));
+      printf ("main %s\n", dyn_get (&var));
 
-      dpm_dyn_end ();
+      dyn_end ();
     }
 }

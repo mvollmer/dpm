@@ -18,39 +18,49 @@
 #ifndef DPM_CONF_H
 #define DPM_CONF_H
 
-/* Dpm is configured via a set of key/value pairs.
+#include "dyn.h"
+#include "stream.h"
 
-   There usually is a hierachical structure imposed on key names by
-   separating parts of the key name with ".", but that is mostly a
-   feature of the configuration file parser.
+typedef struct {
+  const char *name;
+  void (*free) (void *value);
+  void *(*parse) (const char *context, char **tokens);
+  void (*write) (FILE *, void *value);
+} dpm_conf_type;
 
-   The value of a key is a vector of strings, similar to command line
-   parameters.  There are a number of convenience functions to
-   interpret the strings as various data types, such as booleans or
-   numbers.
+extern dpm_conf_type dpm_conf_type_bool;
 
-   Usually, the strings undergo variable substitution: substrings of
-   the form "$key" or "${key}" are replaced with the strings of 'key'.
-   The "$key" form must appear alone as one string in the vector, and
-   the vector of strings of 'key' is spliced into the first vector in
-   its stead.  The "${key}" form can also appear in the middle of a
-   string: the substring is replaced with a new string, which is
-   constructed from the strings of 'key' by concatenating them with
-   spaces inbetween.  These substitutions are done at the time of
-   access, so that you always get the current values.  (But some
-   caching is done to avoid unnecessary computations.)
+typedef struct dpm_conf_declaration {
+  struct dpm_conf_declaration *next;
 
-   The key/value pairs are maintained as an ordered list.  You can add
-   to the beginning of that list, optionally under control of a
-   dynamic extent.
+  dyn_var *var;
+  const char *name;
+  dpm_conf_type *type;
+  const char *docstring;
+} dpm_conf_declaration;
 
-   When getting the value of a key, the first entry in the ordered
-   list with that key is used.  You can also enumerate all values for
-   a given key.  This is used to form lists of values.
+void dpm_conf_declare (dpm_conf_declaration *decl, const char *init);
+void dpm_conf_dump (void);
 
-   Instead of hard coding default values in the code for keys that are
-   not found in the configuration, you should provide the defaults by
-   setting a initial list of key/value pairs.
- */
+void dpm_conf_set (const char *name, char *value);
+void dpm_conf_setv (const char *name, char **tokens);
+
+void dpm_conf_let (const char *name, char *value);
+void dpm_conf_letv (const char *name, char **tokens);
+
+#define DPM_CONF_DECLARE(_sym,_name,_init,_type,_doc)			\
+  dyn_var _sym;								\
+  dpm_conf_declaration _sym##__decl = {					\
+    .var = &_sym,							\
+    .name = _name,							\
+    .type = &dpm_conf_type_##_type,					\
+    .docstring = _doc							\
+  };									\
+  __attribute__ ((constructor))						\
+  void									\
+  _sym##__declare ()							\
+  {									\
+    dpm_conf_declare (&_sym##__decl, _init);				\
+  }
 
 #endif /* !DPM_CONF_H */

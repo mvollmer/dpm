@@ -52,6 +52,10 @@ dpm_stream *dpm_stream_open_zlib (dpm_stream *ps);
 dpm_stream *dpm_stream_open_bz2 (dpm_stream *ps);
 void dpm_stream_close_parent (dpm_stream *ps);
 
+void dpm_stream_count_lines (dpm_stream *stream);
+int dpm_stream_lineno (dpm_stream *stream);
+const char *dpm_stream_filename (dpm_stream *stream);
+
 void dpm_stream_on_error (dpm_stream *ps,
 			  dpm_stream_error_callback *on_error);
 void dpm_stream_close (dpm_stream *ps);
