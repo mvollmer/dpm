@@ -60,6 +60,30 @@ dpm_conf_type dpm_conf_type_bool = {
   .write = dpm_conf_write_bool
 };
 
+void *
+dpm_conf_parse_string (const char *context, char **tokens)
+{
+  if (tokens[0] == NULL)
+    return NULL;
+  if (tokens[1] != NULL)
+    dpm_error ("Junk after value for %s: '%s'", context, tokens[1]);
+  return dpm_xstrdup (tokens[0]);
+}
+
+void
+dpm_conf_write_string (FILE *f, void *value)
+{
+  if (value)
+    dpm_write (f, "%S", (char *)value);
+}
+
+dpm_conf_type dpm_conf_type_string = {
+  .name = "string",
+  .free = NULL,
+  .parse = dpm_conf_parse_string,
+  .write = dpm_conf_write_string
+};
+
 static dpm_conf_declaration *conf_vars;
 
 void

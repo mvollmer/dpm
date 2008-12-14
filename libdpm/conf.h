@@ -29,6 +29,7 @@ typedef struct {
 } dpm_conf_type;
 
 extern dpm_conf_type dpm_conf_type_bool;
+extern dpm_conf_type dpm_conf_type_string;
 
 typedef struct dpm_conf_declaration {
   struct dpm_conf_declaration *next;
