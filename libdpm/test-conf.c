@@ -10,8 +10,11 @@ DPM_CONF_DECLARE (verbose, "verbose", "false", bool,
 DPM_CONF_DECLARE (debug, "debug", "false", bool,
 		  "Set this to true to enable debugging output.")	  
 
-int
-main ()
+DPM_CONF_DECLARE (architecture, "architecture", NULL, string,
+		  "The default architecture.")	  
+
+void
+doit (void *data)
 {
   dpm_conf_parse ("foo.conf");
   dpm_conf_dump ();
@@ -24,4 +27,15 @@ main ()
   dyn_end ();
 
   printf ("verbose: %d\n", dyn_get (&verbose));
+}
+
+int
+main ()
+{
+  char *error;
+
+  dyn_begin ();
+  if (error = dpm_catch_error (doit, NULL))
+    printf ("%s\n", error);
+  dyn_end ();
 }
