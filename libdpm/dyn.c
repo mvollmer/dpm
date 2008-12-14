@@ -182,10 +182,7 @@ dyn_catch (dyn_condition *condition,
       return NULL;
     }
   else
-    {
-      dyn_unwind (item, 1);
-      return item->val.catch.value;
-    }
+    return item->val.catch.value;
 }
 
 void
@@ -200,6 +197,7 @@ dyn_throw (dyn_condition *condition, void *value)
   if (w)
     {
       w->val.catch.value = value;
+      dyn_unwind (w, 1);
       longjmp (*(w->val.catch.target), 1);
     }
   else if (condition->uncaught)

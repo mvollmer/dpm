@@ -376,6 +376,8 @@ dpm_conf_parse (const char *filename)
       dpm_conf_store_token (&state);
 
       dpm_conf_parse_list (&state, 0);
+      state.tokens[state.n] = NULL;
+
       state.lineno = lineno;
       dpm_conf_setv (state.tokens[0], state.tokens + 1);
 
