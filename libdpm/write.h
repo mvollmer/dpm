@@ -33,6 +33,8 @@
    %d -- decimal signed integer, int
    %v -- store value, dispatches
    %V -- store value, quoted, dispatches
+   %c -- confval
+   %C -- confval, quoted
  */
 
 void dpm_write (FILE *, const char *fmt, ...);

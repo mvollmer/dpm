@@ -19,17 +19,32 @@
 #define DPM_DYN_H
 
 /* Some mild dynamic language features for C: non-local control flow,
-   dynamic extents, and useful global state.  Sadly, no garbage
-   collection.  Maybe later.
+   dynamic extents, dynamic variables, and a simple dynamic type
+   system with semi-automatic garbage collection.
+
+   Nothing of this is particularily efficient.  Especially lists are
+   horrible.  In fact, it's considerable less efficient than your
+   typical dynamic language implementation, so use this sparingly.
 
    The dyn_begin and dyn_end functions delimit a dynamic extent.  They
    need to be called in a strictly nested fashion.  Within a dynamic
    extent, you can register certain actions that should be carried out
    when the dynamic extent ends.
 
-   Dynamic extents can also be used together with dynamic variables.
    A dynamic variable is like a thread local variable, but it will
    revert to its previous value when a dynamic extent ends.
+
+   Dynamic variables store "dynamic values", values with dynamic
+   types.  A dynamic value can be nil, a string, a list, or a object.
+
+   Memory for these values is handled semi-automatically via reference
+   counting.  Refcounting works well with threads, is reasonably
+   incremental, doesn't need to be tuned, the overhead is deemed
+   tolerable for the mild use of this dynamic type system, and cycles
+   will simply not be allowed.  Yep, the easy way out.
+
+   A newly created dynamic value has a refcount of 1.  If the current
+   dynamic extent ends exceptionally (via a throw), it is unreffed.
 
    You can directly return to an arbitrary point in the call stack
    with dyn_catch and dyn_throw.
@@ -38,27 +53,53 @@
 void dyn_begin ();
 void dyn_end ();
 
-void dyn_wind (void (*func) (int for_throw, void *data), void *data);
+void dyn_on_unwind (void (*func) (int for_throw, void *data), void *data);
+
+struct dyn_type {
+  const char *name;
+  void (*unref) (struct dyn_type *type, void *object);
+};
+
+typedef struct dyn_type dyn_type;
+
+int dyn_type_register (dyn_type *type);
+
+typedef void *dyn_val;
+
+dyn_val *dyn_alloc (int tag, size_t size);
+dyn_val *dyn_ref (dyn_val val);
+void dyn_unref (dyn_val val);
+void dyn_unref_loc_on_unwind (dyn_val *var);
+
+int dyn_is_null (dyn_val *val);
+int dyn_is_string (dyn_val *val);
+int dyn_is_pair (dyn_val *val);
+int dyn_is_list (dyn_val *val);
+int dyn_is_object (dyn_val *val, dyn_type *type);
+
+const char *dyn_to_string (dyn_val *val);
+dyn_val *dyn_from_string (const char *str);
+
+dyn_val *dyn_first (dyn_val *val);
+dyn_val *dyn_rest (dyn_val *val);
+dyn_val *dyn_cons (dyn_val *first, dyn_val *rest);
 
 typedef struct {
-  void *opaque[1];
+  dyn_val *val;
 } dyn_var;
 
-void *dyn_get (dyn_var *var);
-void dyn_set (dyn_var *var, void *value);
-void dyn_let (dyn_var *var, void *value);
-
-void dyn_free (void *mem);
+dyn_val dyn_get (dyn_var *var);
+void dyn_set (dyn_var *var, dyn_val val);
+void dyn_let (dyn_var *var, dyn_val val);
 
 typedef struct {
   const char *name;
-  void (*free) (void *value);
-  void (*uncaught) (void *value);
+  void (*uncaught) (dyn_val value);
 } dyn_condition;
 
-void *dyn_catch (dyn_condition *condition,
-		 void (*func) (void *data), void *data);
-
-void dyn_throw (dyn_condition *condition, void *value);
+dyn_val dyn_catch (dyn_condition *condition,
+		   void (*func) (void *data), void *data);
+void dyn_throw (dyn_condition *condition, dyn_val value);
+void dyn_signal (dyn_condition *condition, dyn_val value);
 
 #endif /* !DPM_DYN_H */

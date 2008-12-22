@@ -13,6 +13,9 @@ DPM_CONF_DECLARE (debug, "debug", "false", bool,
 DPM_CONF_DECLARE (architecture, "architecture", NULL, string,
 		  "The default architecture.")	  
 
+DPM_CONF_DECLARE (source, "source", NULL, string_array,
+		  "The source.")	  
+
 void
 doit (void *data)
 {

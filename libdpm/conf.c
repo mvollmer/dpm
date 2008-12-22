@@ -27,30 +27,25 @@
 #include "util.h"
 #include "conf.h"
 
-static void
-dpm_conf_assert_one_token (const char *context, char **tokens)
-{
-  if (tokens[0] == NULL)
-    dpm_error ("Missing value for %s", context);
-  if (tokens[1] != NULL)
-    dpm_error ("Junk after value for %s: '%s'", context, tokens[1]);
-}
-
 void *
-dpm_conf_parse_bool (const char *context, char **tokens)
+dpm_conf_parse_bool (const char *context, dpm_confval val)
 {
-  dpm_conf_assert_one_token (context, tokens);
-  if (!strcmp (tokens[0], "true"))
+  if (!dpm_confval_is_string (val))
+    {
+    error:
+      dpm_error ("Unrecognized value for boolean %s: %C", context, val);
+    }
+  if (!strcmp (dpm_confval_string (val), "true"))
     return (void *)1;
-  if (!strcmp (tokens[0], "false"))
+  if (!strcmp (dpm_confval_string (val), "false"))
     return (void *)0;
-  dpm_error ("Unsupported value for boolean %s: %s", context, tokens[0]);
+  goto error;
 }
 
 void
 dpm_conf_write_bool (FILE *f, void *value)
 {
-  fprintf (f, "%s", (value? "true" : "false"));
+  fprintf (f, "%s", (value? " true" : " false"));
 }
 
 dpm_conf_type dpm_conf_type_bool = {
@@ -61,27 +56,70 @@ dpm_conf_type dpm_conf_type_bool = {
 };
 
 void *
-dpm_conf_parse_string (const char *context, char **tokens)
+dpm_conf_parse_string (const char *context, dpm_confval val)
 {
-  if (tokens[0] == NULL)
-    return NULL;
-  if (tokens[1] != NULL)
-    dpm_error ("Junk after value for %s: '%s'", context, tokens[1]);
-  return dpm_xstrdup (tokens[0]);
+  if (!dpm_confval_is_string (val))
+    dpm_error ("Not a single string for %s: %C", context, val);
+  return dpm_xstrdup (dpm_confval_string (val));
 }
 
 void
 dpm_conf_write_string (FILE *f, void *value)
 {
   if (value)
-    dpm_write (f, "%S", (char *)value);
+    dpm_write (f, " %S", (char *)value);
 }
 
 dpm_conf_type dpm_conf_type_string = {
   .name = "string",
-  .free = NULL,
+  .free = free,
   .parse = dpm_conf_parse_string,
   .write = dpm_conf_write_string
+};
+
+void
+dpm_conf_free_string_array (void *value)
+{
+  int i;
+  char **tokens = (char **)value;
+
+  for (i = 0; tokens[i]; i++)
+    free (tokens[i]);
+  free (tokens);
+}
+
+void *
+dpm_conf_parse_string_array (const char *context, char **tokens)
+{
+  char **copy;
+  int i, n;
+  
+  for (n = 0; tokens[n]; n++)
+    ;
+
+  copy = dpm_xmalloc (sizeof (char *) * (n+1));
+  for (i = 0; i < n; i++)
+    copy[i] = dpm_xstrdup (tokens[i]);
+  copy[i] = NULL;
+  
+  return (void *)copy;
+}
+
+void
+dpm_conf_write_string_array (FILE *f, void *value)
+{
+  int i;
+  char **tokens = (char **)value;
+
+  for (i = 0; tokens[i]; i++)
+    dpm_write (f, " %S", tokens[i]);
+}
+
+dpm_conf_type dpm_conf_type_string_array = {
+  .name = "string array",
+  .free = dpm_conf_free_string_array,
+  .parse = dpm_conf_parse_string_array,
+  .write = dpm_conf_write_string_array
 };
 
 static dpm_conf_declaration *conf_vars;
@@ -145,7 +183,7 @@ dpm_conf_dump ()
   for (conf = conf_vars; conf; conf = conf->next)
     {
       // printf ("# %s\n", conf->docstring);
-      printf ("%s ", conf->name);
+      printf ("%s", conf->name);
       conf->type->write (stdout, dyn_get (conf->var));
       printf ("\n");
     }

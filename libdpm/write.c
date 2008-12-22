@@ -26,6 +26,7 @@
 
 #include "util.h"
 #include "store.h"
+#include "conf.h"
 #include "write.h"
 
 void
@@ -110,6 +111,42 @@ dpm_write_store_val (FILE *f, ss_val val, int quoted)
     }
 }
 
+static void
+dpm_write_confval (FILE *f, dpm_confval val, int quoted)
+{
+  if (val == NULL)
+    {
+      fprintf (f, "{}");
+    }
+  else if (dpm_confval_is_string (val))
+    {
+      const char *str = dpm_confval_string (val);
+      if (quoted
+	  && (strchr (str, '{')
+	      || strchr (str, '}')
+	      || strchr (str, '"')
+	      || strchr (str, ' ')
+	      || strchr (str, '\t')
+	      || strchr (str, '\n')))
+	dpm_write_quoted (f, str, strlen (str));
+      else
+	fprintf (f, "%s", str);
+    }
+  else if (dpm_confval_is_list (val))
+    {
+      fprintf (f, "{ ");
+      while (val)
+	{
+	  dpm_write_confval (f, dpm_confval_first (val), quoted);
+	  fprintf (f, " ");
+	  val = dpm_confval_rest (val);
+	}
+      fprintf (f, " }");
+    }
+  else
+    fprintf (f, "?");
+}
+
 void
 dpm_writev (FILE *f, const char *fmt, va_list ap)
 {
@@ -144,6 +181,18 @@ dpm_writev (FILE *f, const char *fmt, va_list ap)
 	      {
 		ss_val v = va_arg (ap, ss_val);
 		dpm_write_store_val (f, v, 1);
+	      }
+	      break;
+	    case 'c':
+	      {
+		dpm_confval v = va_arg (ap, dpm_confval);
+		dpm_write_confval (f, v, 0);
+	      }
+	      break;
+	    case 'C':
+	      {
+		dpm_confval v = va_arg (ap, dpm_confval);
+		dpm_write_confval (f, v, 1);
 	      }
 	      break;
 	    }
