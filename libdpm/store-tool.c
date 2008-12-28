@@ -36,16 +36,15 @@ usage ()
 void
 cmd_gc (char *file)
 {
-  ss_store *ss = ss_open (file, SS_WRITE, NULL);
+  ss_store *ss = ss_open (file, SS_WRITE);
   
   ss = ss_gc (ss);
-  ss_close (ss);
 }
 
 void
 cmd_scan (char *file)
 {
-  ss_store *ss = ss_open (file, SS_READ, NULL);
+  ss_store *ss = ss_open (file, SS_READ);
   
   ss_scan_store (ss);
 }
@@ -111,7 +110,7 @@ dump_object (ss_store *ss, ss_val o)
 void
 cmd_dump (char *file)
 {
-  ss_store *ss = ss_open (file, SS_READ, NULL);
+  ss_store *ss = ss_open (file, SS_READ);
   
   dump_object (ss, ss_get_root (ss));
 }

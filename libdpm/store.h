@@ -18,6 +18,8 @@
 #ifndef DPM_STORE_H
 #define DPM_STORE_H
 
+#include "dyn.h"
+
 /* A struct-store is a file-backed region of memory.
 
    A struct-store is not portable across different architectures.
@@ -82,6 +84,8 @@
    data structures and algorithms.
  */
 
+extern dyn_type ss_store_type;
+
 struct ss_store;
 typedef struct ss_store ss_store;
 
@@ -91,11 +95,7 @@ typedef void ss_error_callback (ss_store *ss, const char *message);
 #define SS_WRITE 1
 #define SS_TRUNC 2
 
-ss_store *ss_open (const char *filename, int mode,
-		   ss_error_callback *on_error);
-void ss_close (ss_store *ss);
-
-void ss_abort (ss_store *ss, const char *fmt, ...);
+ss_store *ss_open (const char *filename, int mode);
 
 ss_store *ss_maybe_gc (ss_store *ss);
 ss_store *ss_gc (ss_store *ss);

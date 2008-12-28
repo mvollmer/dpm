@@ -46,7 +46,7 @@ init (const char *file, int mode)
   ss_val r;
   int len;
 
-  store = ss_open (file, mode, NULL);
+  store = ss_open (file, mode);
   r = ss_get_root (store);
   len = r? ss_len (r) : 0;
 
@@ -70,10 +70,8 @@ finish (int mode)
 			 ss_dict_finish (file_packages_dict),
 			 ss_dict_finish (package_info_dict));
       ss_set_root (store, r);
-      ss_close (ss_maybe_gc (store));
+      ss_maybe_gc (store);
     }
-  else
-    ss_close (store);
 }
 
 ss_val
@@ -447,7 +445,7 @@ main (int argc, char **argv)
 	  while (parse_package_stanza (ps, &pkg, &info))
 	    {
 	      set_info (pkg, info);
-	      // set_list (pkg, NULL);
+	      set_list (pkg, NULL);
 	    }
 	}
 

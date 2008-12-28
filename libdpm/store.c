@@ -31,6 +31,7 @@
 
 #include "util.h"
 #include "store.h"
+#include "dyn.h"
 
 /* XXX - better support for unstored objects, including some form of
          garbage collection.
@@ -105,11 +106,17 @@ struct ss_header {
 /* The ss_store type
  */
 
+static void ss_store_unref (dyn_type *, void *);
+
+dyn_type ss_store_type = {
+  .name = "struct-store",
+  .unref = ss_store_unref
+};
+
 struct ss_store {
   ss_store *next_store;
 
   char *filename;
-  ss_error_callback *on_error;
 
   int fd;
   size_t file_size;      // in bytes
@@ -121,30 +128,7 @@ struct ss_store {
   int alloced_words;
 };
 
-/* Aborting
- */
-
-void
-ss_abort (ss_store *ss, const char *fmt, ...)
-{
-  va_list ap;
-  char *message;
-
-  va_start (ap, fmt);
-  if (vasprintf (&message, fmt, ap) < 0)
-    message = NULL;
-  va_end (ap);
-
-  if (ss->on_error)
-    ss->on_error (ss, message);
-
-  fprintf (stderr, "%s\n", message);
-  free (message);
-  ss_close (ss);
-  abort ();
-}
-
-/* Opening and closing stores.
+/* Opening stores.
  */
 
 static ss_store *all_stores = NULL;
@@ -158,12 +142,12 @@ ss_grow (ss_store *ss, size_t size)
 {
   size = (size + GROW_MASK) & ~GROW_MASK;
   if (size >= MAX_SIZE)
-    ss_abort (ss, "%s has reached maximum size", ss->filename);
+    dpm_error (ss, "%s has reached maximum size", ss->filename);
 
   if (size > ss->file_size)
     {
       if (ftruncate (ss->fd, size) < 0)
-	ss_abort (ss, "Can't grow %s: %m", ss->filename);
+	dpm_error (ss, "Can't grow %s: %m", ss->filename);
       ss->file_size = size;
       ss->end = (uint32_t *)((char *)ss->head + ss->file_size);
     }
@@ -180,30 +164,29 @@ ss_sync (ss_store *ss, uint32_t root_off)
       start = (uint32_t *)(((int)start) & ~4095);
 
       if (msync (start, (end - start)*sizeof(uint32_t), MS_SYNC) <0)
-	ss_abort (ss, "Can't sync %s: %m", ss->filename);
+	dpm_error (ss, "Can't sync %s: %m", ss->filename);
     }
 
   if (mmap (ss->head, sizeof (struct ss_header), PROT_READ | PROT_WRITE, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    ss_abort (ss, "Can't write-enable header of %s: %m", ss->filename);
+    dpm_error (ss, "Can't write-enable header of %s: %m", ss->filename);
   
   ss->head->len = ss->next - ss->start;
   ss->head->alloced = ss->alloced_words;
   ss->head->root = root_off;
 
   if (msync (ss->head, sizeof (struct ss_header), MS_ASYNC) < 0)
-    ss_abort (ss, "Can't sync %s header: %m", ss->filename);
+    dpm_error (ss, "Can't sync %s header: %m", ss->filename);
 
   if (mmap (ss->head, sizeof (struct ss_header), PROT_READ, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    ss_abort (ss, "Can't write-protect header of %s: %m", ss->filename);
+    dpm_error (ss, "Can't write-protect header of %s: %m", ss->filename);
 }
 
 ss_store *
-ss_open (const char *filename, int mode,
-	 ss_error_callback *on_error)
+ss_open (const char *filename, int mode)
 {
   struct stat buf;
   int prot;
@@ -213,7 +196,6 @@ ss_open (const char *filename, int mode,
   ss = dpm_xmalloc (sizeof (ss_store));
   ss->next_store = NULL;
   ss->filename = dpm_xstrdup (filename);
-  ss->on_error = on_error;
   ss->head = NULL;
   ss->file_size = 0;
   ss->start = NULL;
@@ -227,7 +209,7 @@ ss_open (const char *filename, int mode,
     ss->fd = open (filename, O_RDWR | O_CREAT, 0666);
 
   if (ss->fd < 0)
-    ss_abort (ss, "Can't open %s: %m", filename);
+    dpm_error (ss, "Can't open %s: %m", filename);
 
   if (mode != SS_READ)
     {
@@ -238,7 +220,7 @@ ss_open (const char *filename, int mode,
       lock.l_len = sizeof (struct ss_header);
 
       if (fcntl (ss->fd, F_SETLK, &lock) == -1)
-	ss_abort (ss, "Can't lock %s: %m", filename);
+	dpm_error (ss, "Can't lock %s: %m", filename);
     }
 
   if (mode == SS_READ)
@@ -249,7 +231,7 @@ ss_open (const char *filename, int mode,
   ss->head = mmap (NULL, MAX_SIZE, prot, MAP_SHARED,
 		   ss->fd, 0);
   if (ss->head == MAP_FAILED)
-    ss_abort (ss, "Can't map %s: %m", ss->filename);
+    dpm_error (ss, "Can't map %s: %m", ss->filename);
 
   if (mode == SS_TRUNC)
     {
@@ -280,10 +262,10 @@ ss_open (const char *filename, int mode,
     {
       if (ss->file_size < sizeof (struct ss_header)
 	  || ss->head->magic != SS_MAGIC)
-	ss_abort (ss, "Not a struct-store file: %s", ss->filename);
+	dpm_error (ss, "Not a struct-store file: %s", ss->filename);
 
       if (ss->head->version != SS_VERSION)
-	ss_abort (ss,
+	dpm_error (ss,
 		  "Unsupported struct-store format version in %s.  "
 		  "Found %d, expected %d.",
 		  ss->filename, ss->head->version, SS_VERSION);
@@ -294,7 +276,7 @@ ss_open (const char *filename, int mode,
   if (mmap (ss->head, (uint32_t)ss->next - (uint32_t)ss->head, PROT_READ, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    ss_abort (ss, "Can't write-protect %s: %m", ss->filename);
+    dpm_error (ss, "Can't write-protect %s: %m", ss->filename);
 
   ss->next_store = all_stores;
   all_stores = ss;
@@ -302,9 +284,10 @@ ss_open (const char *filename, int mode,
   return ss;
 }
 
-void
-ss_close (ss_store *ss)
+static void
+ss_store_unref (dyn_type *type, void *object)
 {
+  ss_store *ss = object;
   ss_store **sp;
 
   for (sp = &all_stores; *sp; sp = &(*sp)->next_store)
@@ -319,7 +302,6 @@ ss_close (ss_store *ss)
 
   close (ss->fd);
   free (ss->filename);
-  free (ss);
 }
 
 ss_store *
@@ -393,7 +375,7 @@ ss_assert_in_store (ss_store *ss, ss_val obj)
 {
   if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
     return;
-  ss_abort (ss, "Rogue pointer.");
+  dpm_error (ss, "Rogue pointer.");
 }
     
 /* Collecting garbage
@@ -503,7 +485,7 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
   if (gc->phase == 0 && ss_gc_delay_p (obj))
    {
      if (gc->n_delayed >= MAX_DELAYED)
-       ss_abort (gc->to_store, "too many weak tables\n");
+       dpm_error (gc->to_store, "too many weak tables\n");
      gc->delayed[gc->n_delayed++] = obj;
      return obj;
    }
@@ -755,11 +737,11 @@ ss_gc (ss_store *ss)
   if (mmap (ss->head, ss->file_size, PROT_READ | PROT_WRITE, 
 	    MAP_PRIVATE | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    ss_abort (ss, "Can't disconnect from %s: %m", ss->filename);
+    dpm_error (ss, "Can't disconnect from %s: %m", ss->filename);
 
   asprintf (&newfile, "%s.gc", ss->filename);
   gc.from_store = ss;
-  gc.to_store = ss_open (newfile, SS_TRUNC, NULL);
+  gc.to_store = ss_open (newfile, SS_TRUNC);
   gc.n_delayed = 0;
 
   new_root = ss_gc_copy_root (&gc);
@@ -772,13 +754,12 @@ ss_gc (ss_store *ss)
   /* Rename file
    */
   if (rename (gc.to_store->filename, ss->filename) < 0)
-    ss_abort (ss, "Can't rename %s to %s: %m",
+    dpm_error (ss, "Can't rename %s to %s: %m",
 	      gc.to_store->filename, ss->filename);
 
   free (gc.to_store->filename);
   gc.to_store->filename = ss->filename;
   ss->filename = NULL;
-  ss_close (ss);
 
   return gc.to_store;
 }
@@ -845,7 +826,7 @@ ss_assert (ss_val obj, int tag, int min_len)
   if (obj == NULL
       || SS_TAG(obj) != tag
       || SS_LEN(obj) < min_len)
-    ss_abort (ss_find_object_store (obj), "Object of wrong type.");
+    dpm_error (ss_find_object_store (obj), "Object of wrong type.");
 }
 
 ss_val 
