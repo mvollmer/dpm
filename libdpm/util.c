@@ -15,6 +15,8 @@
  * along with this program.  If not, see http://www.gnu.org/licenses/.
  */
 
+#define _GNU_SOURCE
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -97,65 +99,53 @@ dpm_vsprintf (const char *fmt, va_list ap)
 }
 
 void
-dpm_uncaught_error (void *value)
+dpm_uncaught_error (dyn_val val)
 {
-  fprintf (stderr, "%s\n", value);
+  fprintf (stderr, "%s\n", dyn_to_string (val));
   exit (1);
 }
 
 static dyn_condition error_condition = {
   .name = "error",
-  .free = free,
   .uncaught = dpm_uncaught_error
 };
 
-char *
+const char *
 dpm_catch_error (void (*func) (void *data), void *data)
 {
-  return (char *)dyn_catch (&error_condition, func, data);
-}
-
-typedef struct dpm_error_context {
-  struct dpm_error_context *next;
-  char *(*func) (const char *message, int level, void *data);
-  void *data;
-} dpm_error_context;
-
-static dyn_var dpm_cur_error_context;
-
-void
-dpm_let_error_context (char *(*func) (const char *message, int level, 
-				      void *data),
-		       void *data)
-{
-  dpm_error_context *ctxt = dpm_xmalloc (sizeof (dpm_error_context));
-  ctxt->func = func;
-  ctxt->data = data;
-  
-  ctxt->next = dyn_get (&dpm_cur_error_context);
-  dyn_let (&dpm_cur_error_context, ctxt);
-  dyn_free (ctxt);
+  return dyn_to_string (dyn_catch (&error_condition, func, data));
 }
 
 void
-dpm_error (const char *fmt, ...)
+dpm_error (dyn_val context, const char *fmt, ...)
 {
-  dpm_error_context *ctxt;
-  int level;
   char *message;
   va_list ap;
   va_start (ap, fmt);
   message = dpm_vsprintf (fmt, ap);
   va_end (ap);
 
-  level = 0;
-  for (ctxt = dyn_get (&dpm_cur_error_context); ctxt; ctxt = ctxt->next)
+  if (context)
     {
-      char *outer = ctxt->func (message, level, ctxt->data);
+      char *outer = NULL;
+
+      if (dyn_is_object (context, &dpm_stream_type))
+	outer = dpm_sprintf ("%s:%d: %s",
+			      dpm_stream_filename (context),
+			      dpm_stream_lineno (context),
+			      message);
+      else
+	{
+	  dpm_print ("context: %V\n", context);
+	  outer = dpm_sprintf ("In unknown context: %s", message);
+	}
+
       free (message);
       message = outer;
-      level += 1;
     }
 
-  dyn_throw (&error_condition, message);
+  dyn_val cond = dyn_from_string (message);
+  free (message);
+
+  dyn_signal (&error_condition, cond);
 }

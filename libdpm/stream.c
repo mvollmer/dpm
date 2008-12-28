@@ -26,17 +26,31 @@
 #include <sys/stat.h>
 
 #include <zlib.h>
+#if HAVE_BZLIB
 #include <bzlib.h>
+#endif
 
 #include "util.h"
 #include "stream.h"
 
+static void dpm_stream_unref (dyn_type *, void *);
+
+dyn_type dpm_stream_type = {
+  .name = "stream",
+  .unref = dpm_stream_unref
+};
+
+__attribute__ ((constructor))
+static void
+dpm_stream_type_register ()
+{
+  dyn_type_register (&dpm_stream_type);
+}
+
 struct dpm_stream {
   dpm_stream *parent;
-  int close_parent;
   char *filename;
   int lineno;
-  dpm_stream_error_callback *on_error;
 
   int (*read) (dpm_stream *ps, char *buf, int n);
   void (*close) (void *stream);
@@ -46,54 +60,19 @@ struct dpm_stream {
   char *buf, *bufend, *buflimit;
   int bufsize;
 
-  char *start;
+  char *mark;
   char *pos;
 };
-
-/* Aborting
- */
-
-void
-dpm_stream_abort (dpm_stream *ps, const char *fmt, ...)
-{
-  va_list ap;
-  char *message;
-
-  va_start (ap, fmt);
-  if (vasprintf (&message, fmt, ap) < 0)
-    message = NULL;
-  va_end (ap);
-
-  while (ps->on_error == NULL && ps->parent)
-    {
-      dpm_stream *parent = ps->parent;
-      dpm_stream_close (ps);
-      ps = parent;
-    }
-
-  if (ps->on_error)
-    ps->on_error (ps, message);
-
-  if (ps->filename)
-    fprintf (stderr, "%s: %s\n", ps->filename, message);
-  else
-    fprintf (stderr, "%s\n", message);
-  free (message);
-  dpm_stream_close (ps);
-  exit (1);
-}
 
 static dpm_stream *
 dpm_stream_new (dpm_stream *parent)
 {
   dpm_stream *ps;
 
-  ps = dpm_xmalloc (sizeof (dpm_stream));
-  ps->parent = parent;
-  ps->close_parent = 0;
+  ps = dyn_alloc (&dpm_stream_type, sizeof (dpm_stream));
+  ps->parent = dyn_ref (parent);
   ps->filename = NULL;
   ps->lineno = 0;
-  ps->on_error = NULL;
   ps->read = NULL;
   ps->close = NULL;
 
@@ -103,16 +82,10 @@ dpm_stream_new (dpm_stream *parent)
   ps->bufend = ps->buf;
   ps->buflimit = NULL;
 
-  ps->start = ps->buf;
-  ps->pos = ps->start;
+  ps->mark = ps->buf;
+  ps->pos = ps->mark;
 
   return ps;
-}
-
-void
-dpm_stream_close_parent (dpm_stream *ps)
-{
-  ps->close_parent = 1;
 }
 
 static void
@@ -123,15 +96,15 @@ dpm_stream_set_static_buffer (dpm_stream *ps, char *buf, int len)
   ps->bufsize = len;
   ps->bufend = ps->buf + ps->bufsize;
 
-  ps->start = ps->buf;
-  ps->pos = ps->start;
+  ps->mark = ps->buf;
+  ps->pos = ps->mark;
 }
 
 void
 dpm_stream_push_limit (dpm_stream *ps, int len)
 {
   if (ps->buflimit)
-    dpm_stream_abort (ps, "limit already set");
+    dpm_error (ps, "limit already set");
   ps->buflimit = ps->pos + len;
 }
 
@@ -139,7 +112,7 @@ void
 dpm_stream_pop_limit (dpm_stream *ps)
 {
   if (!ps->buflimit)
-    dpm_stream_abort (ps, "limit not set");
+    dpm_error (ps, "limit not set");
   dpm_stream_advance (ps, ps->buflimit - ps->pos);
   ps->buflimit = NULL;
 }
@@ -188,32 +161,26 @@ has_suffix (const char *str, const char *suffix)
 }
 
 dpm_stream *
-dpm_stream_open_file (const char *filename,
-		      dpm_stream_error_callback *on_error)
+dpm_stream_open_file (const char *filename)
 {
   int fd;
   dpm_stream *ps = dpm_stream_new (NULL);
 
   ps->filename = dpm_xstrdup (filename);
-  ps->on_error = on_error;
   ps->read = dpm_fd_read;
   ps->close = dpm_fd_close;
 
   fd = open (filename, O_RDONLY);
   ps->stream = (void *)fd;
   if (fd < 0)
-    dpm_stream_abort (ps, "%m");
+    dpm_error (ps, "%m");
 
   if (has_suffix (filename, ".gz"))
-    {
-      ps = dpm_stream_open_zlib (ps);
-      dpm_stream_close_parent (ps);
-    }
+    ps = dpm_stream_open_zlib (ps);
+#if HAVE_BZLIB
   else if (has_suffix (filename, ".bz2"))
-    {
-      ps = dpm_stream_open_bz2 (ps);
-      dpm_stream_close_parent (ps);
-    }
+    ps = dpm_stream_open_bz2 (ps);
+#endif
 
   return ps;
 }
@@ -227,7 +194,7 @@ dpm_stream_open_string (const char *str, int len)
 }
 
 static const char *
-zerr (int ret)
+zerrfmt (int ret)
 {
   switch (ret) 
     {
@@ -253,7 +220,7 @@ dpm_zlib_read (dpm_stream *ps, char *buf, int n)
   z_stream *stream = (z_stream *)ps->stream;
   int ret;
 
-  stream->next_out = buf;
+  stream->next_out = (unsigned char *)buf;
   stream->avail_out = n;
 
   /* Loop until we have produced some output */
@@ -262,16 +229,16 @@ dpm_zlib_read (dpm_stream *ps, char *buf, int n)
       /* Get more input if needed. */
       if (stream->avail_in == 0)
 	{
-	  dpm_stream_next (pp);
+	  dpm_stream_set_mark (pp);
 	  dpm_stream_advance (pp, dpm_stream_try_grow (pp, 1));
-	  stream->next_in = dpm_stream_start (pp);
-	  stream->avail_in = dpm_stream_len (pp);
+	  stream->next_in = (unsigned char *)dpm_stream_mark (pp);
+	  stream->avail_in = dpm_stream_pos (pp) - dpm_stream_mark (pp);
 	}
 
       /* Make some progress */
       ret = inflate (stream, Z_NO_FLUSH);
       if (ret != Z_OK && ret != Z_STREAM_END)
-	dpm_stream_abort (ps, zerr (ret), ret);
+	dpm_error (ps, zerrfmt (ret), ret);
 
       if (ret == Z_STREAM_END)
 	break;
@@ -308,13 +275,15 @@ dpm_stream_open_zlib (dpm_stream *parent)
 
   ret = inflateInit2 (stream, 32+15);
   if (ret != Z_OK)
-    dpm_stream_abort (ps, zerr (ret), ret);
+    dpm_error (ps, zerrfmt (ret), ret);
 
   return ps;
 }
 
+#if HAVE_BZLIB
+
 static const char *
-bzerr (int ret)
+bzerrfmt (int ret)
 {
   switch (ret) 
     {
@@ -339,16 +308,16 @@ dpm_bz2_read (dpm_stream *ps, char *buf, int n)
       /* Get more input if needed. */
       if (stream->avail_in == 0)
 	{
-	  dpm_stream_next (pp);
+	  dpm_stream_set_mark (pp);
 	  dpm_stream_advance (pp, dpm_stream_try_grow (pp, 1));
-	  stream->next_in = dpm_stream_start (pp);
-	  stream->avail_in = dpm_stream_len (pp);
+	  stream->next_in = dpm_stream_mark (pp);
+	  stream->avail_in = dpm_stream_pos (pp) - dpm_stream_mark (pp);
 	}
 
       /* Make some progress */
       ret = BZ2_bzDecompress (stream);
       if (ret != BZ_OK && ret != BZ_STREAM_END)
-	dpm_stream_abort (ps, bzerr (ret), ret);
+	dpm_error (ps, bzerrfmt (ret), ret);
 
       if (ret == BZ_STREAM_END)
 	break;
@@ -382,23 +351,17 @@ dpm_stream_open_bz2 (dpm_stream *parent)
 
   ret = BZ2_bzDecompressInit (stream, 0, 0);
   if (ret != BZ_OK)
-    dpm_stream_abort (ps, bzerr (ret), ret);
+    dpm_error (ps, bzerrfmt (ret), ret);
 
   return ps;
 }
 
-void
-dpm_stream_on_error (dpm_stream *ps, 
-		     dpm_stream_error_callback *on_error)
-{
-  ps->on_error = on_error;
-}
+#endif
 
 void
-dpm_stream_close (dpm_stream *ps)
+dpm_stream_unref (dyn_type *type, void *object)
 {
-  if (ps->close_parent && ps->parent)
-    dpm_stream_close (ps->parent);
+  dpm_stream *ps = object;
 
   if (ps->close)
     ps->close (ps->stream);
@@ -406,16 +369,16 @@ dpm_stream_close (dpm_stream *ps)
   if (!ps->bufstatic)
     free (ps->buf);
   free (ps->filename);
-  free (ps);
+  dyn_unref (ps->parent);
 }
 
 int
 dpm_stream_try_grow (dpm_stream *ps, int n)
 {
 #if 0
-  fprintf (stderr, "GROW n %d, start %d, pos %d, end %d\n",
+  fprintf (stderr, "GROW n %d, mark %d, pos %d, end %d\n",
 	   n,
-	   ps->start - ps->buf,
+	   ps->mark - ps->buf,
 	   ps->pos - ps->buf,
 	   ps->bufend - ps->buf);
 #endif
@@ -425,32 +388,32 @@ dpm_stream_try_grow (dpm_stream *ps, int n)
       /* Need to read more input
        */
 
-      if (ps->pos + n - ps->start > ps->bufsize)
+      if (ps->pos + n - ps->mark > ps->bufsize)
 	{
 	  /* Need a bigger buffer
 	   */
-	  int newsize = ((ps->pos + n - ps->start) + BUFMASK) & ~BUFMASK;
+	  int newsize = ((ps->pos + n - ps->mark) + BUFMASK) & ~BUFMASK;
 	  char *newbuf = dpm_xmalloc (newsize);
-	  memcpy (newbuf, ps->start, ps->bufend - ps->start);
-	  ps->bufend = newbuf + (ps->bufend - ps->start);
+	  memcpy (newbuf, ps->mark, ps->bufend - ps->mark);
+	  ps->bufend = newbuf + (ps->bufend - ps->mark);
 	  if (ps->buflimit)
-	    ps->buflimit = newbuf + (ps->buflimit - ps->start);
-	  ps->pos = newbuf + (ps->pos - ps->start);
-	  ps->start = newbuf;
+	    ps->buflimit = newbuf + (ps->buflimit - ps->mark);
+	  ps->pos = newbuf + (ps->pos - ps->mark);
+	  ps->mark = newbuf;
 	  free (ps->buf);
 	  ps->buf = newbuf;
 	  ps->bufsize = newsize;
 	}
       else if (ps->pos + n > ps->buf + ps->bufsize)
 	{
-	  /* Need to slide down start to front of buffer
+	  /* Need to slide down mark to front of buffer
 	   */
-	  int d = ps->start - ps->buf;
-	  memcpy (ps->buf, ps->start, ps->bufend - ps->start);
+	  int d = ps->mark - ps->buf;
+	  memcpy (ps->buf, ps->mark, ps->bufend - ps->mark);
 	  ps->bufend -= d;
 	  if (ps->buflimit)
 	    ps->buflimit -= d;
-	  ps->start -= d;
+	  ps->mark -= d;
 	  ps->pos -= d;
 	}
 
@@ -464,7 +427,7 @@ dpm_stream_try_grow (dpm_stream *ps, int n)
 		   ps->buf + ps->bufsize - ps->bufend);
 #endif
 	  if (l < 0)
-	    dpm_stream_abort (ps, "%m", ps->filename);
+	    dpm_error (ps, "%m");
 	  if (l == 0)
 	    break;
 	  ps->bufend += l;
@@ -472,9 +435,9 @@ dpm_stream_try_grow (dpm_stream *ps, int n)
     }
 
 #if 0
-  fprintf (stderr, "NOW  n %d, start %d, pos %d, end %d\n",
+  fprintf (stderr, "NOW  n %d, mark %d, pos %d, end %d\n",
 	   ps->bufend - ps->pos,
-	   ps->start - ps->buf,
+	   ps->mark - ps->buf,
 	   ps->pos - ps->buf,
 	   ps->bufend - ps->buf);
 #endif
@@ -492,26 +455,20 @@ dpm_stream_grow (dpm_stream *ps, int n)
 {
   int l = dpm_stream_try_grow (ps, n);
   if (l < n)
-    dpm_stream_abort (ps, "Unexpected end of file.");
+    dpm_error (ps, "Unexpected end of file.");
   return l;
 }
 
-char *
-dpm_stream_start (dpm_stream *ps)
-{
-  return ps->start;
-}
-
-int 
-dpm_stream_len (dpm_stream *ps)
-{
-  return ps->pos - ps->start;
-}
-
 void
-dpm_stream_next (dpm_stream *ps)
+dpm_stream_set_mark (dpm_stream *ps)
 {
-  ps->start = ps->pos;
+  ps->mark = ps->pos;
+}
+
+char *
+dpm_stream_mark (dpm_stream *ps)
+{
+  return ps->mark;
 }
 
 const char *
@@ -576,7 +533,11 @@ int
 dpm_stream_find_after (dpm_stream *ps, const char *delims)
 {
   if (dpm_stream_find (ps, delims))
-    dpm_stream_advance (ps, 1);
+    {
+      dpm_stream_advance (ps, 1);
+      return 1;
+    }
+  return 0;
 }
 
 void

@@ -31,10 +31,10 @@
    %s -- nul-terminated string, char *
    %S -- nul-terminated string, char *, quoted
    %d -- decimal signed integer, int
-   %v -- store value, dispatches
-   %V -- store value, quoted, dispatches
-   %c -- confval
-   %C -- confval, quoted
+   %v -- dyn_val
+   %V -- dyn_val, quoted
+   %r -- store value, dispatches
+   %R -- store value, quoted, dispatches
  */
 
 void dpm_write (FILE *, const char *fmt, ...);

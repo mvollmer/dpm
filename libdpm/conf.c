@@ -26,114 +26,62 @@
 
 #include "util.h"
 #include "conf.h"
+#include "write.h"
 
-void *
-dpm_conf_parse_bool (const char *context, dpm_confval val)
+dyn_val
+dpm_conf_filter_bool (const char *context, dyn_val val)
 {
-  if (!dpm_confval_is_string (val))
+  if (dyn_is_string (val))
     {
-    error:
-      dpm_error ("Unrecognized value for boolean %s: %C", context, val);
+      if (!strcmp (dyn_to_string (val), "true"))
+	return val;
+      if (!strcmp (dyn_to_string (val), "false"))
+	return NULL;
     }
-  if (!strcmp (dpm_confval_string (val), "true"))
-    return (void *)1;
-  if (!strcmp (dpm_confval_string (val), "false"))
-    return (void *)0;
-  goto error;
+  
+  dpm_error (NULL, "Unrecognized value for boolean %s: %V", context, val);
 }
 
-void
-dpm_conf_write_bool (FILE *f, void *value)
+dyn_val
+dpm_conf_unfilter_bool (dyn_val val)
 {
-  fprintf (f, "%s", (value? " true" : " false"));
+  if (val)
+    return val;
+  else
+    return dyn_from_string ("false");
 }
 
 dpm_conf_type dpm_conf_type_bool = {
   .name = "bool",
-  .free = NULL,
-  .parse = dpm_conf_parse_bool,
-  .write = dpm_conf_write_bool
+  .filter = dpm_conf_filter_bool,
+  .unfilter = dpm_conf_unfilter_bool
 };
 
-void *
-dpm_conf_parse_string (const char *context, dpm_confval val)
+dyn_val
+dpm_conf_filter_string (const char *context, dyn_val val)
 {
-  if (!dpm_confval_is_string (val))
-    dpm_error ("Not a single string for %s: %C", context, val);
-  return dpm_xstrdup (dpm_confval_string (val));
-}
-
-void
-dpm_conf_write_string (FILE *f, void *value)
-{
-  if (value)
-    dpm_write (f, " %S", (char *)value);
+  if (!dyn_is_string (val))
+    dpm_error (NULL, "Not a single string for %s: %V", context, val);
+  return val;
 }
 
 dpm_conf_type dpm_conf_type_string = {
   .name = "string",
-  .free = free,
-  .parse = dpm_conf_parse_string,
-  .write = dpm_conf_write_string
+  .filter = dpm_conf_filter_string
 };
 
-void
-dpm_conf_free_string_array (void *value)
-{
-  int i;
-  char **tokens = (char **)value;
-
-  for (i = 0; tokens[i]; i++)
-    free (tokens[i]);
-  free (tokens);
-}
-
-void *
-dpm_conf_parse_string_array (const char *context, char **tokens)
-{
-  char **copy;
-  int i, n;
-  
-  for (n = 0; tokens[n]; n++)
-    ;
-
-  copy = dpm_xmalloc (sizeof (char *) * (n+1));
-  for (i = 0; i < n; i++)
-    copy[i] = dpm_xstrdup (tokens[i]);
-  copy[i] = NULL;
-  
-  return (void *)copy;
-}
-
-void
-dpm_conf_write_string_array (FILE *f, void *value)
-{
-  int i;
-  char **tokens = (char **)value;
-
-  for (i = 0; tokens[i]; i++)
-    dpm_write (f, " %S", tokens[i]);
-}
-
-dpm_conf_type dpm_conf_type_string_array = {
-  .name = "string array",
-  .free = dpm_conf_free_string_array,
-  .parse = dpm_conf_parse_string_array,
-  .write = dpm_conf_write_string_array
+dpm_conf_type dpm_conf_type_any = {
+  .name = "any"
 };
 
 static dpm_conf_declaration *conf_vars;
 
 void
-dpm_conf_declare (dpm_conf_declaration *conf, const char *init)
+dpm_conf_declare (dpm_conf_declaration *conf, dyn_val init)
 {
   conf->next = conf_vars;
   conf_vars = conf;
-
-  {
-    const char *tokens[2] = { init, NULL };
-    dyn_set (conf->var, conf->type->parse (conf->name, tokens));
-  }
+  dyn_set (conf->var, init);
 }
 
 static dpm_conf_declaration *
@@ -144,35 +92,27 @@ dpm_conf_find (const char *name)
   for (conf = conf_vars; conf; conf = conf->next)
     if (!strcmp (conf->name, name))
       return conf;
-  dpm_error ("No such configuration variable: %s", name);
+  dpm_error (NULL, "No such configuration variable: %s", name);
 }
 
 void
-dpm_conf_setv (const char *name, char **tokens)
+dpm_conf_set (const char *name, dyn_val val)
 {
   dpm_conf_declaration *conf = dpm_conf_find (name);
-  dyn_set (conf->var, conf->type->parse (conf->name, tokens));
+  dyn_val fval = (conf->type->filter
+		  ? conf->type->filter (name, val)
+		  : val);
+  dyn_set (conf->var, fval);
 }
 
 void
-dpm_conf_set (const char *name, char *value)
-{
-  char *tokens[2] = { value, NULL };
-  dpm_conf_setv (name, tokens);
-}
-
-void
-dpm_conf_letv (const char *name, char **tokens)
+dpm_conf_let (const char *name, dyn_val val)
 {
   dpm_conf_declaration *conf = dpm_conf_find (name);
-  dyn_let (conf->var, conf->type->parse (conf->name, tokens));
-}
-
-void
-dpm_conf_let (const char *name, char *value)
-{
-  char *tokens[2] = { value, NULL };
-  dpm_conf_letv (name, tokens);
+  dyn_val fval = (conf->type->filter
+		  ? conf->type->filter (name, val)
+		  : val);
+  dyn_let (conf->var, fval);
 }
 
 void
@@ -182,10 +122,12 @@ dpm_conf_dump ()
 
   for (conf = conf_vars; conf; conf = conf->next)
     {
+      dyn_val val = dyn_get (conf->var);
+      dyn_val uval = (conf->type->unfilter
+		      ? conf->type->unfilter (val)
+		      : val);
       // printf ("# %s\n", conf->docstring);
-      printf ("%s", conf->name);
-      conf->type->write (stdout, dyn_get (conf->var));
-      printf ("\n");
+      dpm_print ("%s %V\n", conf->name, uval);
     }
 }
 
@@ -193,34 +135,31 @@ typedef struct {
   dpm_stream *stream;
   int lineno;
   int cur_kind, cur_len;
-
-  char **tokens;
-  int max, n;
 } dpm_conf_parse_state;
 
 static void
-dpm_conf_parse_next (dpm_conf_parse_state *state, int stop_at_newline)
+dpm_conf_parse_next (dpm_conf_parse_state *state)
 {
   dpm_stream *stream = state->stream;
 
  again:
-  dpm_stream_skip (stream, (stop_at_newline? " \t\r\v" : " \t\r\v\n"));
+  dpm_stream_skip (stream, " \t\r\v\n");
   if (dpm_stream_looking_at (stream, "#"))
     {
       dpm_stream_find (stream, "\n");
       goto again;
     }
 
-  dpm_stream_next (stream);
+  dpm_stream_set_mark (stream);
   if (dpm_stream_looking_at (stream, "\""))
     {
       /* Quoted string.
        */
       dpm_stream_advance (stream, 1);
-      dpm_stream_next (stream);
+      dpm_stream_set_mark (stream);
       while (dpm_stream_find (stream, "\""))
 	{
-	  char *mark = dpm_stream_start (stream);
+	  char *mark = dpm_stream_mark (stream);
 	  const char *pos = dpm_stream_pos (stream);
 	  char *p1, *p2;
 
@@ -255,7 +194,7 @@ dpm_conf_parse_next (dpm_conf_parse_state *state, int stop_at_newline)
 		      *p2++ = '\"';
 		      break;
 		    default:
-		      dpm_error ("Unsupported escape '%c'", *p1);
+		      dpm_error (stream, "Unsupported escape '%c'", *p1);
 		      break;
 		    }
 		  p1++;
@@ -270,7 +209,7 @@ dpm_conf_parse_next (dpm_conf_parse_state *state, int stop_at_newline)
 	  return;
 	}
 
-      dpm_error ("Unexpected end of input within quotes");
+      dpm_error (stream, "Unexpected end of input within quotes");
     }
   else if (!dpm_stream_looking_at (stream, "{")
 	   && !dpm_stream_looking_at (stream, "}")
@@ -279,10 +218,10 @@ dpm_conf_parse_next (dpm_conf_parse_state *state, int stop_at_newline)
       /* Symbol.
        */
       dpm_stream_find (stream, " \t\r\v\n{}\"");
-      if (dpm_stream_len (stream) > 0)
+      if (dpm_stream_pos (stream) > dpm_stream_mark (stream))
 	{
 	  state->cur_kind = 'a';
-	  state->cur_len = dpm_stream_len (stream);
+	  state->cur_len = dpm_stream_pos (stream) - dpm_stream_mark (stream);
 	}
       else
 	{
@@ -296,7 +235,7 @@ dpm_conf_parse_next (dpm_conf_parse_state *state, int stop_at_newline)
       /* Some single character delimiter.
        */
       dpm_stream_advance (stream, 1);
-      state->cur_kind = *dpm_stream_start (stream);
+      state->cur_kind = *dpm_stream_mark (stream);
       state->cur_len = 1;
       return;
     }
@@ -310,121 +249,85 @@ dpm_conf_parse_next (dpm_conf_parse_state *state, int stop_at_newline)
     }
 }
 
-static void
-dpm_conf_store_token (dpm_conf_parse_state *state)
+static dyn_val dpm_conf_parse_list (dpm_conf_parse_state *state);
+
+static dyn_val
+dpm_conf_parse_element (dpm_conf_parse_state *state)
 {
-  if (state->n >= state->max)
+  dyn_val elt = NULL;
+
+  if (state->cur_kind == '{')
     {
-      state->max *= 2;
-      state->tokens =
-	dpm_xremalloc (state->tokens,
-		       sizeof (char *) * (state->max + 1));
+      dpm_conf_parse_next (state);
+      elt = dpm_conf_parse_list (state);
+      if (state->cur_kind != '}')
+	dpm_error (state->stream, "Unexpected end of input in list");
     }
-  state->tokens[state->n++] = dpm_xstrndup (dpm_stream_start (state->stream),
-					    state->cur_len);
-}
-
-static void
-dpm_conf_parse_list (dpm_conf_parse_state *state,
-		     int delim)
-{
-  dpm_conf_parse_next (state, !delim);
-
-  while (state->cur_kind != 0)
+  else if (state->cur_kind == '}')
     {
-      if (state->cur_kind == '{')
-	{
-	  dpm_conf_store_token (state);
-	  dpm_conf_parse_list (state, 1);
-	  if (state->cur_kind != '}')
-	    dpm_error ("Unexpected end of input in list");
-	  dpm_conf_store_token (state);
-	}
-      else if (state->cur_kind == '}')
-	{
-	  if (delim)
-	    break;
-	  dpm_error ("Unexpected list delimiter");
-	}
-      else if (state->cur_kind == '\n')
-	{
-	  if (!delim)
-	    break;
-	  dpm_conf_store_token (state);
-	}
-      else
-	dpm_conf_store_token (state);
-
-      dpm_conf_parse_next (state, 1);
+      dpm_error (state->stream, "Unexpected list delimiter");
     }
+  else
+    {
+      elt = dyn_from_stringn (dpm_stream_mark (state->stream),
+			      state->cur_len);
+    }
+
+  dpm_conf_parse_next (state);
+  return elt;
 }
 
-static void
-dpm_conf_parse_cleanup (int for_throw, void *data)
+static dyn_val
+dyn_reverse (dyn_val val)
 {
-  dpm_conf_parse_state *state = (dpm_conf_parse_state *)data;
-  char **ptr;
-
-  for (ptr = state->tokens; *ptr; ptr++)
-    free (*ptr);
-  free (state->tokens);
-  
-  dpm_stream_close (state->stream);
+  dyn_val res = NULL;
+  while (dyn_is_pair (val))
+    {
+      res = dyn_cons (dyn_first (val), res);
+      val = dyn_rest (val);
+    }
+  return res;
 }
 
-char *
-dpm_conf_error_context (const char *message, int level, void *data)
+static dyn_val
+dpm_conf_parse_list (dpm_conf_parse_state *state)
 {
-  dpm_conf_parse_state *state = (dpm_conf_parse_state *)data;
+  dyn_val res = NULL;
 
-  return dpm_sprintf ("%s:%d: %s",
-		      dpm_stream_filename (state->stream),
-		      (state->lineno
-		       ? state->lineno
-		       : dpm_stream_lineno (state->stream)),
-		      message);
+  while (state->cur_kind != 0
+	 && state->cur_kind != '}')
+    res = dyn_cons (dpm_conf_parse_element (state), res);
+
+  return dyn_reverse (res);
 }
 
+void
 dpm_conf_parse (const char *filename)
 {
   dpm_conf_parse_state state;
   int lineno;
-  char **ptr;
+  dyn_val var, val;
 
   dyn_begin ();
 
-  state.stream = dpm_stream_open_file (filename, NULL);
-  state.max = 5;
-  state.n = 0;
-  state.tokens = dpm_xmalloc (sizeof (char *) * (state.max + 1));
-
+  state.stream = dpm_stream_open_file (filename);
   dpm_stream_count_lines (state.stream);
-  dpm_let_error_context (dpm_conf_error_context, &state);
 
-  dyn_wind (dpm_conf_parse_cleanup, &state);
+  dpm_conf_parse_next (&state);
 
   while (1)
     {
       state.lineno = 0;
-      dpm_conf_parse_next (&state, 0);
       if (state.cur_kind == 0)
 	break;
 
       lineno = dpm_stream_lineno (state.stream);
-      dpm_conf_store_token (&state);
-
-      dpm_conf_parse_list (&state, 0);
-      state.tokens[state.n] = NULL;
-
+      var = dpm_conf_parse_element (&state);
+      val = dpm_conf_parse_element (&state);
       state.lineno = lineno;
-      dpm_conf_setv (state.tokens[0], state.tokens + 1);
-
-      for (ptr = state.tokens; *ptr; ptr++)
-	{
-	  free (*ptr);
-	  *ptr = NULL;
-	}
-      state.n = 0;
+      if (!dyn_is_string (var))
+	dpm_error (NULL, "Variable names must be strings");
+      dpm_conf_set (dyn_to_string (var), val);
     }
 
   dyn_end ();

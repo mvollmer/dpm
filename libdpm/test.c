@@ -42,7 +42,7 @@ tar_member (dpm_stream *ps,
 	    dpm_tar_member *info,
 	    void *data)
 {
-  printf ("%c %8d %5o %5d %5d %s -> %s\n", 
+  printf ("%c %8ld %5o %5d %5d %s -> %s\n", 
 	  info->type,
 	  info->size, info->mode, info->uid, info->gid,
 	  info->name, info->target);
@@ -61,11 +61,13 @@ ar_member (dpm_stream *ps,
       dpm_stream *pp = dpm_stream_open_zlib (ps);
       dpm_parse_tar (pp, tar_member, NULL);
     }
+#if HAVE_BZLIB
   else if (strcmp (name, "data.tar.bz2") == 0)
     {
       dpm_stream *pp = dpm_stream_open_bz2 (ps);
       dpm_parse_tar (pp, tar_member, NULL);
     }
+#endif
 }
 
 int
@@ -76,9 +78,8 @@ main (int argc, char **argv)
   if (argc < 2)
     usage ();
 
-  ps = dpm_stream_open_file (argv[1], NULL);
+  ps = dpm_stream_open_file (argv[1]);
   dpm_parse_ar (ps, ar_member, NULL);
-  dpm_stream_close (ps);
 
   return 0;
 }

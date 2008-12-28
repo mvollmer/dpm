@@ -21,6 +21,8 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#include "dyn.h"
+
 void *dpm_xmalloc (size_t size);
 void *dpm_xremalloc (void *old, size_t size);
 void *dpm_xstrdup (const char *str);
@@ -29,10 +31,11 @@ void *dpm_xstrndup (const char *str, int n);
 char *dpm_sprintf (const char *fmt, ...);
 char *dpm_vsprintf (const char *fmt, va_list ap);
 
-char *dpm_catch_error (void (*func) (void *data), void *data);
-void dpm_error (const char *fmt, ...);
+const char *dpm_catch_error (void (*func) (void *data), void *data);
+__attribute__ ((noreturn)) void dpm_error (dyn_val context, const char *fmt, ...);
 
-void dpm_let_error_context (char *(*func) (const char *message, int level,
+void dpm_let_error_context (char *(*func) (dyn_val context, 
+					   const char *message, int level,
 					   void *data),
 			    void *data);
 

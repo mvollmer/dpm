@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <sys/fcntl.h>
 #include <sys/stat.h>
@@ -67,8 +68,8 @@
 #define SS_SET_WORD(o,i,v)    (SS_WORD(o,i)=(v))
 
 #define SS_HEADER(o)          (SS_WORD(o,0))
-#define SS_TAG(o)             (SS_HEADER(o)>>24)
-#define SS_LEN(o)             (SS_HEADER(o)&0xFFFFFF)
+#define SS_TAG(o)             ((int)(SS_HEADER(o)>>24))
+#define SS_LEN(o)             ((int)(SS_HEADER(o)&0xFFFFFF))
 #define SS_SET_HEADER(o,t,l)  (SS_SET_WORD(o,0,((t)&0x7F) << 24 | (len)))
 
 #define SS_BLOB_LEN_TO_WORDS(l)  (((l)+3)>>2)
@@ -204,7 +205,6 @@ ss_store *
 ss_open (const char *filename, int mode,
 	 ss_error_callback *on_error)
 {
-  int fd;
   struct stat buf;
   int prot;
 
@@ -527,7 +527,7 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
 	}
       else
 	{
-	  int i;
+	  uint32_t i;
 	  copy = ss_alloc (gc->to_store, len + 1);
 	  copy[0] = SS_HEADER(obj);
 	  for (i = 0; i < len; i++)
@@ -628,7 +628,8 @@ ss_tab_gc_copy (ss_gc_data *gc, ss_val node)
     }
   else
     {
-      int len = ss_len (node), i, map, pos, n;
+      int len = ss_len (node), i, pos, n;
+      uint32_t map;
       ss_val vals[len];
       
       map = ss_to_int (ss_ref (node, 0)) | 0xC0000000;
@@ -668,7 +669,6 @@ ss_gc_scan_and_advance (ss_gc_data *gc, ss_val obj)
 
   if (SS_TAG (obj) != SS_BLOB_TAG)
     {
-      uint32_t *w = (uint32_t *)obj;
       for (i = 0; i < len; i++)
 	ss_set (obj, i, ss_gc_copy (gc, ss_ref (obj, i)));
     }
@@ -749,7 +749,6 @@ ss_gc (ss_store *ss)
   ss_gc_data gc;
   ss_val new_root;
   char *newfile;
-  int old_n_delayed;
 
   /* Disconnect old store from file.
    */
@@ -1081,7 +1080,7 @@ ss_hash (ss_val o)
       uint32_t h = 0;
       int len = ss_len (o), i;
       for (i = 0; i < len; i++)
-	h = h<<8 + ss_hash (ss_ref (o, i));
+	h = (h<<8) + ss_hash (ss_ref (o, i));
       return h & 0x3FFFFFFF;
     }
 }
@@ -1231,7 +1230,7 @@ ss_hash_node_lookup (int dispatch_tag,
 				       int hash, void *data),
 		     ss_store *ss,
 		     ss_val node, int shift,
-		     uint32_t hash, void *data)
+		     int hash, void *data)
 {
   if (node == NULL)
     return action (ss, node, hash, data);
@@ -1463,7 +1462,7 @@ static void
 ss_tab_dump_node (ss_val n, int level, ss_tab_stats *stats)
 {
   int i;
-  static char spaces[21] = "                    ";
+  // static char spaces[21] = "                    ";
 
   if (n == NULL)
     {
@@ -1500,7 +1499,7 @@ ss_tab_dump_node (ss_val n, int level, ss_tab_stats *stats)
 void
 ss_tab_dump (ss_tab *ot)
 {
-  ss_tab_stats stats = { 0, 0, 0, 0, 0, 0 };
+  ss_tab_stats stats = { 0, 0, 0, 0, 0, 0, 0 };
   ss_tab_dump_node (ot->root, 0, &stats);
 
   printf ("Stats:\n");
@@ -1679,9 +1678,9 @@ ss_dict_del_action (ss_store *ss, ss_val node, int hash, void *data)
 	      }
 	    return node;
 	  }
-      
       return node;
     }
+  return node;
 }
 
 ss_dict *

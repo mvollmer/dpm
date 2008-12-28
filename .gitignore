@@ -74,3 +74,4 @@
 /libdpm/test-conf.o
 /libdpm/conf.lo
 /libdpm/conf.o
+/dpm/Makefile.in

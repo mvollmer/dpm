@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <string.h>
 
 #include "store.h"
 
@@ -82,7 +84,6 @@ dump_object (ss_store *ss, ss_val o)
   else if (ss_is_blob (o))
     {
       int l = ss_len (o);
-      char *b = ss_blob_start (o);
       printf ("b%d: (blob, %d bytes)\n", ss_id (ss, o), l);
       dump_reference (ss, o);
     }
@@ -135,4 +136,6 @@ main (int argc, char **argv)
     }
   else
     usage ();
+
+  return 0;
 }

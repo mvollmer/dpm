@@ -29,140 +29,239 @@
 
 /* Dynamic values */
 
-#define DYN_HEAD(v) (((uint32_t *)v)[-1])
-#define DYN_TAG(v)  (DYN_HEAD(v)>>24)
+#define DYN_HEAD(v)      (((uint32_t *)v)[-1])
+#define DYN_REFCOUNT(v)  (DYN_HEAD(v)&0xFFFFFF)
+#define DYN_TAG(v)       (DYN_HEAD(v)>>24)
 
 #define DYN_TAG_STRING 0
 #define DYN_TAG_PAIR   1
-
-static void dyn_string_write (FILE *, dyn_type *, void *);
+#define DYN_TAG_FUNC   2
+#define DYN_TAG_USER   3
 
 static dyn_type dyn_type_string = {
-  "string",
-  NULL
+  .tag = DYN_TAG_STRING,
+  .name = "string",
+  .unref = NULL
 };
 
 static void dyn_pair_unref (dyn_type *, void *);
-static void dyn_pair_write (FILE *, dyn_type *, void *);
 
 static dyn_type dyn_type_pair = {
-  "pair",
-  dyn_pair_unref
+  .tag = DYN_TAG_PAIR,
+  .name = "pair",
+  .unref = dyn_pair_unref
+};
+
+static void dyn_func_unref (dyn_type *, void *);
+
+static dyn_type dyn_type_func = {
+  .tag = DYN_TAG_FUNC,
+  .name = "function",
+  .unref = dyn_func_unref
 };
 
 static dyn_type *dyn_types[256] = {
   [DYN_TAG_STRING] = &dyn_type_string,
-  [DYN_TAG_PAIR] = &dyn_type_pair
+  [DYN_TAG_PAIR] = &dyn_type_pair,
+  [DYN_TAG_FUNC] = &dyn_type_func
 };
 
-static int dyn_next_tag = DYN_TAG_PAIR + 1;
+static int dyn_next_tag = DYN_TAG_USER;
 
-int
+void
 dyn_type_register (dyn_type *type)
 {
   int t = dyn_next_tag++;
   dyn_types[t] = type;
-  return t;
+  type->tag = t;
 }
 
-dyn_val *
-dyn_alloc (int tag, size_t size)
+static int n_objects;
+
+dyn_val
+dyn_alloc (dyn_type *type, size_t size)
 {
   uint32_t *mem = dpm_xmalloc (size + sizeof (uint32_t));
-  dyn_val *val = (dyn_val *)(mem + 1);
-  mem[0] = (tag << 24) | 1;
+  dyn_val val = (dyn_val)(mem + 1);
+  mem[0] = (type->tag << 24) | 1;
+  // fprintf (stderr, "%p * %s\n", val, type->name);
+  dyn_unref_on_unwind (val);
+  n_objects += 1;
   return val;
 }
 
-dyn_val *
-dyn_ref (dyn_val *val)
+dyn_val
+dyn_ref (dyn_val val)
 {
-  DYN_HEAD(val) += 1;
+  if (val)
+    {
+      DYN_HEAD(val) += 1;
+      // fprintf (stderr, "%p + = %d ", val, DYN_REFCOUNT (val));
+      // dpm_write (stderr, "%V\n", val);
+    }
+
+  return val;
 }
 
 void
-dyn_unref (dyn_val *val)
+dyn_unref (dyn_val val)
 {
-  if ((DYN_HEAD(val) -= 1) == 0)
+  if (val)
     {
-      dyn_type *t = dyn_types[DYN_TAG(val)];
-      if (t->unref)
-	t->unref (t, val);
-      free (val);
+      DYN_HEAD(val) -= 1;
+      // fprintf (stderr, "%p - = %d ", val, DYN_REFCOUNT (val));
+      // dpm_write (stderr, "%V\n", val);
+      if (DYN_REFCOUNT(val) == 0)
+	{
+	  dyn_type *t = dyn_types[DYN_TAG(val)];
+	  if (t->unref)
+	    t->unref (t, val);
+	  free (((uint32_t *)val)-1);
+	  n_objects--;
+	}
     }
 }
 
+static void
+dyn_report ()
+{
+  fprintf (stderr, "%d living objects\n", n_objects);
+}
+
+__attribute__ ((constructor))
+static void
+dyn_report_init ()
+{
+  atexit (dyn_report);
+}
+
 int
-dyn_is_string (dyn_val *val)
+dyn_is_string (dyn_val val)
 {
   return val && DYN_TAG(val) == DYN_TAG_STRING;
 }
 
 const char *
-dyn_to_string (dyn_val *val)
+dyn_to_string (dyn_val val)
 {
   return (const char *)val;
 }
 
-dyn_val *
+dyn_val
 dyn_from_string (const char *str)
 {
-  int len = strlen (str);
-  dyn_val *val = dyn_alloc (DYN_TAG_STRING, len + 1);
-  strcpy ((char *)val, str);
+  return dyn_from_stringn (str, strlen (str));
+}
+
+dyn_val
+dyn_from_stringn (const char *str, int len)
+{
+  dyn_val val = dyn_alloc (&dyn_type_string, len + 1);
+  strncpy ((char *)val, str, len);
+  ((char *)val)[len] = 0;
+  // fprintf (stderr, "%p = %.*s\n", val, len, str);
   return val;
 }
 
 static void
 dyn_pair_unref (dyn_type *type, void *object)
 {
-  dyn_unref (((dyn_val **)object)[0]);
-  dyn_unref (((dyn_val **)object)[1]);
+  dyn_unref (((dyn_val *)object)[0]);
+  dyn_unref (((dyn_val *)object)[1]);
 }
 
 int
-dyn_is_pair (dyn_val *val)
+dyn_is_pair (dyn_val val)
 {
   return val && DYN_TAG(val) == DYN_TAG_PAIR;
 }
 
-dyn_val *
-dyn_cons (dyn_val *first, dyn_val *rest)
+dyn_val
+dyn_cons (dyn_val first, dyn_val rest)
 {
-  dyn_val *val = dyn_alloc (DYN_TAG_PAIR, sizeof (dyn_val *) * 2);
-  ((dyn_val **)val)[0] = first;
-  ((dyn_val **)val)[1] = rest;
+  dyn_val val = dyn_alloc (&dyn_type_pair, sizeof (dyn_val) * 2);
+  ((dyn_val *)val)[0] = dyn_ref (first);
+  ((dyn_val *)val)[1] = dyn_ref (rest);
   return val;
 }
 
-dyn_val *
-dyn_first (dyn_val *val)
+dyn_val
+dyn_first (dyn_val val)
 {
-  return ((dyn_val **)val)[0];
+  return ((dyn_val *)val)[0];
 }
 
-dyn_val *
-dyn_rest (dyn_val *val)
+dyn_val
+dyn_rest (dyn_val val)
 {
-  return ((dyn_val **)val)[1];
+  return ((dyn_val *)val)[1];
 }
 
 int
-dyn_is_list (dyn_val *val)
+dyn_is_list (dyn_val val)
 {
   return val == NULL || DYN_TAG(val) == DYN_TAG_PAIR;
 }
 
+typedef struct {
+  void (*func) ();
+  void *data;
+  void (*free) (void *data);
+} dyn_func;
+
+static void
+dyn_func_unref (dyn_type *type, void *object)
+{
+  dyn_func *func = object;
+  if (func->free)
+    func->free (func->data);
+}
+
+dyn_val
+dyn_lambda (void (*func) (), void *data, void (*free) (void *data))
+{
+  dyn_func *f = dyn_alloc (&dyn_type_func, sizeof (dyn_func));
+  f->func = func;
+  f->data = data;
+  f->free = free;
+  return f;
+}
+
+void
+(*dyn_func_func (dyn_val val))()
+{
+  return ((dyn_func *)val)->func;
+}
+
+void *
+dyn_func_data (dyn_val val)
+{
+  return ((dyn_func *)val)->data;
+}
+
 int
-dyn_is_object (dyn_val *val, dyn_type *type)
+dyn_is_func (dyn_val val)
+{
+  return dyn_is_object (val, &dyn_type_func);
+}
+
+int
+dyn_is_object (dyn_val val, dyn_type *type)
 {
   return val && dyn_types[DYN_TAG(val)] == type;
+}
+
+const char *
+dyn_type_name (dyn_val val)
+{
+  return dyn_types[DYN_TAG(val)]->name;
 }
 
 typedef enum {
   dyn_kind_extent,
   dyn_kind_func,
   dyn_kind_var,
+  dyn_kind_unref,
   dyn_kind_catch
 } dyn_kind;
 
@@ -178,6 +277,9 @@ typedef struct dyn_item {
       dyn_var *var;
       dyn_val oldval;
     } var;
+    struct {
+      dyn_val val;
+    } unref;
     struct {
       jmp_buf *target;
       dyn_condition *condition;
@@ -216,6 +318,9 @@ dyn_unwind (dyn_item *goal, int for_throw)
 	  dyn_unref (w->val.var.var->val);
 	  w->val.var.var->val = w->val.var.oldval;
 	  break;
+	case dyn_kind_unref:
+	  dyn_unref (w->val.unref.val);
+	  break;
 	case dyn_kind_catch:
 	  free (w->val.catch.target);
 	  dyn_unref (w->val.catch.value);
@@ -253,14 +358,14 @@ dyn_on_unwind (void (*func) (int for_throw, void *data), void *data)
   dyn_add_unwind_item (item);
 }
 
-void *
+dyn_val
 dyn_get (dyn_var *var)
 {
   return var->val;
 }
 
 void
-dyn_set (dyn_var *var, void *val)
+dyn_set (dyn_var *var, dyn_val val)
 {
   dyn_ref (val);
   dyn_unref (var->val);
@@ -268,7 +373,7 @@ dyn_set (dyn_var *var, void *val)
 }
 
 void
-dyn_let (dyn_var *var, void *val)
+dyn_let (dyn_var *var, dyn_val val)
 {
   dyn_item *item = dpm_xmalloc (sizeof (dyn_item));
   item->kind = dyn_kind_var;
@@ -277,6 +382,36 @@ dyn_let (dyn_var *var, void *val)
   dyn_add_unwind_item (item);
   dyn_ref (val);
   var->val = val;
+}
+
+void
+dyn_unref_on_unwind (dyn_val val)
+{
+  dyn_item *item = dpm_xmalloc (sizeof (dyn_item));
+  item->kind = dyn_kind_unref;
+  item->val.unref.val = val;
+  dyn_add_unwind_item (item);  
+}
+
+dyn_val
+dyn_end_with (dyn_val val)
+{
+  dyn_ref (val);
+  dyn_end ();
+  dyn_unref_on_unwind (val);
+  return val;
+}
+
+static void
+unwind_free (int for_throw, void *data)
+{
+  free (data);
+}
+
+void
+dyn_on_unwind_free (void *mem)
+{
+  dyn_on_unwind (unwind_free, mem);
 }
 
 dyn_val
@@ -318,7 +453,7 @@ dyn_throw (dyn_condition *condition, dyn_val value)
 
   if (w)
     {
-      w->val.catch.value = value;
+      w->val.catch.value = dyn_ref (value);
       dyn_unwind (w, 1);
       longjmp (*(w->val.catch.target), 1);
     }
@@ -332,4 +467,22 @@ dyn_throw (dyn_condition *condition, dyn_val value)
       fprintf (stderr, "Uncaught condition '%s'\n", condition->name);
       exit (1);
     }
+}
+
+void
+dyn_signal (dyn_condition *condition, dyn_val value)
+{
+  dyn_val handler = dyn_get (&(condition->handler));
+  if (dyn_is_func (handler))
+    dyn_func_func (handler) (value, dyn_func_data (handler));
+  else if (condition->unhandled)
+    condition->unhandled (value);
+
+  dyn_throw (condition, value);
+}
+
+void
+dyn_let_handler (dyn_condition *condition, dyn_val handler)
+{
+  dyn_let (&(condition->handler), handler);
 }

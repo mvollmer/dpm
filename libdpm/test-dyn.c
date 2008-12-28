@@ -7,16 +7,8 @@
 
 dyn_var var;
 
-void
-my_free (void *value)
-{
-  fprintf (stderr, "freeing %p\n", value);
-  free (value);
-}
-
 dyn_condition error_cond = {
  .name = "error",
- .free = my_free
 };
 
 void
@@ -27,14 +19,16 @@ error (const char *fmt, ...)
   va_start (ap, fmt);
   message = dpm_vsprintf (fmt, ap);
   va_end (ap);
-  dyn_throw (&error_cond, message);
+  dyn_val val = dyn_from_string (message);
+  free (message);
+  dyn_throw (&error_cond, val);
 }
 
 void
 process (void *data)
 {
-  dyn_let (&var, "ho");
-  error ("nothing to do for %s", dyn_get (&var));
+  dyn_let (&var, dyn_from_string ("ho"));
+  error ("nothing to do for %s", dyn_to_string (dyn_get (&var)));
 }
 
 int
@@ -44,16 +38,20 @@ main ()
 
   while (n++ < 3)
     {
-      void *ball;
+      dyn_val ball;
 
       dyn_begin ();
-      dyn_set (&var, "hi");
+      dyn_set (&var, dyn_from_string ("hi"));
 
-      if (ball = dyn_catch (&error_cond, process, 0))
-	printf ("caught: %s\n", ball);
+      if ((ball = dyn_catch (&error_cond, process, 0)))
+	printf ("caught: %s\n", dyn_to_string (ball));
 
-      printf ("main %s\n", dyn_get (&var));
+      printf ("main %s\n", dyn_to_string (dyn_get (&var)));
 
       dyn_end ();
     }
+
+  dyn_set (&var, NULL);
+
+  return 0;
 }

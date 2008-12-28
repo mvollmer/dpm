@@ -119,20 +119,19 @@ dpm_parse_control (dpm_stream *ps,
 {
   int in_header = 0;
 
-  dpm_stream_next (ps);
+  dpm_stream_set_mark (ps);
 
- again:
   while (dpm_stream_find (ps, ":\n")
-	 || dpm_stream_len (ps) > 0)
+	 || dpm_stream_pos (ps) > dpm_stream_mark (ps))
     {
-      if (dpm_stream_len (ps) == 0)
+      if (dpm_stream_pos (ps) == dpm_stream_mark (ps))
 	{
 	  /* Empty line.  Gobble it up when we haven't seen a field yet.
 	   */
 	  if (!in_header)
 	    {
 	      dpm_stream_advance (ps, 1);
-	      dpm_stream_next (ps);
+	      dpm_stream_set_mark (ps);
 	    }
 	  else
 	    return 1;
@@ -143,28 +142,29 @@ dpm_parse_control (dpm_stream *ps,
 	  int name_len, value_off, value_len;
 
 	  if (!dpm_stream_looking_at (ps, ":"))
-	    dpm_stream_abort (ps, "No field name in '%.*s'",
-			     dpm_stream_len (ps), dpm_stream_start (ps));
+	    dpm_error (ps, "No field name in '%.*s'",
+		       dpm_stream_pos (ps) - dpm_stream_mark (ps),
+		       dpm_stream_mark (ps));
 
-	  name_len = dpm_stream_len (ps);
+	  name_len = dpm_stream_pos (ps) - dpm_stream_mark (ps);
 
 	  dpm_stream_advance (ps, 1);
 
-	  value_off = dpm_stream_len (ps);
+	  value_off = dpm_stream_pos (ps) - dpm_stream_mark (ps);
 
 	  dpm_stream_find_after (ps, "\n");
 	  while (dpm_stream_looking_at (ps, " ")
 		 || dpm_stream_looking_at (ps, "\t"))
 	    dpm_stream_find_after (ps, "\n");
 
-	  value_len = dpm_stream_len (ps) - value_off;
+	  value_len = dpm_stream_pos (ps) - dpm_stream_mark (ps) - value_off;
 
-	  name = dpm_stream_start (ps);
+	  name = dpm_stream_mark (ps);
 	  value = name + value_off;
 	  decode_value (&value, &value_len);
 	  func (ps, name, name_len, value, value_len, data);
 
-	  dpm_stream_next (ps);
+	  dpm_stream_set_mark (ps);
 	  in_header = 1;
 	}
     }
@@ -195,14 +195,14 @@ dpm_parse_uint (dpm_stream *ps,
   if (val > max)
     {
     out_of_range:
-      dpm_stream_abort (ps, "value out of range: %.*s", len, str);
+      dpm_error (ps, "value out of range: %.*s", len, str);
     }
   
   while (ptr < end && whitespace_p (*ptr))
     ptr++;
   
   if (*ptr && ptr != end)
-    dpm_stream_abort (ps, "junk at end of number: %.*s", len, str);
+    dpm_error (ps, "junk at end of number: %.*s", len, str);
 
   return val;
 }
@@ -227,27 +227,27 @@ dpm_parse_ar (dpm_stream *ps,
 	      void *data)
 {
   dpm_stream_grow (ps, 8);
-  if (memcmp (dpm_stream_start (ps), "!<arch>\n", 8) != 0)
-    dpm_stream_abort (ps, "Not a deb file");
+  if (memcmp (dpm_stream_mark (ps), "!<arch>\n", 8) != 0)
+    dpm_error (ps, "Not a deb file");
   dpm_stream_advance (ps, 8);
-  dpm_stream_next (ps);
+  dpm_stream_set_mark (ps);
 
   while (dpm_stream_try_grow (ps, sizeof (ar_header)) >= sizeof (ar_header))
     {
       off_t size;
       char *name;
       int name_len;
-      ar_header *head = (ar_header *)dpm_stream_start (ps);
+      ar_header *head = (ar_header *)dpm_stream_mark (ps);
     
       size = dpm_parse_uint (ps, head->size, sizeof (head->size), 10, 
 			     OFF_T_MAX);
 
       if (size == 0)
-	dpm_stream_abort (ps, "huh?");
+	dpm_error (ps, "huh?");
 
       if (memcmp (head->name, "#1/", 3) == 0)
 	{
-	  dpm_stream_abort (ps, "long names not supported yet");
+	  dpm_error (ps, "long names not supported yet");
 	}
       else
 	{
@@ -261,14 +261,14 @@ dpm_parse_ar (dpm_stream *ps,
 	}
 
       dpm_stream_advance (ps, sizeof (ar_header));
-      dpm_stream_next (ps);
+      dpm_stream_set_mark (ps);
 
       dpm_stream_push_limit (ps, size);
       func (ps, name, data);
       dpm_stream_pop_limit (ps);
 
       dpm_stream_advance (ps, size % 2);
-      dpm_stream_next (ps);
+      dpm_stream_set_mark (ps);
 
       free (name);
     }
@@ -310,7 +310,7 @@ dpm_parse_tar (dpm_stream *ps,
       int checksum, wantsum, i;
 
       dpm_stream_grow (ps, 512);
-      block = (unsigned char *)dpm_stream_start (ps);
+      block = (unsigned char *)dpm_stream_mark (ps);
       head = (tar_header *)block;
 
       /* Compute checksum, pretending the checksum field itself is
@@ -330,7 +330,7 @@ dpm_parse_tar (dpm_stream *ps,
       checksum += ' '*sizeof (head->checksum);
 
       if (checksum != wantsum)
-	dpm_stream_abort (ps, "checksum mismatch in tar header");
+	dpm_error (ps, "checksum mismatch in tar header");
 
       info.size  = dpm_parse_uint (ps,
 				   head->size, sizeof (head->size), 8,
@@ -364,19 +364,19 @@ dpm_parse_tar (dpm_stream *ps,
 	info.type = '0';
 
       dpm_stream_advance (ps, 512);
-      dpm_stream_next (ps);
+      dpm_stream_set_mark (ps);
 
       dpm_stream_push_limit (ps, info.size);
 
       if (info.type == 'L')
 	{
 	  dpm_stream_advance (ps, info.size);
-	  info.name = dpm_xstrndup (dpm_stream_start (ps), info.size);
+	  info.name = dpm_xstrndup (dpm_stream_mark (ps), info.size);
 	}
       else if (info.type == 'K')
 	{
 	  dpm_stream_advance (ps, info.size);
-	  info.target = dpm_xstrndup (dpm_stream_start (ps), info.size);
+	  info.target = dpm_xstrndup (dpm_stream_mark (ps), info.size);
 	}
       else
 	func (ps, &info, data);
@@ -384,7 +384,7 @@ dpm_parse_tar (dpm_stream *ps,
       dpm_stream_pop_limit (ps);
       
       dpm_stream_advance (ps, ((info.size + 511) & ~511) - info.size);
-      dpm_stream_next (ps);
+      dpm_stream_set_mark (ps);
 
       if (info.type != 'L')
 	{

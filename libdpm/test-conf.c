@@ -4,17 +4,17 @@
 
 #include "dpm.h"
 
-DPM_CONF_DECLARE (verbose, "verbose", "false", bool,
+DPM_CONF_DECLARE (verbose, "verbose", NULL, bool,
 		  "Set this to true to enable more verbose output.")	  
 
-DPM_CONF_DECLARE (debug, "debug", "false", bool,
+DPM_CONF_DECLARE (debug, "debug", NULL, bool,
 		  "Set this to true to enable debugging output.")	  
 
 DPM_CONF_DECLARE (architecture, "architecture", NULL, string,
 		  "The default architecture.")	  
 
-DPM_CONF_DECLARE (source, "source", NULL, string_array,
-		  "The source.")	  
+DPM_CONF_DECLARE (source, "source", NULL, any,
+		  "The source.")
 
 void
 doit (void *data)
@@ -22,23 +22,30 @@ doit (void *data)
   dpm_conf_parse ("foo.conf");
   dpm_conf_dump ();
 
+#if 1
   dyn_begin ();
-  dpm_conf_let ("verbose", "true");
-  
-  printf ("verbose: %d\n", dyn_get (&verbose));
-
+  dpm_conf_let ("verbose", dyn_from_string ("true"));
+  dpm_print ("verbose: %V\n", dyn_get (&verbose));
   dyn_end ();
 
-  printf ("verbose: %d\n", dyn_get (&verbose));
+  dpm_print ("verbose: %V\n", dyn_get (&verbose));
+#endif
 }
 
 int
 main ()
 {
-  char *error;
+  const char *error;
 
-  dyn_begin ();
-  if (error = dpm_catch_error (doit, NULL))
+  error = dpm_catch_error (doit, NULL);
+  if (error)
     printf ("%s\n", error);
-  dyn_end ();
+  
+  // Reset all variables.  No objects should remain alive.
+  dyn_set (&verbose, NULL);
+  dyn_set (&debug, NULL);
+  dyn_set (&architecture, NULL);
+  dyn_set (&source, NULL);
+
+  return 0;
 }

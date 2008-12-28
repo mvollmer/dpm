@@ -1,3 +1,5 @@
+CFLAGS = -Wall -Werror
+
 lib_LTLIBRARIES = libdpm.la
 
 libdpm_la_SOURCES = util.h    \
@@ -14,7 +16,7 @@ libdpm_la_SOURCES = util.h    \
                     parse.c   \
                     conf.h    \
                     conf.c
-libdpm_la_LIBADD = -lz -lbz2
+libdpm_la_LIBADD = -lz #-lbz2
 
 pkginclude_HEADERS = dpm.h util.h dyn.h stream.h parse.h
 

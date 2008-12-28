@@ -21,6 +21,16 @@
 #include "dyn.h"
 #include "stream.h"
 
+typedef struct {
+  const char *name;
+  dyn_val (*filter) (const char *context, dyn_val val);
+  dyn_val (*unfilter) (dyn_val val);
+} dpm_conf_type;
+
+extern dpm_conf_type dpm_conf_type_bool;
+extern dpm_conf_type dpm_conf_type_string;
+extern dpm_conf_type dpm_conf_type_any;
+
 typedef struct dpm_conf_declaration {
   struct dpm_conf_declaration *next;
 
@@ -30,11 +40,11 @@ typedef struct dpm_conf_declaration {
   const char *docstring;
 } dpm_conf_declaration;
 
-void dpm_conf_declare (dpm_conf_declaration *decl, const char *init);
+void dpm_conf_declare (dpm_conf_declaration *decl, dyn_val init);
 void dpm_conf_dump (void);
 
-void dpm_conf_set (const char *name, char *value);
-void dpm_conf_let (const char *name, char *value);
+void dpm_conf_set (const char *name, dyn_val val);
+void dpm_conf_let (const char *name, dyn_val val);
 
 #define DPM_CONF_DECLARE(_sym,_name,_init,_type,_doc)			\
   dyn_var _sym;								\
@@ -50,5 +60,7 @@ void dpm_conf_let (const char *name, char *value);
   {									\
     dpm_conf_declare (&_sym##__decl, _init);				\
   }
+
+void dpm_conf_parse (const char *filename);
 
 #endif /* !DPM_CONF_H */

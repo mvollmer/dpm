@@ -23,6 +23,7 @@
 #include <string.h>
 #include <limits.h>
 #include <setjmp.h>
+#include <ctype.h>
 
 #include "util.h"
 #include "store.h"
@@ -48,7 +49,7 @@ dpm_print (const char *fmt, ...)
 }
 
 static void
-dpm_write_quoted (FILE *f, char *str, int len)
+dpm_write_quoted (FILE *f, const char *str, int len)
 {
   fputc ('"', f);
   while (len > 0)
@@ -112,15 +113,15 @@ dpm_write_store_val (FILE *f, ss_val val, int quoted)
 }
 
 static void
-dpm_write_confval (FILE *f, dpm_confval val, int quoted)
+dpm_write_val (FILE *f, dyn_val val, int quoted)
 {
   if (val == NULL)
     {
       fprintf (f, "{}");
     }
-  else if (dpm_confval_is_string (val))
+  else if (dyn_is_string (val))
     {
-      const char *str = dpm_confval_string (val);
+      const char *str = dyn_to_string (val);
       if (quoted
 	  && (strchr (str, '{')
 	      || strchr (str, '}')
@@ -132,19 +133,24 @@ dpm_write_confval (FILE *f, dpm_confval val, int quoted)
       else
 	fprintf (f, "%s", str);
     }
-  else if (dpm_confval_is_list (val))
+  else if (dyn_is_list (val))
     {
       fprintf (f, "{ ");
-      while (val)
+      while (dyn_is_pair (val))
 	{
-	  dpm_write_confval (f, dpm_confval_first (val), quoted);
+	  dpm_write_val (f, dyn_first (val), quoted);
 	  fprintf (f, " ");
-	  val = dpm_confval_rest (val);
+	  val = dyn_rest (val);
 	}
-      fprintf (f, " }");
+      if (val)
+	{
+	  fprintf (stderr, ". ");
+	  dpm_write_val (f, val, quoted);
+	}
+      fprintf (f, "}");
     }
   else
-    fprintf (f, "?");
+    fprintf (f, "<%s>", dyn_type_name (val));
 }
 
 void
@@ -171,28 +177,28 @@ dpm_writev (FILE *f, const char *fmt, va_list ap)
 	    case 'd':
 	      fprintf (f, "%d", va_arg (ap, int));
 	      break;
-	    case 'v':
+	    case 'r':
 	      {
 		ss_val v = va_arg (ap, ss_val);
 		dpm_write_store_val (f, v, 0);
 	      }
 	      break;
-	    case 'V':
+	    case 'R':
 	      {
 		ss_val v = va_arg (ap, ss_val);
 		dpm_write_store_val (f, v, 1);
 	      }
 	      break;
-	    case 'c':
+	    case 'v':
 	      {
-		dpm_confval v = va_arg (ap, dpm_confval);
-		dpm_write_confval (f, v, 0);
+		dyn_val val = va_arg (ap, dyn_val);
+		dpm_write_val (f, val, 0);
 	      }
 	      break;
-	    case 'C':
+	    case 'V':
 	      {
-		dpm_confval v = va_arg (ap, dpm_confval);
-		dpm_write_confval (f, v, 1);
+		dyn_val val = va_arg (ap, dyn_val);
+		dpm_write_val (f, val, 1);
 	      }
 	      break;
 	    }

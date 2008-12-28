@@ -142,6 +142,9 @@ ss_val ss_tab_intern (ss_tab *ot, ss_val v);
 ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
 ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
 
+void ss_tab_foreach (ss_tab *ot,
+		     void (*func) (ss_val , void *data), void *data);
+
 struct ss_dict;
 typedef struct ss_dict ss_dict;
 
@@ -158,5 +161,11 @@ void ss_dict_del (ss_dict *d, ss_val key, ss_val val);
 void ss_dict_foreach (ss_dict *d,
 		      void (*func) (ss_val key, ss_val val, void *data),
 		      void *data);
+
+/* Debugging
+ */
+void ss_scan_store (ss_store *ss);
+int ss_id (ss_store *ss, ss_val x);
+void ss_tab_dump (ss_tab *ot);
 
 #endif /* !DPM_STORE_H */

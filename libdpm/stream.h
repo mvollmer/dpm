@@ -20,6 +20,8 @@
 
 #include <sys/types.h>
 
+#include "dyn.h"
+
 /* Streams
  *
  * This is a little abstraction for buffered I/O that can replace
@@ -43,30 +45,23 @@
 
 typedef struct dpm_stream dpm_stream;
 
-typedef void dpm_stream_error_callback (dpm_stream *ps, const char *msg);
+extern dyn_type dpm_stream_type;
 
-dpm_stream *dpm_stream_open_file (const char *filename,
-				  dpm_stream_error_callback *on_error);
+dpm_stream *dpm_stream_open_file (const char *filename);
 dpm_stream *dpm_stream_open_string (const char *str, int len);
 dpm_stream *dpm_stream_open_zlib (dpm_stream *ps);
 dpm_stream *dpm_stream_open_bz2 (dpm_stream *ps);
-void dpm_stream_close_parent (dpm_stream *ps);
 
 void dpm_stream_count_lines (dpm_stream *stream);
 int dpm_stream_lineno (dpm_stream *stream);
 const char *dpm_stream_filename (dpm_stream *stream);
 
-void dpm_stream_on_error (dpm_stream *ps,
-			  dpm_stream_error_callback *on_error);
-void dpm_stream_close (dpm_stream *ps);
-void dpm_stream_abort (dpm_stream *ps, const char *fmt, ...);
-
 void dpm_stream_push_limit (dpm_stream *ps, int len);
 void dpm_stream_pop_limit (dpm_stream *ps);
 
-char *dpm_stream_start (dpm_stream *ps);
-int dpm_stream_len (dpm_stream *ps);
-void dpm_stream_next (dpm_stream *ps);
+/* The mark */
+void dpm_stream_set_mark (dpm_stream *ps);
+char *dpm_stream_mark (dpm_stream *ps);
 
 /* Low level, unsafe */
 const char *dpm_stream_pos (dpm_stream *ps);

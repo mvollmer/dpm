@@ -15,6 +15,8 @@
  * along with this program.  If not, see http://www.gnu.org/licenses/.
  */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -95,7 +97,7 @@ intern_soft (const char *str)
 void
 print_blob (ss_val v)
 {
-  printf ("%.*s", ss_len (v), ss_blob_start (v));
+  printf ("%.*s", ss_len (v), (char *)ss_blob_start (v));
 }
 
 ss_val
@@ -139,7 +141,7 @@ rem_list (ss_val pkg)
 	  ss_val file = ss_ref (files, i);
 	  ss_dict_del (file_packages_dict, file, pkg);
 	}
-      dpm_print ("%v: removed %d files\n", pkg, len);
+      dpm_print ("%r: removed %d files\n", pkg, len);
     }
 
   ss_dict_set (package_files_dict, pkg, NULL);
@@ -183,7 +185,7 @@ set_list (ss_val pkg, char *file)
       fclose (f);
     }
 
-  dpm_print ("%v: added %d files\n", pkg, n);
+  dpm_print ("%r: added %d files\n", pkg, n);
 
   ss_dict_set (package_files_dict, pkg, ss_newv (store, 0, n, lines));
 }
@@ -197,7 +199,7 @@ set_info (ss_val pkg, ss_val info)
 void
 dump_entry (ss_val key, ss_val val, void *data)
 {
-  dpm_print ("%v: %v\n", key, val);
+  dpm_print ("%r: %r\n", key, val);
 }
 
 void
@@ -206,11 +208,11 @@ dump_packages (ss_val file)
   ss_val packages = ss_dict_get (file_packages_dict, file);
   int len = packages? ss_len (packages) : 0, i;
 
-  dpm_print ("%v:", file);
+  dpm_print ("%r:", file);
   for (i = 0; i < len; i++)
     {
       ss_val pkg = ss_ref (packages, i);
-      dpm_print (" %v", pkg);
+      dpm_print (" %r", pkg);
     }
   dpm_print ("\n");
 }
@@ -225,7 +227,7 @@ grep_blob (ss_val val, void *data)
 void
 dump_package (ss_val key, ss_val val, void *data)
 {
-  dpm_print ("%v: %d files\n", key, ss_len (val));
+  dpm_print ("%r: %d files\n", key, ss_len (val));
 }
 
 void
@@ -241,14 +243,14 @@ dump_package_info (ss_val pkg, const char *field)
 	  for (i = 0; i < n; i += 2)
 	    {
 	      if (ss_ref (info, i) == key)
-		dpm_print ("%v\n", ss_ref (info, i+1));
+		dpm_print ("%r\n", ss_ref (info, i+1));
 	    }
 	}
       else
 	{
 	  int n = ss_len (info), i;
 	  for (i = 0; i < n; i += 2)
-	    dpm_print ("%v: %v\n", ss_ref (info, i), ss_ref (info, i+1));
+	    dpm_print ("%r: %r\n", ss_ref (info, i), ss_ref (info, i+1));
 	}
     }
 }
@@ -256,13 +258,15 @@ dump_package_info (ss_val pkg, const char *field)
 void
 dump_file (ss_val key, ss_val val, void *data)
 {
-  dpm_print ("%v\n", key);
+  dpm_print ("%r\n", key);
 }
 
 ss_val
 parse_intern (dpm_stream *ps)
 {
-  return ss_tab_intern_blob (table, dpm_stream_len (ps), dpm_stream_start (ps));
+  return ss_tab_intern_blob (table,
+			     dpm_stream_pos (ps) - dpm_stream_mark (ps),
+			     dpm_stream_mark (ps));
 }
 
 ss_val package_key = NULL;
@@ -289,7 +293,7 @@ header (dpm_stream *ps,
 
   pd->n += 2;
   if (pd->n > 511)
-    dpm_stream_abort (ps, "too many fields");
+    dpm_error (ps, "too many fields");
 }
 
 int
@@ -306,7 +310,7 @@ parse_package_stanza (dpm_stream *ps, ss_val *pkg, ss_val *pkg_info)
   if (dpm_parse_control (ps, header, &pd))
     {
       if (pd.pkg == NULL)
-	dpm_stream_abort (ps, "stanza without package");
+	dpm_error (ps, "stanza without package");
 
       *pkg = pd.pkg;
       *pkg_info = ss_newv (store, 0, pd.n, pd.info);
@@ -319,10 +323,10 @@ parse_package_stanza (dpm_stream *ps, ss_val *pkg, ss_val *pkg_info)
 int
 main (int argc, char **argv)
 {
-  int i;
-
   if (argc < 2)
     usage ();
+
+  dyn_begin ();
 
   if (strcmp (argv[1], "add") == 0)
     {
@@ -364,8 +368,6 @@ main (int argc, char **argv)
     }
   else if (strcmp (argv[1], "list") == 0)
     {
-      ss_val key, val;
-
       init (argv[2], SS_READ);
 
       if (argc > 3)
@@ -379,7 +381,7 @@ main (int argc, char **argv)
 	      for (i = 0; i < ss_len (files); i++)
 		{
 		  ss_val b = ss_ref (files, i);
-		  dpm_print ("%v\n", b);
+		  dpm_print ("%r\n", b);
 		}
 	    }
 	  else
@@ -441,19 +443,20 @@ main (int argc, char **argv)
       if (argc > 2)
 	{
 	  ss_val pkg, info;
-	  dpm_stream *ps = dpm_stream_open_file (argv[3], NULL);
+	  dpm_stream *ps = dpm_stream_open_file (argv[3]);
 	  while (parse_package_stanza (ps, &pkg, &info))
 	    {
 	      set_info (pkg, info);
 	      // set_list (pkg, NULL);
 	    }
-	  dpm_stream_close (ps);
 	}
 
       finish (SS_WRITE);
     }
   else
     usage ();
+
+  dyn_end ();
 
   return 0;
 }
