@@ -35,11 +35,8 @@
    revert to its previous value when a dynamic extent ends.
 
    Dynamic variables store "dynamic values", values with dynamic
-   types.  A dynamic value can be null, a string, a list, a function,
-   or a object.
-
-   You can directly return to an arbitrary point in the call stack
-   with dyn_catch and dyn_throw.
+   types.  A dynamic value can be null, a string, a list, a
+   dictionary, a function, or a object.
 
    Memory for dynamic values is handled semi-automatically via
    reference counting.  Refcounting works well with threads, is
@@ -47,32 +44,41 @@
    deemed tolerable for the mild use of this dynamic type system, and
    cycles will simply not be allowed.  Yep, the easy way out.
    
-   To allow nicer code with less explicit ref/unref calls, newly
-   created dynamic values are owned by the current dynamic extent.  A
-   new value has a reference count of one, but this count represents
-   the reference from the dynamic extent to the value, not the
-   reference returned from the constructor function to the value.
-
-   This allows to collect the dynamic values that haven't found their
-   home yet when the dynamic extent ends prematurely, for example.
+   A dynamic value has one or more owners.  A piece of code that calls
+   dyn_ref becomes a owner, and the same piece is responsible for
+   calling dyn_unref eventually.  Ownership is never implicitly
+   transferred in a function call.  The caller of a function must
+   guarantee that all dynamic values have at least one owner for the
+   duration of the whole call.  Likewise, if a dynamic value is
+   returned from a function call, the caller does not automatically
+   become a owner.  The called function will give certain guarantees
+   about the validity of the return dynamic value.  Usually, a dynamic
+   value remains valid as long as some other value, or as long as the
+   current dynamic extent.  The returned value is always guaranteed to
+   be valid long enough for an immediate dyn_ref.
 
    If you want to explicitly create a reference from the current
    dynamic context to a value, use dyn_on_unwind_unref.  This is
    typically done in constructors.
 
-   As a coding guideline, ownership of references to dynamic values is
-   never transferred implicitly.  Or in other words, dyn_ref and
-   dyn_unref is always called in pairs by a single party (where
-   dyn_alloc counts as dyn_ref).  For example, when a dynamic value is
-   passed as a parameter, the called function must always use dyn_ref
-   if it needs the value to stay alive longer than the call, and must
-   consequently call dyn_unref eventually.  Likewise, a dynamic value
-   returned by a function is not owned by the caller.  The lifetime of
-   the returned value is determined by the rules of the function that
-   returns the value.  In general, it stays alive long enough for an
-   immediate dyn_ref call if the value has at least one reference
-   owned by the current thread.  Usually, the value stays alive for
-   the current dynamic extent.
+   There is a standard external representation for dynamic values.
+   This is useful for simple user interactions, such as in
+   configuration files.  All dynamic values can be written out, but
+   only strings, lists and dictionaries can be read back in.
+
+   For kicks and completeness, there are also standard evaluation
+   semantics for dynamic values, inspired by Scheme.  This is not
+   intended to be useful, it's just there for paedagocic purposes, and
+   because it is fun.  By adding some more primitive functions and
+   numeric data types, a useful little language would result.
+
+   You can mark a point in the call stack with dyn_catch, and you can
+   directly return to such a point with dyn_throw.  When this happens,
+   all intermediate dynamic extents are ended and their actions are
+   executed.
+
+   There are also little abstractions for streaming input and output.
+   They do little more than manage a buffer on behalf of their client.
  */
 
 void dyn_begin ();
@@ -90,6 +96,21 @@ typedef struct dyn_type dyn_type;
 
 void dyn_type_register (dyn_type *type);
 
+#define DYN_DECLARE_TYPE(_sym)         \
+  typedef struct _sym##_struct *_sym;  \
+  extern dyn_type _sym##_type[1];
+
+#define DYN_DEFINE_TYPE(_sym, _name, _unref) \
+  dyn_type _sym##_type[1] = {		     \
+    .name = _name,                           \
+    .unref = _unref                          \
+  };					     \
+  __attribute__ ((constructor))              \
+  static void _sym##__register ()            \
+  {                                          \
+    dyn_type_register (_sym##_type);         \
+  }
+
 typedef void *dyn_val;
 
 dyn_val dyn_alloc (dyn_type *type, size_t size);
@@ -101,6 +122,7 @@ dyn_val dyn_end_with (dyn_val val);
 int dyn_is_string (dyn_val val);
 int dyn_is_pair (dyn_val val);
 int dyn_is_list (dyn_val val);
+int dyn_is_dict (dyn_val val);
 int dyn_is_func (dyn_val val);
 int dyn_is_object (dyn_val val, dyn_type *type);
 const char *dyn_type_name (dyn_val val);
@@ -113,9 +135,51 @@ dyn_val dyn_first (dyn_val val);
 dyn_val dyn_rest (dyn_val val);
 dyn_val dyn_cons (dyn_val first, dyn_val rest);
 
+dyn_val dyn_get (dyn_val dict, dyn_val key);
+dyn_val dyn_getp (dyn_val dict, dyn_val key, dyn_val position_keys);
+dyn_val dyn_assoc (dyn_val dict, dyn_val key, dyn_val val);
+
 dyn_val dyn_lambda (void (*func) (), void *data, void (*free) (void *data));
 void (*dyn_func_func (dyn_val val))();
 void *dyn_func_data (dyn_val val);
+
+DYN_DECLARE_TYPE (dyn_input);
+DYN_DECLARE_TYPE (dyn_output);
+
+dyn_input dyn_open_file (const char *filename);
+dyn_input dyn_open_string (const char *str, int len);
+dyn_input dyn_open_zlib (dyn_input compressed);
+dyn_input dyn_open_bz2 (dyn_input compressed);
+
+void dyn_input_push_limit (dyn_input in, int len);
+void dpm_input_pop_limit (dyn_input in);
+
+void dyn_input_set_mark (dyn_input in);
+char *dyn_input_mark (dyn_input in);
+
+const char *dyn_input_pos (dyn_input in);
+void dyn_input_set_pos (dyn_input in, const char *pos);
+int dyn_input_grow (dyn_input in, int min);
+
+void dyn_input_advance (dyn_input in, int n);
+int dyn_input_find (dyn_input in, const char *delims);
+int dyn_input_find_after (dyn_input in, const char *delims);
+void dyn_input_skip (dyn_input in, const char *chars);
+int dyn_input_looking_at (dyn_input in, const char *str);
+
+dyn_output dyn_create_file (const char *filename);
+void dyn_output_commit (dyn_output out);
+
+int dyn_output_grow (dyn_output out, int min);
+char *dyn_output_pos (dyn_output out);
+void dyn_output_advance (dyn_output out, int n);
+
+dyn_val dyn_read (dyn_input in);
+void dyn_write (dyn_output out, const char *format, ...);
+void dyn_writev (dyn_output out, const char *format, va_list args);
+
+dyn_val dyn_eval (dyn_val form, dyn_val env);
+dyn_val dyn_load (dyn_input in, dyn_val env);
 
 typedef struct {
   dyn_val val;
