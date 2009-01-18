@@ -142,12 +142,12 @@ ss_grow (ss_store *ss, size_t size)
 {
   size = (size + GROW_MASK) & ~GROW_MASK;
   if (size >= MAX_SIZE)
-    dpm_error (ss, "%s has reached maximum size", ss->filename);
+    dyn_error ("%s has reached maximum size", ss->filename);
 
   if (size > ss->file_size)
     {
       if (ftruncate (ss->fd, size) < 0)
-	dpm_error (ss, "Can't grow %s: %m", ss->filename);
+	dyn_error ("Can't grow %s: %m", ss->filename);
       ss->file_size = size;
       ss->end = (uint32_t *)((char *)ss->head + ss->file_size);
     }
@@ -164,25 +164,25 @@ ss_sync (ss_store *ss, uint32_t root_off)
       start = (uint32_t *)(((int)start) & ~4095);
 
       if (msync (start, (end - start)*sizeof(uint32_t), MS_SYNC) <0)
-	dpm_error (ss, "Can't sync %s: %m", ss->filename);
+	dyn_error ("Can't sync %s: %m", ss->filename);
     }
 
   if (mmap (ss->head, sizeof (struct ss_header), PROT_READ | PROT_WRITE, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    dpm_error (ss, "Can't write-enable header of %s: %m", ss->filename);
+    dyn_error ("Can't write-enable header of %s: %m", ss->filename);
   
   ss->head->len = ss->next - ss->start;
   ss->head->alloced = ss->alloced_words;
   ss->head->root = root_off;
 
   if (msync (ss->head, sizeof (struct ss_header), MS_ASYNC) < 0)
-    dpm_error (ss, "Can't sync %s header: %m", ss->filename);
+    dyn_error ("Can't sync %s header: %m", ss->filename);
 
   if (mmap (ss->head, sizeof (struct ss_header), PROT_READ, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    dpm_error (ss, "Can't write-protect header of %s: %m", ss->filename);
+    dyn_error ("Can't write-protect header of %s: %m", ss->filename);
 }
 
 ss_store *
@@ -193,9 +193,9 @@ ss_open (const char *filename, int mode)
 
   ss_store *ss;
 
-  ss = dpm_xmalloc (sizeof (ss_store));
+  ss = dyn_malloc (sizeof (ss_store));
   ss->next_store = NULL;
-  ss->filename = dpm_xstrdup (filename);
+  ss->filename = dyn_strdup (filename);
   ss->head = NULL;
   ss->file_size = 0;
   ss->start = NULL;
@@ -209,7 +209,7 @@ ss_open (const char *filename, int mode)
     ss->fd = open (filename, O_RDWR | O_CREAT, 0666);
 
   if (ss->fd < 0)
-    dpm_error (ss, "Can't open %s: %m", filename);
+    dyn_error ("Can't open %s: %m", filename);
 
   if (mode != SS_READ)
     {
@@ -220,7 +220,7 @@ ss_open (const char *filename, int mode)
       lock.l_len = sizeof (struct ss_header);
 
       if (fcntl (ss->fd, F_SETLK, &lock) == -1)
-	dpm_error (ss, "Can't lock %s: %m", filename);
+	dyn_error ("Can't lock %s: %m", filename);
     }
 
   if (mode == SS_READ)
@@ -231,7 +231,7 @@ ss_open (const char *filename, int mode)
   ss->head = mmap (NULL, MAX_SIZE, prot, MAP_SHARED,
 		   ss->fd, 0);
   if (ss->head == MAP_FAILED)
-    dpm_error (ss, "Can't map %s: %m", ss->filename);
+    dyn_error ("Can't map %s: %m", ss->filename);
 
   if (mode == SS_TRUNC)
     {
@@ -262,13 +262,12 @@ ss_open (const char *filename, int mode)
     {
       if (ss->file_size < sizeof (struct ss_header)
 	  || ss->head->magic != SS_MAGIC)
-	dpm_error (ss, "Not a struct-store file: %s", ss->filename);
+	dyn_error ("Not a struct-store file: %s", ss->filename);
 
       if (ss->head->version != SS_VERSION)
-	dpm_error (ss,
-		  "Unsupported struct-store format version in %s.  "
-		  "Found %d, expected %d.",
-		  ss->filename, ss->head->version, SS_VERSION);
+	dyn_error ("Unsupported struct-store format version in %s.  "
+		   "Found %d, expected %d.",
+		   ss->filename, ss->head->version, SS_VERSION);
     }
 
   ss->next = (uint32_t *)(((uint32_t)(ss->start + ss->head->len)+4095) & ~4095);
@@ -276,7 +275,7 @@ ss_open (const char *filename, int mode)
   if (mmap (ss->head, (uint32_t)ss->next - (uint32_t)ss->head, PROT_READ, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    dpm_error (ss, "Can't write-protect %s: %m", ss->filename);
+    dyn_error ("Can't write-protect %s: %m", ss->filename);
 
   ss->next_store = all_stores;
   all_stores = ss;
@@ -350,7 +349,7 @@ ss_alloc (ss_store *ss, size_t words)
   uint32_t *obj, *new_next;
 
   if (ss == NULL)
-    return dpm_xmalloc (words * sizeof(uint32_t));
+    return dyn_malloc (words * sizeof(uint32_t));
 
   new_next = ss->next + words;
   ss->alloced_words += words;
@@ -375,7 +374,7 @@ ss_assert_in_store (ss_store *ss, ss_val obj)
 {
   if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
     return;
-  dpm_error (ss, "Rogue pointer.");
+  dyn_error ("Rogue pointer.");
 }
     
 /* Collecting garbage
@@ -485,7 +484,7 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
   if (gc->phase == 0 && ss_gc_delay_p (obj))
    {
      if (gc->n_delayed >= MAX_DELAYED)
-       dpm_error (gc->to_store, "too many weak tables\n");
+       dyn_error ("too many weak tables\n");
      gc->delayed[gc->n_delayed++] = obj;
      return obj;
    }
@@ -737,7 +736,7 @@ ss_gc (ss_store *ss)
   if (mmap (ss->head, ss->file_size, PROT_READ | PROT_WRITE, 
 	    MAP_PRIVATE | MAP_FIXED, ss->fd, 0)
       == MAP_FAILED)
-    dpm_error (ss, "Can't disconnect from %s: %m", ss->filename);
+    dyn_error ("Can't disconnect from %s: %m", ss->filename);
 
   asprintf (&newfile, "%s.gc", ss->filename);
   gc.from_store = ss;
@@ -754,7 +753,7 @@ ss_gc (ss_store *ss)
   /* Rename file
    */
   if (rename (gc.to_store->filename, ss->filename) < 0)
-    dpm_error (ss, "Can't rename %s to %s: %m",
+    dyn_error ("Can't rename %s to %s: %m",
 	      gc.to_store->filename, ss->filename);
 
   free (gc.to_store->filename);
@@ -826,7 +825,7 @@ ss_assert (ss_val obj, int tag, int min_len)
   if (obj == NULL
       || SS_TAG(obj) != tag
       || SS_LEN(obj) < min_len)
-    dpm_error (ss_find_object_store (obj), "Object of wrong type.");
+    dyn_error ("Object of wrong type.");
 }
 
 ss_val 
@@ -1353,7 +1352,7 @@ struct ss_tab {
 ss_tab *
 ss_tab_init (ss_store *ss, ss_val root)
 {
-  ss_tab *ot = dpm_xmalloc (sizeof (ss_tab));
+  ss_tab *ot = dyn_malloc (sizeof (ss_tab));
   ot->store = ss;
   ot->root = root;
   return ot;
@@ -1667,7 +1666,7 @@ ss_dict_del_action (ss_store *ss, ss_val node, int hash, void *data)
 ss_dict *
 ss_dict_init (ss_store *ss, ss_val root, int weak)
 {
-  ss_dict *d = dpm_xmalloc (sizeof (ss_dict));
+  ss_dict *d = dyn_malloc (sizeof (ss_dict));
   d->store = ss;
   if (weak == SS_DICT_STRONG)
     {

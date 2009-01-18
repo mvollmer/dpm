@@ -139,7 +139,7 @@ rem_list (ss_val pkg)
 	  ss_val file = ss_ref (files, i);
 	  ss_dict_del (file_packages_dict, file, pkg);
 	}
-      dpm_print ("%r: removed %d files\n", pkg, len);
+      dyn_print ("%r: removed %d files\n", pkg, len);
     }
 
   ss_dict_set (package_files_dict, pkg, NULL);
@@ -159,8 +159,8 @@ set_list (ss_val pkg, char *file)
   rem_list (pkg);
 
   if (file == NULL)
-    file = dpm_sprintf ("/var/lib/dpkg/info/%.*s.list",
-			ss_len (pkg), ss_blob_start (pkg));
+    file = dyn_format ("/var/lib/dpkg/info/%.*s.list",
+		       ss_len (pkg), ss_blob_start (pkg));
 
   n = 0;
   f = fopen (file, "r");
@@ -183,7 +183,7 @@ set_list (ss_val pkg, char *file)
       fclose (f);
     }
 
-  dpm_print ("%r: added %d files\n", pkg, n);
+  dyn_print ("%r: added %d files\n", pkg, n);
 
   ss_dict_set (package_files_dict, pkg, ss_newv (store, 0, n, lines));
 }
@@ -197,7 +197,7 @@ set_info (ss_val pkg, ss_val info)
 void
 dump_entry (ss_val key, ss_val val, void *data)
 {
-  dpm_print ("%r: %r\n", key, val);
+  dyn_print ("%r: %r\n", key, val);
 }
 
 void
@@ -206,13 +206,13 @@ dump_packages (ss_val file)
   ss_val packages = ss_dict_get (file_packages_dict, file);
   int len = packages? ss_len (packages) : 0, i;
 
-  dpm_print ("%r:", file);
+  dyn_print ("%r:", file);
   for (i = 0; i < len; i++)
     {
       ss_val pkg = ss_ref (packages, i);
-      dpm_print (" %r", pkg);
+      dyn_print (" %r", pkg);
     }
-  dpm_print ("\n");
+  dyn_print ("\n");
 }
 
 void
@@ -225,7 +225,7 @@ grep_blob (ss_val val, void *data)
 void
 dump_package (ss_val key, ss_val val, void *data)
 {
-  dpm_print ("%r: %d files\n", key, ss_len (val));
+  dyn_print ("%r: %d files\n", key, ss_len (val));
 }
 
 void
@@ -241,14 +241,14 @@ dump_package_info (ss_val pkg, const char *field)
 	  for (i = 0; i < n; i += 2)
 	    {
 	      if (ss_ref (info, i) == key)
-		dpm_print ("%r\n", ss_ref (info, i+1));
+		dyn_print ("%r\n", ss_ref (info, i+1));
 	    }
 	}
       else
 	{
 	  int n = ss_len (info), i;
 	  for (i = 0; i < n; i += 2)
-	    dpm_print ("%r: %r\n", ss_ref (info, i), ss_ref (info, i+1));
+	    dyn_print ("%r: %r\n", ss_ref (info, i), ss_ref (info, i+1));
 	}
     }
 }
@@ -256,15 +256,15 @@ dump_package_info (ss_val pkg, const char *field)
 void
 dump_file (ss_val key, ss_val val, void *data)
 {
-  dpm_print ("%r\n", key);
+  dyn_print ("%r\n", key);
 }
 
 ss_val
-parse_intern (dpm_stream *ps)
+parse_intern (dyn_input in)
 {
   return ss_tab_intern_blob (table,
-			     dpm_stream_pos (ps) - dpm_stream_mark (ps),
-			     dpm_stream_mark (ps));
+			     dyn_input_pos (in) - dyn_input_mark (in),
+			     dyn_input_mark (in));
 }
 
 ss_val package_key = NULL;
@@ -276,7 +276,7 @@ typedef struct {
 } parse_data;
 
 void
-header (dpm_stream *ps,
+header (dyn_input in,
 	const char *name, int name_len,
 	const char *value, int value_len,
 	void *data)
@@ -291,11 +291,11 @@ header (dpm_stream *ps,
 
   pd->n += 2;
   if (pd->n > 511)
-    dpm_error (ps, "too many fields");
+    dyn_error ("too many fields");
 }
 
 int
-parse_package_stanza (dpm_stream *ps, ss_val *pkg, ss_val *pkg_info)
+parse_package_stanza (dyn_input in, ss_val *pkg, ss_val *pkg_info)
 {
   parse_data pd;
 
@@ -305,10 +305,10 @@ parse_package_stanza (dpm_stream *ps, ss_val *pkg, ss_val *pkg_info)
   pd.n = 0;
   pd.pkg = NULL;
 
-  if (dpm_parse_control (ps, header, &pd))
+  if (dpm_parse_control (in, header, &pd))
     {
       if (pd.pkg == NULL)
-	dpm_error (ps, "stanza without package");
+	dyn_error ("stanza without package");
 
       *pkg = pd.pkg;
       *pkg_info = ss_newv (store, 0, pd.n, pd.info);
@@ -379,7 +379,7 @@ main (int argc, char **argv)
 	      for (i = 0; i < ss_len (files); i++)
 		{
 		  ss_val b = ss_ref (files, i);
-		  dpm_print ("%r\n", b);
+		  dyn_print ("%r\n", b);
 		}
 	    }
 	  else
@@ -441,8 +441,8 @@ main (int argc, char **argv)
       if (argc > 2)
 	{
 	  ss_val pkg, info;
-	  dpm_stream *ps = dpm_stream_open_file (argv[3]);
-	  while (parse_package_stanza (ps, &pkg, &info))
+	  dyn_input in = dyn_open_file (argv[3]);
+	  while (parse_package_stanza (in, &pkg, &info))
 	    {
 	      set_info (pkg, info);
 	      set_list (pkg, NULL);

@@ -21,44 +21,34 @@
 #include "dyn.h"
 #include "stream.h"
 
-typedef struct {
-  const char *name;
-  dyn_val (*filter) (const char *context, dyn_val val);
-  dyn_val (*unfilter) (dyn_val val);
-} dpm_conf_type;
-
-extern dpm_conf_type dpm_conf_type_bool;
-extern dpm_conf_type dpm_conf_type_string;
-extern dpm_conf_type dpm_conf_type_any;
-
 typedef struct dpm_conf_declaration {
   struct dpm_conf_declaration *next;
 
   dyn_var *var;
   const char *name;
-  dpm_conf_type *type;
+  dyn_val schema;
   const char *docstring;
 } dpm_conf_declaration;
 
-void dpm_conf_declare (dpm_conf_declaration *decl, dyn_val init);
+void dpm_conf_register (dpm_conf_declaration *decl);
 void dpm_conf_dump (void);
 
 void dpm_conf_set (const char *name, dyn_val val);
 void dpm_conf_let (const char *name, dyn_val val);
 
-#define DPM_CONF_DECLARE(_sym,_name,_init,_type,_doc)			\
+#define DPM_CONF_DECLARE(_sym,_name,_schema,_doc)			\
   dyn_var _sym;								\
   dpm_conf_declaration _sym##__decl = {					\
     .var = &_sym,							\
     .name = _name,							\
-    .type = &dpm_conf_type_##_type,					\
     .docstring = _doc							\
   };									\
   __attribute__ ((constructor))						\
   void									\
   _sym##__declare ()							\
   {									\
-    dpm_conf_declare (&_sym##__decl, _init);				\
+    _sym##__decl.schema = (_schema);                                    \
+    dpm_conf_register (&_sym##__decl);				        \
   }
 
 void dpm_conf_parse (const char *filename);

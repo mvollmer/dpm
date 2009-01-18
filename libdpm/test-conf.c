@@ -4,16 +4,28 @@
 
 #include "dpm.h"
 
-DPM_CONF_DECLARE (verbose, "verbose", NULL, bool,
-		  "Set this to true to enable more verbose output.")	  
+#define L dyn_list
+#define S dyn_from_string
+#define E DYN_EOL
 
-DPM_CONF_DECLARE (debug, "debug", NULL, bool,
+DPM_CONF_DECLARE (verbose, "verbose",
+		  L(S("if"),
+		    L(S("value"), S("false"), E), NULL,
+		    L(S("value"), S("true"), E), E),
+		  "Set this to true to enable more verbose output.")
+
+DPM_CONF_DECLARE (debug, "debug",
+		  L(S("if"),
+		    L(S("value"), S("false"), E), NULL,
+		    L(S("value"), S("true"), E), E),		  
 		  "Set this to true to enable debugging output.")	  
 
-DPM_CONF_DECLARE (architecture, "architecture", NULL, string,
+DPM_CONF_DECLARE (architecture, "architecture",
+		  S("string"),
 		  "The default architecture.")	  
 
-DPM_CONF_DECLARE (source, "source", NULL, any,
+DPM_CONF_DECLARE (source, "source",
+		  L(S("list"), S("string"), S("..."), E),
 		  "The source.")
 
 void
@@ -25,10 +37,10 @@ doit (void *data)
 #if 1
   dyn_begin ();
   dpm_conf_let ("verbose", dyn_from_string ("true"));
-  dpm_print ("verbose: %V\n", dyn_get (&verbose));
+  dyn_print ("verbose: %V\n", dyn_get (&verbose));
   dyn_end ();
 
-  dpm_print ("verbose: %V\n", dyn_get (&verbose));
+  dyn_print ("verbose: %V\n", dyn_get (&verbose));
 #endif
 }
 
@@ -37,7 +49,9 @@ main ()
 {
   const char *error;
 
-  error = dpm_catch_error (doit, NULL);
+  dyn_begin ();
+
+  error = dyn_catch_error (doit, NULL);
   if (error)
     printf ("%s\n", error);
   
@@ -46,6 +60,8 @@ main ()
   dyn_set (&debug, NULL);
   dyn_set (&architecture, NULL);
   dyn_set (&source, NULL);
+
+  dyn_end ();
 
   return 0;
 }

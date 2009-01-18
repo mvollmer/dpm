@@ -29,7 +29,7 @@ usage ()
 }
 
 void
-control_field (dpm_stream *ps,
+control_field (dyn_input in,
 	       const char *name, int name_len,
 	       const char *value, int value_len,
 	       void *data)
@@ -38,7 +38,7 @@ control_field (dpm_stream *ps,
 }
 
 void
-tar_member (dpm_stream *ps,
+tar_member (dyn_input in,
 	    dpm_tar_member *info,
 	    void *data)
 {
@@ -47,39 +47,37 @@ tar_member (dpm_stream *ps,
 	  info->size, info->mode, info->uid, info->gid,
 	  info->name, info->target);
   if (strcmp (info->name, "./control") == 0)
-    dpm_parse_control (ps, control_field, NULL);
+    dpm_parse_control (in, control_field, NULL);
 }
 
 void
-ar_member (dpm_stream *ps,
+ar_member (dyn_input in,
 	   const char *name,
 	   void *data)
 {
   if (strcmp (name, "control.tar.gz") == 0
       || strcmp (name, "data.tar.gz") == 0)
     {
-      dpm_stream *pp = dpm_stream_open_zlib (ps);
-      dpm_parse_tar (pp, tar_member, NULL);
+      dyn_input inp = dyn_open_zlib (in);
+      dpm_parse_tar (inp, tar_member, NULL);
     }
-#if HAVE_BZLIB
   else if (strcmp (name, "data.tar.bz2") == 0)
     {
-      dpm_stream *pp = dpm_stream_open_bz2 (ps);
-      dpm_parse_tar (pp, tar_member, NULL);
+      dyn_input inp = dyn_open_bz2 (in);
+      dpm_parse_tar (inp, tar_member, NULL);
     }
-#endif
 }
 
 int
 main (int argc, char **argv)
 {
-  dpm_stream *ps;
+  dyn_input in;
 
   if (argc < 2)
     usage ();
 
-  ps = dpm_stream_open_file (argv[1]);
-  dpm_parse_ar (ps, ar_member, NULL);
+  in = dyn_open_file (argv[1]);
+  dpm_parse_ar (in, ar_member, NULL);
 
   return 0;
 }

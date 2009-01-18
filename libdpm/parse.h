@@ -20,6 +20,8 @@
 
 #include <sys/types.h>
 
+#include "dyn.h"
+
 /* Parsing
  *
  * The parsers are functions that repeatedly invoke a callback with
@@ -37,15 +39,15 @@
  * validated input.  They won't give nice and helpful error messages.)
  */
 
-int dpm_parse_control (dpm_stream *ps,
-		       void (*func) (dpm_stream *ps,
+int dpm_parse_control (dyn_input in,
+		       void (*func) (dyn_input in,
 				     const char *name, int name_len,
 				     const char *value, int value_len,
 				     void *data),
 		       void *data);
 
-void dpm_parse_ar (dpm_stream *ps,
-		   void (*func) (dpm_stream *ps,
+void dpm_parse_ar (dyn_input in,
+		   void (*func) (dyn_input in,
 				 const char *member_name,
 				 void *data),
 		   void *data);
@@ -73,8 +75,8 @@ typedef struct {
   int          minor;
 } dpm_tar_member;
 
-void dpm_parse_tar (dpm_stream *ps,
-		    void (*func) (dpm_stream *ps,
+void dpm_parse_tar (dyn_input in,
+		    void (*func) (dyn_input in,
 				  dpm_tar_member *info,
 				  void *data),
 		    void *data);

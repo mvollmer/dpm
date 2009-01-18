@@ -26,10 +26,7 @@
 #include <sys/fcntl.h>
 #include <sys/stat.h>
 
-#include <zlib.h>
-
 #include "util.h"
-#include "stream.h"
 #include "parse.h"
 
 static int
@@ -110,8 +107,8 @@ decode_value (char **value_ptr, int *value_len_ptr)
 }
 
 int
-dpm_parse_control (dpm_stream *ps,
-		   void (*func) (dpm_stream *ps,
+dpm_parse_control (dyn_input in,
+		   void (*func) (dyn_input in,
 				 const char *name, int name_len,
 				 const char *value, int value_len,
 				 void *data),
@@ -119,19 +116,19 @@ dpm_parse_control (dpm_stream *ps,
 {
   int in_header = 0;
 
-  dpm_stream_set_mark (ps);
+  dyn_input_set_mark (in);
 
-  while (dpm_stream_find (ps, ":\n")
-	 || dpm_stream_pos (ps) > dpm_stream_mark (ps))
+  while (dyn_input_find (in, ":\n")
+	 || dyn_input_pos (in) > dyn_input_mark (in))
     {
-      if (dpm_stream_pos (ps) == dpm_stream_mark (ps))
+      if (dyn_input_pos (in) == dyn_input_mark (in))
 	{
 	  /* Empty line.  Gobble it up when we haven't seen a field yet.
 	   */
 	  if (!in_header)
 	    {
-	      dpm_stream_advance (ps, 1);
-	      dpm_stream_set_mark (ps);
+	      dyn_input_advance (in, 1);
+	      dyn_input_set_mark (in);
 	    }
 	  else
 	    return 1;
@@ -141,30 +138,30 @@ dpm_parse_control (dpm_stream *ps,
 	  char *name, *value;
 	  int name_len, value_off, value_len;
 
-	  if (!dpm_stream_looking_at (ps, ":"))
-	    dpm_error (ps, "No field name in '%.*s'",
-		       dpm_stream_pos (ps) - dpm_stream_mark (ps),
-		       dpm_stream_mark (ps));
+	  if (!dyn_input_looking_at (in, ":"))
+	    dyn_error ("No field name in '%.*s'",
+		       dyn_input_pos (in) - dyn_input_mark (in),
+		       dyn_input_mark (in));
 
-	  name_len = dpm_stream_pos (ps) - dpm_stream_mark (ps);
+	  name_len = dyn_input_pos (in) - dyn_input_mark (in);
 
-	  dpm_stream_advance (ps, 1);
+	  dyn_input_advance (in, 1);
 
-	  value_off = dpm_stream_pos (ps) - dpm_stream_mark (ps);
+	  value_off = dyn_input_pos (in) - dyn_input_mark (in);
 
-	  dpm_stream_find_after (ps, "\n");
-	  while (dpm_stream_looking_at (ps, " ")
-		 || dpm_stream_looking_at (ps, "\t"))
-	    dpm_stream_find_after (ps, "\n");
+	  dyn_input_find_after (in, "\n");
+	  while (dyn_input_looking_at (in, " ")
+		 || dyn_input_looking_at (in, "\t"))
+	    dyn_input_find_after (in, "\n");
 
-	  value_len = dpm_stream_pos (ps) - dpm_stream_mark (ps) - value_off;
+	  value_len = dyn_input_pos (in) - dyn_input_mark (in) - value_off;
 
-	  name = dpm_stream_mark (ps);
+	  name = dyn_input_mark (in);
 	  value = name + value_off;
 	  decode_value (&value, &value_len);
-	  func (ps, name, name_len, value, value_len, data);
+	  func (in, name, name_len, value, value_len, data);
 
-	  dpm_stream_set_mark (ps);
+	  dyn_input_set_mark (in);
 	  in_header = 1;
 	}
     }
@@ -173,7 +170,7 @@ dpm_parse_control (dpm_stream *ps,
 }
 
 static uintmax_t
-dpm_parse_uint (dpm_stream *ps,
+dpm_parse_uint (dyn_input in,
 		const char *str, int len, int base,
 		uintmax_t max)
 {
@@ -195,14 +192,14 @@ dpm_parse_uint (dpm_stream *ps,
   if (val > max)
     {
     out_of_range:
-      dpm_error (ps, "value out of range: %.*s", len, str);
+      dyn_error ("value out of range: %.*s", len, str);
     }
   
   while (ptr < end && whitespace_p (*ptr))
     ptr++;
   
   if (*ptr && ptr != end)
-    dpm_error (ps, "junk at end of number: %.*s", len, str);
+    dyn_error ("junk at end of number: %.*s", len, str);
 
   return val;
 }
@@ -220,34 +217,34 @@ typedef struct {
 } ar_header;
 
 void
-dpm_parse_ar (dpm_stream *ps,
-	      void (*func) (dpm_stream *ps,
+dpm_parse_ar (dyn_input in,
+	      void (*func) (dyn_input in,
 			    const char *member_name,
 			    void *data),
 	      void *data)
 {
-  dpm_stream_grow (ps, 8);
-  if (memcmp (dpm_stream_mark (ps), "!<arch>\n", 8) != 0)
-    dpm_error (ps, "Not a deb file");
-  dpm_stream_advance (ps, 8);
-  dpm_stream_set_mark (ps);
+  dyn_input_must_grow (in, 8);
+  if (memcmp (dyn_input_mark (in), "!<arch>\n", 8) != 0)
+    dyn_error ("Not a deb file");
+  dyn_input_advance (in, 8);
+  dyn_input_set_mark (in);
 
-  while (dpm_stream_try_grow (ps, sizeof (ar_header)) >= sizeof (ar_header))
+  while (dyn_input_grow (in, sizeof (ar_header)) >= sizeof (ar_header))
     {
       off_t size;
       char *name;
       int name_len;
-      ar_header *head = (ar_header *)dpm_stream_mark (ps);
+      ar_header *head = (ar_header *)dyn_input_mark (in);
     
-      size = dpm_parse_uint (ps, head->size, sizeof (head->size), 10, 
+      size = dpm_parse_uint (in, head->size, sizeof (head->size), 10, 
 			     OFF_T_MAX);
 
       if (size == 0)
-	dpm_error (ps, "huh?");
+	dyn_error ("huh?");
 
       if (memcmp (head->name, "#1/", 3) == 0)
 	{
-	  dpm_error (ps, "long names not supported yet");
+	  dyn_error ("long names not supported yet");
 	}
       else
 	{
@@ -255,20 +252,20 @@ dpm_parse_ar (dpm_stream *ps,
 	  while (name_len > 0 && head->name[name_len-1] == ' ')
 	    name_len--;
 
-	  name = dpm_xmalloc (name_len + 1);
+	  name = dyn_malloc (name_len + 1);
 	  memcpy (name, head->name, name_len);
 	  name[name_len] = 0;
 	}
 
-      dpm_stream_advance (ps, sizeof (ar_header));
-      dpm_stream_set_mark (ps);
+      dyn_input_advance (in, sizeof (ar_header));
+      dyn_input_set_mark (in);
 
-      dpm_stream_push_limit (ps, size);
-      func (ps, name, data);
-      dpm_stream_pop_limit (ps);
+      dyn_input_push_limit (in, size);
+      func (in, name, data);
+      dyn_input_pop_limit (in);
 
-      dpm_stream_advance (ps, size % 2);
-      dpm_stream_set_mark (ps);
+      dyn_input_advance (in, size % 2);
+      dyn_input_set_mark (in);
 
       free (name);
     }
@@ -292,8 +289,8 @@ typedef struct {
 } tar_header;
 
 void
-dpm_parse_tar (dpm_stream *ps,
-	       void (*func) (dpm_stream *ps,
+dpm_parse_tar (dyn_input in,
+	       void (*func) (dyn_input in,
 			     dpm_tar_member *info,
 			     void *data),
 	       void *data)
@@ -303,20 +300,20 @@ dpm_parse_tar (dpm_stream *ps,
   info.name = NULL;
   info.target = NULL;
 
-  while (dpm_stream_try_grow (ps, 1) > 0)
+  while (dyn_input_grow (in, 1) > 0)
     {
       unsigned char *block;
       tar_header *head;
       int checksum, wantsum, i;
 
-      dpm_stream_grow (ps, 512);
-      block = (unsigned char *)dpm_stream_mark (ps);
+      dyn_input_must_grow (in, 512);
+      block = (unsigned char *)dyn_input_mark (in);
       head = (tar_header *)block;
 
       /* Compute checksum, pretending the checksum field itself is
 	 filled with blanks.
        */
-      wantsum = dpm_parse_uint (ps,
+      wantsum = dpm_parse_uint (in,
 				head->checksum, sizeof (head->checksum), 8,
 				INT_MAX);
 
@@ -330,61 +327,61 @@ dpm_parse_tar (dpm_stream *ps,
       checksum += ' '*sizeof (head->checksum);
 
       if (checksum != wantsum)
-	dpm_error (ps, "checksum mismatch in tar header");
+	dyn_error ("checksum mismatch in tar header");
 
-      info.size  = dpm_parse_uint (ps,
+      info.size  = dpm_parse_uint (in,
 				   head->size, sizeof (head->size), 8,
 				   OFF_T_MAX);
-      info.mode  = dpm_parse_uint (ps,
+      info.mode  = dpm_parse_uint (in,
 				   head->mode, sizeof (head->mode), 8,
 				   INT_MAX);
-      info.uid   = dpm_parse_uint (ps,
+      info.uid   = dpm_parse_uint (in,
 				   head->userid, sizeof (head->userid), 8,
 				   INT_MAX);
-      info.gid   = dpm_parse_uint (ps,
+      info.gid   = dpm_parse_uint (in,
 				   head->groupid, sizeof (head->groupid), 8,
 				   INT_MAX);
-      info.mtime = dpm_parse_uint (ps,
+      info.mtime = dpm_parse_uint (in,
 				   head->mtime, sizeof (head->mtime), 8,
 				   INT_MAX);
-      info.major = dpm_parse_uint (ps,
+      info.major = dpm_parse_uint (in,
 				   head->major, sizeof (head->major), 8,
 				   INT_MAX);
-      info.minor = dpm_parse_uint (ps,
+      info.minor = dpm_parse_uint (in,
 				   head->minor, sizeof (head->minor), 8,
 				   INT_MAX);
 
       if (info.name == NULL)
-	info.name = dpm_xstrndup (head->name, sizeof (head->name));
+	info.name = dyn_strndup (head->name, sizeof (head->name));
       if (info.target == NULL)
-	info.target = dpm_xstrndup (head->linkname, sizeof (head->linkname));
+	info.target = dyn_strndup (head->linkname, sizeof (head->linkname));
 
       info.type = head->linkflag;
       if (info.type == 0)
 	info.type = '0';
 
-      dpm_stream_advance (ps, 512);
-      dpm_stream_set_mark (ps);
+      dyn_input_advance (in, 512);
+      dyn_input_set_mark (in);
 
-      dpm_stream_push_limit (ps, info.size);
+      dyn_input_push_limit (in, info.size);
 
       if (info.type == 'L')
 	{
-	  dpm_stream_advance (ps, info.size);
-	  info.name = dpm_xstrndup (dpm_stream_mark (ps), info.size);
+	  dyn_input_advance (in, info.size);
+	  info.name = dyn_strndup (dyn_input_mark (in), info.size);
 	}
       else if (info.type == 'K')
 	{
-	  dpm_stream_advance (ps, info.size);
-	  info.target = dpm_xstrndup (dpm_stream_mark (ps), info.size);
+	  dyn_input_advance (in, info.size);
+	  info.target = dyn_strndup (dyn_input_mark (in), info.size);
 	}
       else
-	func (ps, &info, data);
+	func (in, &info, data);
 
-      dpm_stream_pop_limit (ps);
+      dyn_input_pop_limit (in);
       
-      dpm_stream_advance (ps, ((info.size + 511) & ~511) - info.size);
-      dpm_stream_set_mark (ps);
+      dyn_input_advance (in, ((info.size + 511) & ~511) - info.size);
+      dyn_input_set_mark (in);
 
       if (info.type != 'L')
 	{
