@@ -26,7 +26,6 @@
 #include <sys/fcntl.h>
 #include <sys/stat.h>
 
-#include "util.h"
 #include "parse.h"
 
 static int

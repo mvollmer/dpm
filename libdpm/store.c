@@ -29,9 +29,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-#include "util.h"
-#include "store.h"
 #include "dyn.h"
+#include "store.h"
 
 /* XXX - better support for unstored objects, including some form of
          garbage collection.

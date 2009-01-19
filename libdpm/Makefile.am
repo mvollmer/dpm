@@ -12,7 +12,7 @@ libdpm_la_SOURCES = dyn.h     \
                     conf.c
 libdpm_la_LIBADD = -lz -lbz2
 
-pkginclude_HEADERS = dpm.h util.h dyn.h stream.h parse.h
+pkginclude_HEADERS = dpm.h dyn.h parse.h conf.h
 
 bin_PROGRAMS = dpm-store-tool
 noinst_PROGRAMS = test test-store test-dyn test-conf

@@ -18,10 +18,7 @@
 #ifndef DPM_H
 #define DPM_H
 
-#include "util.h"
 #include "dyn.h"
-#include "write.h"
-#include "stream.h"
 #include "parse.h"
 #include "store.h"
 #include "conf.h"

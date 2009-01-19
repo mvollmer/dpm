@@ -3,7 +3,6 @@
 #include <stdarg.h>
 
 #include "dyn.h"
-#include "util.h"
 
 dyn_var var[1];
 

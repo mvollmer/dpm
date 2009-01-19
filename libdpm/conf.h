@@ -19,7 +19,6 @@
 #define DPM_CONF_H
 
 #include "dyn.h"
-#include "stream.h"
 
 typedef struct dpm_conf_declaration {
   struct dpm_conf_declaration *next;

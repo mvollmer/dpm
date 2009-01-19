@@ -24,9 +24,7 @@
 #include <limits.h>
 #include <setjmp.h>
 
-#include "util.h"
 #include "conf.h"
-#include "write.h"
 
 static dpm_conf_declaration *conf_vars;
 
