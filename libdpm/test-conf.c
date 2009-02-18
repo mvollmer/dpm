@@ -9,23 +9,19 @@
 #define E DYN_EOL
 
 DPM_CONF_DECLARE (verbose, "verbose",
-		  L(S("if"),
-		    L(S("value"), S("false"), E), NULL,
-		    L(S("value"), S("true"), E), E),
+		  (if (value false) () (value true)),
 		  "Set this to true to enable more verbose output.")
 
 DPM_CONF_DECLARE (debug, "debug",
-		  L(S("if"),
-		    L(S("value"), S("false"), E), NULL,
-		    L(S("value"), S("true"), E), E),		  
+		  (if (value false) () (value true)),
 		  "Set this to true to enable debugging output.")	  
 
 DPM_CONF_DECLARE (architecture, "architecture",
-		  S("string"),
+		  string,
 		  "The default architecture.")	  
 
 DPM_CONF_DECLARE (source, "source",
-		  L(S("list"), S("string"), S("..."), E),
+		  (list string string (defaulted string main)),
 		  "The source.")
 
 void

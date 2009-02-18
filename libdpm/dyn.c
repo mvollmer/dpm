@@ -172,19 +172,6 @@ dyn_unref (dyn_val val)
     }
 }
 
-static void
-dyn_report ()
-{
-  fprintf (stderr, "%d living objects\n", n_objects);
-}
-
-__attribute__ ((constructor))
-static void
-dyn_report_init ()
-{
-  atexit (dyn_report);
-}
-
 struct dyn_string_struct {
   char chars[0];
 };
@@ -431,14 +418,18 @@ void
 dyn_list_start (dyn_list_builder builder)
 {
   builder[0].opaque[0] = NULL;
-  builder[0].opaque[1] = &(builder[0].opaque[0]);
+  builder[0].opaque[1] = NULL;
 }
 
 void
 dyn_list_append (dyn_list_builder builder, dyn_val val)
 {
-  *((dyn_pair *)builder[0].opaque[1]) = dyn_ref (dyn_cons (val, NULL));
-  builder[0].opaque[1] = &((*(dyn_pair *)builder[0].opaque[1])->rest);
+  dyn_val pair = dyn_cons (val, NULL);
+  if (builder[0].opaque[0] == NULL)
+    builder[0].opaque[0] = pair;
+  else
+    ((dyn_pair)builder[0].opaque[1])->rest = dyn_ref (pair);
+  builder[0].opaque[1] = pair;
 }
 
 dyn_val
@@ -523,7 +514,7 @@ typedef struct dyn_item {
 /* XXX - use a thread local variable instead of a global.
  */
 
-static dyn_item *windlist;
+static dyn_item *windlist = NULL;
 
 static void
 dyn_add_unwind_item (dyn_item *item)
@@ -2092,6 +2083,17 @@ dyn_read_element (dyn_read_state *state)
     {
       dyn_error ("Unexpected list delimiter");
     }
+  else if (state->cur_kind == '{')
+    {
+      dyn_read_next (state);
+      elt = dyn_read_list (state);
+      if (state->cur_kind != '}')
+	dyn_error ("Unexpected end of input in dict");
+    }
+  else if (state->cur_kind == '}')
+    {
+      dyn_error ("Unexpected dict delimiter");
+    }
   else if (state->cur_kind == 0)
     {
       elt = dyn_end_of_input_token;
@@ -2132,4 +2134,24 @@ dyn_read (dyn_input in)
   dyn_read_next (&state);
   val = dyn_read_element (&state);
   return dyn_end_with (val);
+}
+
+dyn_val
+dyn_read_string (const char *str)
+{
+  return dyn_read (dyn_open_string (str, -1));
+}
+
+static void
+dyn_report ()
+{
+  dyn_unwind (NULL, 0);
+  fprintf (stderr, "%d living objects\n", n_objects);
+}
+
+__attribute__ ((constructor))
+static void
+dyn_report_init ()
+{
+  atexit (dyn_report);
 }

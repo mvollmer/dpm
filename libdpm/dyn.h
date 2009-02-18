@@ -301,6 +301,7 @@ char *dyn_output_pos (dyn_output out);
 void dyn_output_advance (dyn_output out, int n);
 
 dyn_val dyn_read (dyn_input in);
+dyn_val dyn_read_string (const char *str);
 int dyn_is_eof (dyn_val val);
 
 void dyn_write (dyn_output out, const char *format, ...);

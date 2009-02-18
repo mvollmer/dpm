@@ -46,7 +46,7 @@ void dpm_conf_let (const char *name, dyn_val val);
   void									\
   _sym##__declare ()							\
   {									\
-    _sym##__decl.schema = (_schema);                                    \
+    _sym##__decl.schema = (dyn_read_string (#_schema));			\
     dpm_conf_register (&_sym##__decl);				        \
   }
 

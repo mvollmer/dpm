@@ -89,8 +89,7 @@ dpm_conf_parse (const char *filename)
       if (!dyn_is_string (var))
 	dyn_error ("variable names must be strings");
 
-      dyn_write (dyn_stdout, "var %V val %V\n", var, val);
-      dyn_output_flush (dyn_stdout);
+      // dyn_print ("var %V val %V\n", var, val);
 
       dpm_conf_set (dyn_to_string (var), val);
     }
