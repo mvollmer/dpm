@@ -1,4 +1,6 @@
-CFLAGS = -Wall -Werror -O2 -g
+CFLAGS = -Wall -O2 -g
+
+AM_CFLAGS = -std=c99
 
 lib_LTLIBRARIES = libdpm.la
 

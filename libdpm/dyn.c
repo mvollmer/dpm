@@ -187,6 +187,7 @@ dyn_string_equal (void *a, void *b)
   return strcmp (a, b) == 0;
 }
 
+DYN_DECLARE_TYPE (dyn_string);
 DYN_DEFINE_TYPE (dyn_string, "string");
 
 int
@@ -220,24 +221,26 @@ dyn_from_stringn (const char *str, int len)
 
 struct dyn_pair_struct {
   dyn_val first;
-  dyn_val rest;
+  dyn_val second;
 };
+
+typedef struct dyn_pair_struct dyn_pair_struct;
 
 static void
 dyn_pair_unref (dyn_type *type, void *object)
 {
-  dyn_pair pair = object;
+  dyn_pair_struct *pair = object;
   dyn_unref (pair->first);
-  dyn_unref (pair->rest);
+  dyn_unref (pair->second);
 }
 
 static int
 dyn_pair_equal (void *a, void *b)
 {
-  dyn_pair pair_a = a;
-  dyn_pair pair_b = b;
+  dyn_pair_struct *pair_a = a;
+  dyn_pair_struct *pair_b = b;
   return (dyn_equal (pair_a->first, pair_b->first)
-	  && dyn_equal (pair_a->rest, pair_b->rest));
+	  && dyn_equal (pair_a->second, pair_b->second));
 }
 
 DYN_DEFINE_TYPE (dyn_pair, "pair");
@@ -249,116 +252,233 @@ dyn_is_pair (dyn_val val)
 }
 
 dyn_val
-dyn_cons (dyn_val first, dyn_val rest)
+dyn_pair (dyn_val first, dyn_val second)
 {
-  dyn_pair pair = dyn_new (dyn_pair);
+  dyn_pair_struct *pair = dyn_new (dyn_pair);
   pair->first = dyn_ref (first);
-  pair->rest = dyn_ref (rest);
+  pair->second = dyn_ref (second);
   return pair;
 }
 
 dyn_val
 dyn_first (dyn_val val)
 {
-  dyn_pair pair = val;
+  dyn_pair_struct *pair = val;
   return pair->first;
 }
 
 dyn_val
-dyn_rest (dyn_val val)
+dyn_second (dyn_val val)
 {
-  dyn_pair pair = val;
-  return pair->rest;
+  dyn_pair_struct *pair = val;
+  return pair->second;
 }
 
-int
-dyn_is_list (dyn_val val)
-{
-  return val == NULL || dyn_is_pair (val);
-}
+/* Sequences
+ *
+ * XXX - use a representation that makes concatenating more efficient.
+ */
 
-int
-dyn_length (dyn_val val)
-{
-  int n = 0;
-  while (dyn_is_pair (val))
-    {
-      n++;
-      val = dyn_rest (val);
-    }
-  return n;
-}
-
-struct dyn_dict_struct {
-  dyn_val key;
-  dyn_val value;
-  dyn_val rest;
+struct dyn_seqvec_struct {
+  int len;
+  dyn_val elts[0];  
 };
 
+typedef struct dyn_seqvec_struct dyn_seqvec_struct;
+
 static void
-dyn_dict_unref (dyn_type *type, void *object)
+dyn_seqvec_unref (dyn_type *type, void *object)
 {
-  dyn_dict dict = object;
-  dyn_unref (dict->key);
-  dyn_unref (dict->value);
-  dyn_unref (dict->rest);
+  dyn_seqvec_struct *seq = object;
+  for (int i = 0; i < seq->len; i++)
+    dyn_unref (seq->elts[i]);
 }
 
 static int
-dyn_dict_is_subset (dyn_val a, dyn_val b)
+dyn_seqvec_equal (void *a, void *b)
 {
-  while (a)
-    {
-      dyn_dict dict_a = a;
-      if (!dyn_equal (dict_a->value, dyn_lookup (b, dict_a->key)))
-	return 0;
-      a = dict_a->rest;
-    }
-  return 1;
+  // XXX - code this
+  abort ();
 }
 
-static int
-dyn_dict_equal (void *a, void *b)
-{
-  /* cough */
-  return (dyn_dict_is_subset (a, b)
-	  && dyn_dict_is_subset (b, a));
-}
-
-DYN_DEFINE_TYPE (dyn_dict, "dict");
+DYN_DEFINE_TYPE (dyn_seqvec, "seq");
 
 int
-dyn_is_dict (dyn_val val)
+dyn_is_seq (dyn_val val)
 {
-  return dyn_is (val, dyn_dict_type);
+  return dyn_is (val, dyn_seqvec_type);
+}
+
+int
+dyn_len (dyn_val seq)
+{
+  return ((struct dyn_seqvec_struct *)seq)->len;
 }
 
 dyn_val
-dyn_lookup (dyn_val dict, dyn_val key)
+dyn_seq (dyn_val first, ...)
 {
-  dyn_dict d = dict;
+  va_list ap;
+  dyn_val val;
+  dyn_seq_builder builder;
 
-  if (key == NULL)
-    return NULL;
-  
-  while (d)
+  dyn_seq_start (builder);
+  va_start (ap, first);
+  val = first;
+  while (val != DYN_EOS)
     {
-      if (dyn_equal (d->key, key))
-	return d->value;
-      d = d->rest;
+      dyn_seq_append (builder, val);
+      val = va_arg (ap, dyn_val);
     }
+  return dyn_seq_finish (builder);
+}
+
+dyn_val
+dyn_concat (dyn_val first, ...)
+{
+  va_list ap;
+  dyn_val val;
+  dyn_seq_builder builder;
+
+  dyn_seq_start (builder);
+  va_start (ap, first);
+  val = first;
+  while (val != DYN_EOS)
+    {
+      dyn_seq_concat_back (builder, val);
+      val = va_arg (ap, dyn_val);
+    }
+  return dyn_seq_finish (builder);
+}
+
+dyn_val
+dyn_elt (dyn_val seq, int i)
+{
+  return ((struct dyn_seqvec_struct *)seq)->elts[i];
+}
+
+dyn_val
+dyn_assoc (dyn_val key, dyn_val val, dyn_val seq)
+{
+  dyn_seq_builder builder;
+  dyn_seq_start (builder);
+  dyn_seq_append (builder, dyn_pair (key, val));
+  dyn_seq_concat_back (builder, seq);
+  return dyn_seq_finish (builder);
+}
+
+dyn_val
+dyn_lookup (dyn_val key, dyn_val seq)
+{
+  for (int i = 0; i < dyn_len (seq); i++)
+    {
+      dyn_val elt = dyn_elt (seq, i);
+      if (dyn_is_pair (elt) && dyn_equal (key, dyn_first (elt)))
+	return dyn_second (elt);
+    }
+
   return NULL;
 }
 
-dyn_val
-dyn_assoc (dyn_val dict, dyn_val key, dyn_val value)
+/* Sequence builder */
+
+void
+dyn_seq_start (dyn_seq_builder builder)
 {
-  dyn_dict d = dyn_new (dyn_dict);
-  d->key = dyn_ref (key);
-  d->value = dyn_ref (value);
-  d->rest = dyn_ref (dict);
-  return d;
+  builder->elts = NULL;
+  builder->len = builder->max = builder->offset = 0;
 }
+
+static void
+dyn_seq_grow (dyn_seq_builder builder, int shift, int grow)
+{
+  int new_offset = builder->offset;
+  int new_max = builder->max;
+
+  if (shift > builder->offset)
+    new_offset = (shift + 15) & ~15;
+  else
+    new_offset = builder->offset;
+
+  if (new_offset + builder->len + grow > builder->max)
+    new_max = (new_offset + builder->len + grow + 15) & ~15;
+  else
+    new_max = builder->max;
+
+  if (new_max != builder->max)
+    {
+      dyn_val *new_elts = dyn_malloc (sizeof(dyn_val)*new_max);
+      for (int i = 0; i < builder->len; i++)
+	new_elts[new_offset+i] = builder->elts[builder->offset+i];
+      free (builder->elts);
+      builder->elts = new_elts;
+      builder->max = new_max;
+      builder->offset = new_offset;
+    }
+  else if (new_offset != builder->offset)
+    {
+      for (int i = builder->len-1; i >= 0; i--)
+	builder->elts[new_offset+i] = builder->elts[builder->offset+i];
+    }
+}
+
+void
+dyn_seq_append (dyn_seq_builder builder, dyn_val val)
+{
+  dyn_seq_grow (builder, 0, 1);
+  builder->elts[builder->offset + builder->len++] = dyn_ref (val);
+}
+
+void
+dyn_seq_prepend (dyn_seq_builder builder, dyn_val val)
+{
+  dyn_seq_grow (builder, 1, 0);
+  builder->elts[--builder->offset] = dyn_ref (val);
+  builder->len++;
+}
+
+void
+dyn_seq_concat_back (dyn_seq_builder builder, dyn_val seq)
+{
+  if (seq)
+    {
+      dyn_seqvec_struct *v = seq;
+      dyn_seq_grow (builder, 0, v->len);
+      for (int i = 0, j = builder->offset + builder->len; i < v->len; i++, j++)
+	builder->elts[j] = dyn_ref (v->elts[i]);
+      builder->len += v->len;
+    }
+}
+
+void
+dyn_seq_concat_front (dyn_seq_builder builder, dyn_val seq)
+{
+  if (seq)
+    {
+      dyn_seqvec_struct *v = seq;
+      dyn_seq_grow (builder, v->len, 0);
+      for (int i = 0, j = builder->offset - v->len; i < v->len; i++, j++)
+	builder->elts[j] = dyn_ref (v->elts[i]);
+      builder->offset -= v->len;
+      builder->len += v->len;
+    }
+}
+
+dyn_val
+dyn_seq_finish (dyn_seq_builder builder)
+{
+  dyn_seqvec_struct *v = dyn_alloc (dyn_seqvec_type,
+				    (sizeof(dyn_seqvec_struct)
+				     + builder->len*sizeof(dyn_val)));
+  v->len = builder->len;
+  for (int i = 0, j = builder->offset; i < v->len; i++, j++)
+    v->elts[i] = builder->elts[j];
+  free (builder->elts);
+  return v;
+}
+
+/* Functions 
+ */
 
 struct dyn_func_struct {
   void (*code) ();
@@ -366,10 +486,12 @@ struct dyn_func_struct {
   void (*free_env) (void *env);
 };
 
+typedef struct dyn_func_struct dyn_func_struct;
+
 static void
 dyn_func_unref (dyn_type *type, void *object)
 {
-  dyn_func func = object;
+  dyn_func_struct *func = object;
   if (func->free_env)
     func->free_env (func->env);
 }
@@ -389,9 +511,9 @@ dyn_is_func (dyn_val val)
 }
 
 dyn_val
-dyn_lambda (void (*code) (), void *env, void (*free_env) (void *env))
+dyn_func (void (*code) (), void *env, void (*free_env) (void *env))
 {
-  dyn_func func = dyn_new (dyn_func);
+  dyn_func_struct *func = dyn_new (dyn_func);
   func->code = code;
   func->env = env;
   func->free_env = free_env;
@@ -401,58 +523,15 @@ dyn_lambda (void (*code) (), void *env, void (*free_env) (void *env))
 void
 (*dyn_func_code (dyn_val val))()
 {
-  dyn_func func = val;
+  dyn_func_struct *func = val;
   return func->code;
 }
 
 void *
 dyn_func_env (dyn_val val)
 {
-  dyn_func func = val;
+  dyn_func_struct *func = val;
   return func->env;
-}
-
-/* List builder */
-
-void
-dyn_list_start (dyn_list_builder builder)
-{
-  builder[0].opaque[0] = NULL;
-  builder[0].opaque[1] = NULL;
-}
-
-void
-dyn_list_append (dyn_list_builder builder, dyn_val val)
-{
-  dyn_val pair = dyn_cons (val, NULL);
-  if (builder[0].opaque[0] == NULL)
-    builder[0].opaque[0] = pair;
-  else
-    ((dyn_pair)builder[0].opaque[1])->rest = dyn_ref (pair);
-  builder[0].opaque[1] = pair;
-}
-
-dyn_val
-dyn_list_finish (dyn_list_builder builder)
-{
-  return builder[0].opaque[0];
-}
-
-dyn_val
-dyn_list (dyn_val first, ...)
-{
-  dyn_list_builder builder;
-
-  va_list ap;
-  va_start (ap, first);
-
-  dyn_list_start (builder);
-  while (first != DYN_EOL)
-    {
-      dyn_list_append (builder, first);
-      first = va_arg (ap, dyn_val);
-    }
-  return dyn_list_finish (builder);
 }
 
 /* Equality */
@@ -794,19 +873,29 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
 	  *result = val;
 	  return 1;
 	}
-      else
-	return dyn_schema_mismatch (schema, val, soft);
+      else 
+	{
+	  dyn_val env_schema = dyn_lookup (schema, env);
+	  if (env_schema)
+	    return dyn_apply_schema_with_env (val, env_schema,
+					      result, soft, env);
+	  else 
+	    return dyn_schema_mismatch (schema, val, soft);
+	}
     }
-  else if (dyn_is_pair (schema))
+  else if (dyn_is_seq (schema))
     {
-      dyn_val op = dyn_first (schema);
+      if (dyn_len (schema) < 1)
+	dyn_error ("invalid schema: %V", schema);
+
+      dyn_val op = dyn_elt (schema, 0);
 
       if (dyn_eq (op, "value"))
 	{
-	  if (dyn_length (schema) != 2)
+	  if (dyn_len (schema) != 2)
 	    dyn_error ("invalid schema: %V", schema);
 
-	  dyn_val schema_value = dyn_first (dyn_rest (schema));
+	  dyn_val schema_value = dyn_elt (schema, 1);
 
 	  if (dyn_equal (val, schema_value))
 	    {
@@ -816,66 +905,88 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
 	  else 
 	    return dyn_schema_mismatch (schema, val, soft);
 	}
-      else if (dyn_eq (op, "list"))
+      if (dyn_eq (op, "pair"))
 	{
-	  dyn_val cur_list = val;
-	  dyn_val schemas = dyn_rest (schema);
-	  dyn_val prev_schemas = NULL;
-	  dyn_list_builder result_builder;
+	  if (dyn_len (schema) != 3)
+	    dyn_error ("invalid schema: %V", schema);
 
-	  dyn_list_start (result_builder);
-	  while (dyn_is_pair (schemas))
+	  dyn_val first_schema = dyn_elt (schema, 1);
+	  dyn_val second_schema = dyn_elt (schema, 2);
+
+	  dyn_val first_result;
+	  if (!dyn_apply_schema_with_env (dyn_first (val), dyn_elt (schema, 1),
+					  &first_result, soft,
+					  env))
+	    return 0;
+
+	  dyn_val second_result;
+	  if (!dyn_apply_schema_with_env (dyn_second (val), dyn_elt (schema, 2),
+					  &second_result, soft,
+					  env))
+	    return 0;
+
+	  *result = dyn_pair (first_result, second_result);
+	  return 1;
+	}
+      else if (dyn_eq (op, "seq"))
+	{
+	  if (!dyn_is_seq (val))
+	    return dyn_schema_mismatch (schema, val, soft);
+	    
+	  dyn_seq_builder result_builder;
+
+	  int cur_schema_index = 1;
+	  int cur_val_index = 0;
+
+	  dyn_seq_start (result_builder);
+	  while (cur_schema_index < dyn_len (schema))
 	    {
-	      if (cur_list && !dyn_is_pair (cur_list))
-		dyn_schema_mismatch (schema, val, soft);
-
-	      dyn_val cur_schema = dyn_first (schemas);
-	      dyn_val cur_value = cur_list? dyn_first (cur_list) : NULL;
+	      dyn_val cur_schema = dyn_elt (schema, cur_schema_index);
 	      
 	      if (dyn_eq (cur_schema, "..."))
 		{
-		  if (dyn_rest (schemas))
+		  if (cur_schema_index != dyn_len (schema) - 1)
 		    dyn_error ("ellipsis must be last in list schema: %V", 
 			       schema);
 
-		  if (prev_schemas == NULL)
+		  if (cur_schema_index == 1)
 		    dyn_error ("ellipsis must not be first in list schema: %V",
 			       schema);
 		    
 		  /* It's OK to end the list at any time.
 		   */
-		  if (!dyn_is_pair (cur_list))
+		  if (cur_val_index == dyn_len (val))
 		    break;
 
 		  /* Go back to previous schema
 		   */
-		  schemas = prev_schemas;
+		  cur_schema_index -= 1;
 		}
 	      else
 		{
+		  dyn_val cur_value = (cur_val_index < dyn_len (val)
+				       ? dyn_elt (val, cur_val_index)
+				       : NULL);
 		  dyn_val result_value;
 		  if (!dyn_apply_schema_with_env (cur_value, cur_schema,
 						  &result_value, soft,
 						  env))
 		    return 0;
 		  else
-		    dyn_list_append (result_builder, result_value);
-		  
-		  prev_schemas = schemas;
-		  schemas = dyn_rest (schemas);
-		  if (cur_list)
-		    cur_list = dyn_rest (cur_list);
+		    dyn_seq_append (result_builder, result_value);
+
+		  cur_schema_index += 1;
+		  if (cur_val_index < dyn_len (val))
+		    cur_val_index += 1;
 		}
 	    }
 
-	  /* We made it through all the schemas, the list is valid
+	  /* We made it through all the schemas, the sequence is valid
 	     when there isn't anything left.
 	   */
-	  if (cur_list == NULL)
-	    {
-	      *result = dyn_list_finish (result_builder);
-	      return 1;
-	    }
+	  *result = dyn_seq_finish (result_builder);
+	  if (cur_val_index == dyn_len (val))
+	    return 1;
 	  else
 	    return dyn_schema_mismatch (schema, val, soft);
 	}
@@ -885,25 +996,24 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
 	}
       else if (dyn_eq (op, "defaulted"))
 	{
-	  if (dyn_length (schema) != 3)
+	  if (dyn_len (schema) != 3)
 	    dyn_error ("invalid schema: %V", schema);
 	  
 	  if (val == NULL)
 	    {
-	      *result = dyn_first (dyn_rest (dyn_rest (schema)));
+	      *result = dyn_elt (schema, 2);
 	      return 1;
 	    }
 	  else 
-	    return dyn_apply_schema_with_env (val,
-					      dyn_first (dyn_rest (schema)),
+	    return dyn_apply_schema_with_env (val, dyn_elt (schema, 1),
 					      result, soft, env);
 	}
       else if (dyn_eq (op, "not"))
 	{
-	  if (dyn_length (schema) != 2)
+	  if (dyn_len (schema) != 2)
 	    dyn_error ("invalid schema: %V", schema);
 
-	  dyn_val schema = dyn_first (dyn_rest (schema));
+	  dyn_val schema = dyn_elt (schema, 1);
 	  dyn_val unused_result;
 	  if (dyn_apply_schema_with_env (val, schema, &unused_result, 1, env))
 	    dyn_schema_mismatch (schema, val, soft);
@@ -915,38 +1025,38 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
 	}
       else if (dyn_eq (op, "or"))
 	{
-	  dyn_val schemas = dyn_rest (schema);
-	  while (dyn_is_pair (schemas))
+	  int i = 1;
+	  while (i < dyn_len (schema))
 	    {
-	      dyn_val cur_schema = dyn_first (schemas);
+	      dyn_val cur_schema = dyn_elt (schema, i);
 	      
 	      if (dyn_apply_schema_with_env (val, cur_schema,
 					     result, 1, env))
 		return 1;
 
-	      schemas = dyn_rest (schemas);
+	      i += 1;
 	    }
 
 	  return dyn_schema_mismatch (schema, val, soft);
 	}
       else if (dyn_eq (op, "if"))
 	{
-	  dyn_val schema_pairs = dyn_rest (schema);
-	  while (dyn_is_pair (schema_pairs))
+	  int i = 1;
+	  while (i < dyn_len (schema))
 	    {
-	      dyn_val cur_schema = dyn_first (schema_pairs);
+	      dyn_val cur_schema = dyn_elt (schema, i);
 	      
 	      if (dyn_apply_schema_with_env (val, cur_schema,
 					     result, 1, env))
 		{
-		  if (dyn_is_pair (dyn_rest (schema_pairs)))
-		    *result = dyn_first (dyn_rest (schema_pairs));
+		  if (i+1 < dyn_len (schema))
+		    *result = dyn_elt (schema, i+1);
 		  return 1;
 		}
 
-	      schema_pairs = dyn_rest (schema_pairs);
-	      if (dyn_is_pair (schema_pairs))
-		schema_pairs = dyn_rest (schema_pairs);
+	      i += 1;
+	      if (i < dyn_len (schema))
+		i += 1;
 	    }
 
 	  return dyn_schema_mismatch (schema, val, soft);
@@ -966,11 +1076,22 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
     dyn_error ("unsupported schema: %V", schema);
 }
 
+static dyn_var top_schema_env;
+
+void
+dyn_register_schema (const char *name, dyn_val schema)
+{
+  dyn_set (&top_schema_env,
+	   dyn_assoc (dyn_from_string (name), schema,
+		      dyn_get (&top_schema_env)));
+}
+
 dyn_val
 dyn_apply_schema (dyn_val val, dyn_val schema)
 {
   dyn_val result;
-  dyn_apply_schema_with_env (val, schema, &result, 0, NULL);
+  dyn_apply_schema_with_env (val, schema, &result,
+			     0, dyn_get (&top_schema_env));
   return result;
 }
 
@@ -1431,11 +1552,20 @@ dyn_input_set_pos (dyn_input in, const char *pos)
   if (in->lineno > 0)
     {
       char *p;
-      for (p = in->pos; p < pos; p++)
-	if (*p == '\n')
-	  in->lineno++;
+      if (in->pos < pos)
+	{
+	  for (char *p = in->pos; p < pos; p++)
+	    if (*p == '\n')
+	      in->lineno++;
+	}
+      else
+	{
+	  for (char *p = in->pos; p >= pos; p--)
+	    if (*p == '\n')
+	      in->lineno--;
+	}
     }
-      
+
   in->pos = (char *)pos;
 }
 
@@ -1813,7 +1943,7 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
 {
   if (val == NULL)
     {
-      dyn_write (out, "()");
+      dyn_write (out, "%%nil");
     }
   else if (dyn_is_string (val))
     {
@@ -1821,8 +1951,6 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
       if (quoted
 	  && (strchr (str, '(')
 	      || strchr (str, ')')
-	      || strchr (str, '{')
-	      || strchr (str, '}')
 	      || strchr (str, '"')
 	      || strchr (str, ' ')
 	      || strchr (str, '\t')
@@ -1831,26 +1959,22 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
       else
 	dyn_write (out, "%s", str);
     }
-  else if (dyn_is_list (val))
+  else if (dyn_is_pair (val))
+    {
+      dyn_write_val (out, dyn_first (val), quoted);
+      dyn_write (out, ": ");
+      dyn_write_val (out, dyn_second (val), quoted);
+    }
+  else if (dyn_is_seq (val))
     {
       dyn_write (out, "(");
-      while (dyn_is_pair (val))
+      for (int i = 0; i < dyn_len (val); i++)
 	{
-	  dyn_write_val (out, dyn_first (val), quoted);
-	  val = dyn_rest (val);
-	  if (val)
+	  dyn_write_val (out, dyn_elt (val, i), quoted);
+	  if (i < dyn_len (val) - 1)
 	    dyn_write (out, " ");
 	}
-      if (val)
-	{
-	  dyn_write (out, ". ");
-	  dyn_write_val (out, val, quoted);
-	}
       dyn_write (out, ")");
-    }
-  else if (dyn_is_dict (val))
-    {
-      dyn_write (out, "{ ... }");
     }
   else
     dyn_write (out, "<%s>", dyn_type_name (val));
@@ -1898,6 +2022,18 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 	      {
 		char *msg = strerror (err);
 		dyn_write_string (out, msg, strlen (msg));
+	      }
+	      break;
+	    case 'd':
+	      {
+		char buf[40];
+		sprintf (buf, "%d", va_arg (ap, int));
+		dyn_write_string (out, buf, 1);
+	      }
+	      break;
+	    case '%':
+	      {
+		dyn_write_string (out, "%", 1);
 	      }
 	      break;
 	    default:
@@ -1995,13 +2131,12 @@ dyn_read_next (dyn_read_state *state)
     }
   else if (!dyn_input_looking_at (in, "(")
 	   && !dyn_input_looking_at (in, ")")
-	   && !dyn_input_looking_at (in, "{")
-	   && !dyn_input_looking_at (in, "}")
+	   && !dyn_input_looking_at (in, ":")
 	   && !dyn_input_looking_at (in, "\n"))
     {
       /* Symbol.
        */
-      dyn_input_find (in, " \t\r\v\n{}()\"");
+      dyn_input_find (in, " \t\r\v\n():\"");
       if (dyn_input_pos (in) > dyn_input_mark (in))
 	{
 	  state->cur_kind = 'a';
@@ -2031,6 +2166,12 @@ dyn_read_next (dyn_read_state *state)
       state->cur_len = 0;
       return;
     }
+}
+
+static void
+dyn_read_unread (dyn_read_state *state)
+{
+  dyn_input_set_pos (state->in, dyn_input_mark (state->in));
 }
 
 static dyn_val dyn_end_of_input_token;
@@ -2065,7 +2206,7 @@ dyn_is_eof (dyn_val val)
   return val == dyn_end_of_input_token;
 }
 
-static dyn_val dyn_read_list (dyn_read_state *state);
+static dyn_val dyn_read_seq (dyn_read_state *state);
 
 static dyn_val
 dyn_read_element (dyn_read_state *state)
@@ -2075,24 +2216,13 @@ dyn_read_element (dyn_read_state *state)
   if (state->cur_kind == '(')
     {
       dyn_read_next (state);
-      elt = dyn_read_list (state);
+      elt = dyn_read_seq (state);
       if (state->cur_kind != ')')
-	dyn_error ("Unexpected end of input in list");
+	dyn_error ("Unexpected end of input in sequence");
     }
   else if (state->cur_kind == ')')
     {
-      dyn_error ("Unexpected list delimiter");
-    }
-  else if (state->cur_kind == '{')
-    {
-      dyn_read_next (state);
-      elt = dyn_read_list (state);
-      if (state->cur_kind != '}')
-	dyn_error ("Unexpected end of input in dict");
-    }
-  else if (state->cur_kind == '}')
-    {
-      dyn_error ("Unexpected dict delimiter");
+      dyn_error ("Unexpected sequence delimiter");
     }
   else if (state->cur_kind == 0)
     {
@@ -2103,24 +2233,31 @@ dyn_read_element (dyn_read_state *state)
       elt = dyn_from_stringn (dyn_input_mark (state->in),
 			      state->cur_len);
     }
+  dyn_read_next (state);
+
+  if (state->cur_kind == ':')
+    {
+      dyn_read_next (state);
+      dyn_val second = dyn_read_element (state);
+      elt = dyn_pair (elt, second);
+    }
 
   return elt;
 }
 
 static dyn_val
-dyn_read_list (dyn_read_state *state)
+dyn_read_seq (dyn_read_state *state)
 {
-  dyn_list_builder builder;
+  dyn_seq_builder builder;
 
-  dyn_list_start (builder);
+  dyn_seq_start (builder);
   while (state->cur_kind != 0
 	 && state->cur_kind != ')')
     {
-      dyn_list_append (builder, dyn_read_element (state));
-      dyn_read_next (state);
+      dyn_seq_append (builder, dyn_read_element (state));
     }
 
-  return dyn_list_finish (builder);
+  return dyn_seq_finish (builder);
 }
 
 dyn_val
@@ -2133,6 +2270,7 @@ dyn_read (dyn_input in)
   dyn_begin ();
   dyn_read_next (&state);
   val = dyn_read_element (&state);
+  dyn_read_unread (&state);
   return dyn_end_with (val);
 }
 

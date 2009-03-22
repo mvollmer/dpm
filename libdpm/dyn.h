@@ -24,21 +24,25 @@
    dynamic extents, dynamic variables, and a simple dynamic type
    system with semi-automatic garbage collection.
 
-   Nothing of this is particularily efficient.  Especially lists are
-   horrible.  In fact, it's considerable less efficient than your
-   typical dynamic language implementation, so use this sparingly.
+   Nothing of this is particularily efficient.  Especially
+   dictionaries are horrible.  In fact, it's considerable less
+   efficient than your typical dynamic language implementation, so use
+   this sparingly.
 
    The dyn_begin and dyn_end functions delimit a dynamic extent.  They
    need to be called in a strictly nested fashion.  Within a dynamic
    extent, you can register certain actions that should be carried out
    when the dynamic extent ends.
 
+   You can use the dyn_block macro instead of dyn_begin and dyn_end.
+
    A dynamic variable is like a thread local variable, but it will
    revert to its previous value when a dynamic extent ends.
 
    Dynamic variables store "dynamic values", values with dynamic
-   types.  A dynamic value can be null, a string, a list, a
-   dictionary, a function, or a object.
+   types.  A dynamic value can be null, a string, a pair, a sequence,
+   a function, or a general object.  Of special note are sequences of
+   pairs, which are used as key/value dictionaries in many places.
 
    Memory for dynamic values is handled semi-automatically via
    reference counting.  Refcounting works well with threads, is
@@ -65,14 +69,19 @@
 
    There is a standard external representation for dynamic values.
    This is useful for simple user interactions, such as in
-   configuration files.  All dynamic values can be written out, but
-   only strings, lists and dictionaries can be read back in.
+   configuration files.
 
+   Null: "%"
+   Seq:  "(" elt_0 elt_1 ... ")"
+   Pair: first ":" second
+   
    For kicks and completeness, there are also standard evaluation
    semantics for dynamic values, inspired by Scheme.  This is not
    intended to be useful, it's just there for paedagocic purposes, and
    because it is fun.  By adding some more primitive functions and
    numeric data types, a useful little language would result.
+
+   "$" form => Eval
 
    You can mark a point in the call stack with dyn_catch, and you can
    directly return to such a point with dyn_throw.  When this happens,
@@ -90,6 +99,8 @@ void *dyn_strndup (const char *str, int n);
 
 void dyn_begin ();
 void dyn_end ();
+
+#define dyn_block for (int i = dyn_begin(), 1; i; i = dyn_end(), 0)
 
 void dyn_on_unwind (void (*func) (int for_throw, void *data), void *data);
 
@@ -131,13 +142,9 @@ void dyn_unref (dyn_val val);
 void dyn_unref_on_unwind (dyn_val val);
 dyn_val dyn_end_with (dyn_val val);
 
-#define dyn_new(_sym) ((_sym)dyn_alloc (_sym##_type, \
-                                        sizeof (struct _sym##_struct)))
-
-DYN_DECLARE_TYPE (dyn_string);
-DYN_DECLARE_TYPE (dyn_pair);
-DYN_DECLARE_TYPE (dyn_dict);
-DYN_DECLARE_TYPE (dyn_func);
+#define dyn_new(_sym) \
+  ((struct _sym##_struct *)dyn_alloc (_sym##_type, \
+				      sizeof (struct _sym##_struct)))
 
 int dyn_is (dyn_val val, dyn_type *type);
 const char *dyn_type_name (dyn_val val);
@@ -148,34 +155,42 @@ dyn_val dyn_from_string (const char *str);
 dyn_val dyn_from_stringn (const char *str, int len);
 
 int dyn_is_pair (dyn_val val);
-int dyn_is_list (dyn_val val);
 dyn_val dyn_first (dyn_val val);
-dyn_val dyn_rest (dyn_val val);
-dyn_val dyn_cons (dyn_val first, dyn_val rest);
+dyn_val dyn_second (dyn_val val);
+dyn_val dyn_pair (dyn_val first, dyn_val rest);
 
-int dyn_is_dict (dyn_val val);
+int dyn_is_seq (dyn_val val);
+int dyn_len (dyn_val seq);
+dyn_val dyn_elt (dyn_val seq, int index);
 dyn_val dyn_lookup (dyn_val dict, dyn_val key);
-dyn_val dyn_assoc (dyn_val dict, dyn_val key, dyn_val val);
+
+#define DYN_EOS ((dyn_val)-1)
+
+dyn_val dyn_seq (dyn_val val, ...);
+dyn_val dyn_concat (dyn_val seq, ...);
+
+typedef struct {
+  dyn_val *elts;
+  int offset, len, max;
+} dyn_seq_builder[1];
+
+void dyn_seq_start (dyn_seq_builder builder);
+void dyn_seq_append (dyn_seq_builder builder, dyn_val val);
+void dyn_seq_prepend (dyn_seq_builder builder, dyn_val val);
+void dyn_seq_concat_back (dyn_seq_builder builder, dyn_val seq);
+void dyn_seq_concat_front (dyn_seq_builder builder, dyn_val seq);
+dyn_val dyn_seq_finish (dyn_seq_builder builder);
+
+dyn_val dyn_assoc (dyn_val key, dyn_val val, dyn_val seq);
+dyn_val dyn_lookup (dyn_val key, dyn_val seq);
 
 int dyn_is_func (dyn_val val);
-dyn_val dyn_lambda (void (*func) (), void *data, void (*free) (void *data));
+dyn_val dyn_func (void (*func) (), void *data, void (*free) (void *data));
 void (*dyn_func_func (dyn_val val))();
 void *dyn_func_data (dyn_val val);
 
 int dyn_equal (dyn_val a, dyn_val b);
 int dyn_eq (dyn_val a, const char *b);
-
-typedef struct {
-  void *opaque[4];
-} dyn_list_builder[1];
-
-void dyn_list_start (dyn_list_builder builder);
-void dyn_list_append (dyn_list_builder builder, dyn_val val);
-dyn_val dyn_list_finish (dyn_list_builder builder);
-
-#define DYN_EOL ((dyn_val)-1)
-
-dyn_val dyn_list (dyn_val first, ...);
 
 /* Schemas.
 
@@ -193,16 +208,19 @@ dyn_val dyn_list (dyn_val first, ...);
    - (value VALUE)
    A value matching VALUE exactly.
 
-   - (list SCHEMA1 SCHEMA2 ... [...])
-   List with elements matching SCHEMA1, SCHEMA2 etc.  If the "..."
-   element is present, the list can be any length and the last SCHEMA
-   is used for the remaining elements. If the input list is too short,
-   it is padded with null values.
+   - (pair SCHEMA1 SCHEMA2)
+   A pair whose two values match the given schemas.
+
+   - (seq SCHEMA1 SCHEMA2 ... [...])
+   Sequence with elements matching SCHEMA1, SCHEMA2 etc.  If the "..."
+   element is present, the sequence can be any length and the last
+   SCHEMA is used for the remaining elements. If the input sequence is
+   too short, it is padded with null values.
 
    - (dict (KEY1 SCHEMA1) (KEY2 SCHEMA2) ... [...])
-   A dict where the values match the given SCHEMAs.  If the "..." is
-   present, the dict can have additional keys.  Otherwise any
-   additional keys are an error.
+   A sequence of pairs where the values in the pairs match the given
+   SCHEMAs.  If the "..." is present, the sequence can have additional
+   pairs.  Otherwise any additional pairs are an error.
 
    - (defaulted SCHEMA VALUE)
    Either null, or a value matching SCHEMA.  In the former case, VALUE
@@ -236,26 +254,37 @@ dyn_val dyn_list (dyn_val first, ...);
 
    (let ((schema
           (or string
-              (list (value value) any)
-              (list (value list) (or (schema schema) (value ...)) ...)
-              (list (value dict) (or (list string (schema schema))
-	                             (value ...))
+              (seq (value value) any)
+              (seq (value pair) (schema schema) (schema schema))
+              (seq (value seq) (or (schema schema) (value ...)) ...)
+              (seq (value dict) (or (seq string (schema schema))
+	                            (value ...))
                                  ...)
-              (list (value defaulted) (schema schema) any)
-              (list (value not) (schema schema))
-              (list (value or) (schema schema) ...)
-              (list (value if) (or (schema schema) any) ...)
-              (list (value let) (or (list string (schema schema))
-	                            (schema schema))
+              (seq (value defaulted) (schema schema) any)
+              (seq (value not) (schema schema))
+              (seq (value or) (schema schema) ...)
+              (seq (value if) (or (schema schema) any) ...)
+              (seq (value let) (or (seq string (schema schema))
+	                           (schema schema))
                                 ...)
-              (list (value schema) string))))
+              (seq (value schema) string))))
      schema)
 
    As you can see, this schema allows values that are not valid
-   schemas, such as '(list any ... string)'.  The schema grammar can
+   schemas, such as '(seq any ... string)'.  The schema grammar can
    not express that there must be at most one '...' and that it must
    be last.  This must be dealt with when processing the schema.
  */
+
+#define DYN_DEFINE_SCHEMA(_name,_schema)				\
+  __attribute__ ((constructor))						\
+  void									\
+  dyn_register_schema__##_name ()					\
+  {									\
+    dyn_register_schema (#_name, dyn_read_string (#_schema));		\
+  }
+
+void dyn_register_schema (const char *name, dyn_val schema);
 
 dyn_val dyn_apply_schema (dyn_val val, dyn_val schema);
 

@@ -26,19 +26,19 @@
 
 #include "conf.h"
 
-static dpm_conf_declaration *conf_vars;
+static dpm_conf_var *conf_vars;
 
 void
-dpm_conf_register (dpm_conf_declaration *conf)
+dpm_conf_register (dpm_conf_var *conf)
 {
   conf->next = conf_vars;
   conf_vars = conf;
 }
 
-static dpm_conf_declaration *
+dpm_conf_var *
 dpm_conf_find (const char *name)
 {
-  dpm_conf_declaration *conf;
+  dpm_conf_var *conf;
 
   for (conf = conf_vars; conf; conf = conf->next)
     if (!strcmp (conf->name, name))
@@ -46,27 +46,37 @@ dpm_conf_find (const char *name)
   dyn_error ("No such configuration variable: %s", name);
 }
 
-void
-dpm_conf_set (const char *name, dyn_val val)
+dyn_val
+dpm_conf_get (dpm_conf_var *conf)
 {
-  dpm_conf_declaration *conf = dpm_conf_find (name);
+  return dyn_get (conf->var);
+}
+
+int
+dpm_conf_true (dpm_conf_var *conf)
+{
+  return dyn_eq (dyn_get (conf->var), "true");
+}
+
+void
+dpm_conf_set (dpm_conf_var *conf, dyn_val val)
+{
   dyn_set (conf->var, dyn_apply_schema (val, conf->schema));
 }
 
 void
-dpm_conf_let (const char *name, dyn_val val)
+dpm_conf_let (dpm_conf_var *conf, dyn_val val)
 {
-  dpm_conf_declaration *conf = dpm_conf_find (name);
   dyn_let (conf->var, dyn_apply_schema (val, conf->schema));
 }
 
 void
 dpm_conf_dump ()
 {
-  dpm_conf_declaration *conf;
+  dpm_conf_var *conf;
 
   for (conf = conf_vars; conf; conf = conf->next)
-    dyn_write (dyn_stdout, "%s %V\n", conf->name, dyn_get (conf->var));
+    dyn_write (dyn_stdout, "%s: %V\n", conf->name, dyn_get (conf->var));
   dyn_output_flush (dyn_stdout);
 }
 
@@ -80,19 +90,31 @@ dpm_conf_parse (const char *filename)
 
   while (1)
     {
-      dyn_val var = dyn_read (in);
-      dyn_val val = dyn_read (in);
+      dyn_val form = dyn_read (in);
 
-      if (dyn_is_eof (var))
+      if (dyn_is_eof (form))
 	break;
 
-      if (!dyn_is_string (var))
-	dyn_error ("variable names must be strings");
+      if (dyn_is_pair (form))
+	{
+	  dyn_val var = dyn_first (form);
+	  dyn_val val = dyn_second (form);
+	  
+	  if (!dyn_is_string (var))
+	    dyn_error ("variable names must be strings");
 
-      // dyn_print ("var %V val %V\n", var, val);
+	  // dyn_print ("var %V val %V\n", var, val);
 
-      dpm_conf_set (dyn_to_string (var), val);
+	  dpm_conf_set (dpm_conf_find (dyn_to_string (var)), val);
+	}
+      else
+	{
+	  dyn_write (dyn_stdout, "Unhandled form %V\n", form);
+	  dyn_output_flush (dyn_stdout);
+	}
     }
 
   dyn_end ();
 }
+
+DYN_DEFINE_SCHEMA (bool, (or (value true) (value false)));

@@ -20,34 +20,36 @@
 
 #include "dyn.h"
 
-typedef struct dpm_conf_declaration {
-  struct dpm_conf_declaration *next;
+typedef struct dpm_conf_var {
+  struct dpm_conf_var *next;
 
-  dyn_var *var;
   const char *name;
   dyn_val schema;
   const char *docstring;
-} dpm_conf_declaration;
+  dyn_var var[1];
+} dpm_conf_var;
 
-void dpm_conf_register (dpm_conf_declaration *decl);
+void dpm_conf_register (dpm_conf_var *var);
 void dpm_conf_dump (void);
 
-void dpm_conf_set (const char *name, dyn_val val);
-void dpm_conf_let (const char *name, dyn_val val);
+dpm_conf_var *dpm_conf_find (const char *name);
+
+dyn_val dpm_conf_get (dpm_conf_var *var);
+int dpm_conf_true (dpm_conf_var *var);
+void dpm_conf_set (dpm_conf_var *var, dyn_val val);
+void dpm_conf_let (dpm_conf_var *var, dyn_val val);
 
 #define DPM_CONF_DECLARE(_sym,_name,_schema,_doc)			\
-  dyn_var _sym;								\
-  dpm_conf_declaration _sym##__decl = {					\
-    .var = &_sym,							\
+  dpm_conf_var _sym[1] = { {					        \
     .name = _name,							\
     .docstring = _doc							\
-  };									\
+  } };								        \
   __attribute__ ((constructor))						\
   void									\
   _sym##__declare ()							\
   {									\
-    _sym##__decl.schema = (dyn_read_string (#_schema));			\
-    dpm_conf_register (&_sym##__decl);				        \
+    _sym[0].schema = (dyn_read_string (#_schema));			\
+    dpm_conf_register (_sym);				        \
   }
 
 void dpm_conf_parse (const char *filename);
