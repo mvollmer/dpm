@@ -58,6 +58,12 @@ dpm_conf_true (dpm_conf_var *conf)
   return dyn_eq (dyn_get (conf->var), "true");
 }
 
+int
+dpm_conf_int (dpm_conf_var *conf)
+{
+  return atoi (dyn_to_string (dyn_get (conf->var)));
+}
+
 void
 dpm_conf_set (dpm_conf_var *conf, dyn_val val)
 {
@@ -105,7 +111,8 @@ dpm_conf_parse (const char *filename)
 
 	  // dyn_print ("var %V val %V\n", var, val);
 
-	  dpm_conf_set (dpm_conf_find (dyn_to_string (var)), val);
+	  dpm_conf_set (dpm_conf_find (dyn_to_string (var)),
+			dyn_eval (val, NULL));
 	}
       else
 	{

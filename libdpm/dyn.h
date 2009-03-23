@@ -281,6 +281,7 @@ int dyn_eq (dyn_val a, const char *b);
   void									\
   dyn_register_schema__##_name ()					\
   {									\
+    dyn_ensure_init();							\
     dyn_register_schema (#_name, dyn_read_string (#_schema));		\
   }
 
@@ -340,7 +341,7 @@ void dyn_print (const char *format, ...);
 dyn_val dyn_format (const char *fmt, ...);
 dyn_val dyn_formatv (const char *fmt, va_list ap);
 
-dyn_val dyn_eval (dyn_val form);
+dyn_val dyn_eval (dyn_val form, dyn_val env);
 dyn_val dyn_load (dyn_input in);
 
 typedef struct {
@@ -375,5 +376,7 @@ __attribute__ ((noreturn))
 void dyn_error (const char *fmt, ...);
 __attribute__ ((noreturn)) 
 void dyn_errorv (const char *fmt, va_list args);
+
+void dyn_ensure_init ();
 
 #endif /* !DPM_DYN_H */

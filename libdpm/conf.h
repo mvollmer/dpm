@@ -36,6 +36,7 @@ dpm_conf_var *dpm_conf_find (const char *name);
 
 dyn_val dpm_conf_get (dpm_conf_var *var);
 int dpm_conf_true (dpm_conf_var *var);
+int dpm_conf_int (dpm_conf_var *var);
 void dpm_conf_set (dpm_conf_var *var, dyn_val val);
 void dpm_conf_let (dpm_conf_var *var, dyn_val val);
 
@@ -48,6 +49,7 @@ void dpm_conf_let (dpm_conf_var *var, dyn_val val);
   void									\
   _sym##__declare ()							\
   {									\
+    dyn_ensure_init();							\
     _sym[0].schema = (dyn_read_string (#_schema));			\
     dpm_conf_register (_sym);				        \
   }

@@ -116,6 +116,9 @@ static int n_objects;
 dyn_val
 dyn_alloc (dyn_type *type, size_t size)
 {
+  if (type->tag == 0)
+    abort();
+
   uint32_t *mem = dyn_malloc (size + sizeof (uint32_t));
   dyn_val val = (dyn_val)(mem + 1);
   mem[0] = (type->tag << 24) | 1;
@@ -312,7 +315,7 @@ dyn_is_seq (dyn_val val)
 int
 dyn_len (dyn_val seq)
 {
-  return ((struct dyn_seqvec_struct *)seq)->len;
+  return seq? ((struct dyn_seqvec_struct *)seq)->len : 0;
 }
 
 dyn_val
@@ -555,6 +558,46 @@ dyn_equal (dyn_val a, dyn_val b)
     return dyn_types[DYN_TAG(a)]->equal (a, b);
 
   return 0;
+}
+
+/* The eval token.
+ */
+
+struct dyn_eval_token_struct {
+  dyn_val form;
+};
+
+static void
+dyn_eval_token_unref (dyn_type *type, void *object)
+{
+  struct dyn_eval_token_struct *token = object;
+  dyn_unref (token->form);
+}
+
+static int
+dyn_eval_token_equal (void *a, void *b)
+{
+  struct dyn_eval_token_struct *token_a = a;
+  struct dyn_eval_token_struct *token_b = b;
+  return dyn_equal (token_a->form, token_b->form);
+}
+
+DYN_DECLARE_TYPE (dyn_eval_token);
+DYN_DEFINE_TYPE (dyn_eval_token, "eval-token");
+
+static dyn_val
+dyn_make_eval_token (dyn_val form)
+{
+  dyn_eval_token token = dyn_new (dyn_eval_token);
+  token->form = dyn_ref (form);
+  return token;
+}
+
+static dyn_val
+dyn_eval_token_form (dyn_val token)
+{
+  dyn_eval_token t = token;
+  return t->form;
 }
 
 /* Dynamic extents */
@@ -1839,14 +1882,6 @@ dyn_create_output_fd (int fd)
 
 dyn_output dyn_stdout;
 
-__attribute__ ((constructor))
-static void
-dyn_init_std ()
-{
-  DYN_ENSURE_TYPE (dyn_output);
-  dyn_stdout = dyn_create_output_fd (1);
-}
-
 dyn_val
 dyn_formatv (const char *fmt, va_list ap)
 {
@@ -1976,6 +2011,8 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
 	}
       dyn_write (out, ")");
     }
+  else if (dyn_is (val, dyn_eval_token_type))
+    dyn_write (out, "$%V", dyn_eval_token_form (val));
   else
     dyn_write (out, "<%s>", dyn_type_name (val));
 }
@@ -2132,11 +2169,12 @@ dyn_read_next (dyn_read_state *state)
   else if (!dyn_input_looking_at (in, "(")
 	   && !dyn_input_looking_at (in, ")")
 	   && !dyn_input_looking_at (in, ":")
+	   && !dyn_input_looking_at (in, "$")
 	   && !dyn_input_looking_at (in, "\n"))
     {
       /* Symbol.
        */
-      dyn_input_find (in, " \t\r\v\n():\"");
+      dyn_input_find (in, " \t\r\v\n():$\"");
       if (dyn_input_pos (in) > dyn_input_mark (in))
 	{
 	  state->cur_kind = 'a';
@@ -2193,13 +2231,6 @@ dyn_end_of_input_equal (void *a, void *b)
 DYN_DECLARE_TYPE (dyn_end_of_input);
 DYN_DEFINE_TYPE (dyn_end_of_input, "end-of-input");
 
-__attribute__ ((constructor))
-static void dyn_init_reader ()
-{
-  DYN_ENSURE_TYPE (dyn_end_of_input);
-  dyn_end_of_input_token = dyn_new (dyn_end_of_input);
-}
-
 int
 dyn_is_eof (dyn_val val)
 {
@@ -2223,6 +2254,11 @@ dyn_read_element (dyn_read_state *state)
   else if (state->cur_kind == ')')
     {
       dyn_error ("Unexpected sequence delimiter");
+    }
+  else if (state->cur_kind == '$')
+    {
+      dyn_read_next (state);
+      return dyn_make_eval_token (dyn_read_element (state));
     }
   else if (state->cur_kind == 0)
     {
@@ -2280,6 +2316,47 @@ dyn_read_string (const char *str)
   return dyn_read (dyn_open_string (str, -1));
 }
 
+/* Eval
+ */
+
+dyn_val
+dyn_eval (dyn_val form, dyn_val env)
+{
+  if (dyn_is_pair (form))
+    {
+      return dyn_pair (dyn_eval (dyn_first (form), env),
+		       dyn_eval (dyn_second (form), env));
+    }
+  else if (dyn_is_seq (form))
+    {
+      dyn_seq_builder builder;
+      dyn_seq_start (builder);
+      for (int i = 0; i < dyn_len (form); i++)
+	dyn_seq_append (builder, dyn_eval (dyn_elt (form, i), env));
+      return dyn_seq_finish (builder);
+    }
+  else if (dyn_is (form, dyn_eval_token_type))
+    {
+      form = dyn_eval_token_form (form);
+      if (dyn_is_string (form))
+	{
+	  dyn_val val = dyn_lookup (form, env);
+	  if (val == NULL)
+	    {
+	      // XXX - use toplevel
+	      dyn_error ("Undefined: %v", form);
+	    }
+	  return val;
+	}
+      else if (dyn_is_seq (form))
+	dyn_error ("no compound forms yet, sorry: %V", form);
+      else
+	dyn_error ("unsupported evaluation form: %V", form);
+    }
+  else
+    return form;
+}
+
 static void
 dyn_report ()
 {
@@ -2288,8 +2365,28 @@ dyn_report ()
 }
 
 __attribute__ ((constructor))
-static void
-dyn_report_init ()
+void dyn_ensure_init ()
 {
-  atexit (dyn_report);
+  static int initialized = 0;
+
+  if (!initialized)
+    {
+      initialized = 1;
+
+      DYN_ENSURE_TYPE (dyn_string);
+      DYN_ENSURE_TYPE (dyn_pair);
+      DYN_ENSURE_TYPE (dyn_seqvec);
+      DYN_ENSURE_TYPE (dyn_func);
+      DYN_ENSURE_TYPE (dyn_input);
+      DYN_ENSURE_TYPE (dyn_output);
+      DYN_ENSURE_TYPE (dyn_end_of_input);
+      DYN_ENSURE_TYPE (dyn_eval_token);
+      DYN_ENSURE_TYPE (dyn_end_of_input);
+
+      dyn_stdout = dyn_create_output_fd (1);
+      dyn_end_of_input_token = dyn_new (dyn_end_of_input);
+
+      atexit (dyn_report);
+    }
 }
+
