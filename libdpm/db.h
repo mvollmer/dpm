@@ -18,6 +18,9 @@
 #ifndef DPM_DB_H
 #define DPM_DB_H
 
+#include "dyn.h"
+#include "store.h"
+
 /* Dpm stores all information in a single struct-store, in a specific
    format.  This store is called the Dpm database. These are the
    functions for creating and accessing the database.
@@ -36,27 +39,24 @@
    versions are available, which files are installed (this can be
    different from the list of files in the package), etc.  The status
    is not available in a single record, it is too volatile for this.
-   Instead, a set of accessor functions is used to maintain it.
-
-   
-   Most functions work on the 'current database'.  The current
-   database is kept in a dynamic variable, and can thus be controlled
-   with dpm_dyn_begin and dpm_dyn_end.
+   Instead, a set of accessor functions is used to maintain it
  */
 
-void dpm_db_begin ();
+void dpm_db_open ();
 void dpm_db_checkpoint ();
-void dpm_db_end ();
+void dpm_db_done ();
 
-void dpm_db_import_apt_sources ();
+void dpm_db_update_packages (const char *packages_file);
+void dpm_db_import_deb (const char *deb_file);
+void dpm_db_import_status (const char *status_file);
 
 typedef ss_val dpm_package;
 typedef ss_val dpm_version;
-typedef ss_val dpm_vector;
 
 dpm_package dpm_db_find_package (const char *name);
-dpm_vector  dpm_db_get_available (dpm_package pkg);
+ss_val      dpm_db_get_available (dpm_package pkg);
+dpm_version dpm_db_get_installed (dpm_package pkg);
 
-ss_val dpm_db_get_field (dpm_version ver);
+void dpm_db_dump_version (dpm_version ver);
 
 #endif /* !DPM_DB_H */

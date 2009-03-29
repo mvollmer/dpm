@@ -45,10 +45,6 @@
    unreferenced values.  Since a garbage collection moves objects
    around, it has to be requested explicitly.
 
-   None of the struct-store functions return failure indications: they
-   either succeed or abort.  You can specify an error callback if you
-   want to control how to abort, but abort you must.
-
    Accessing store values is generally done without checking whether
    the access is valid.  I.e., getting a record field of an value
    that is actually a small integer will likely crash.
@@ -138,6 +134,7 @@ typedef struct ss_tab ss_tab;
 
 ss_tab *ss_tab_init (ss_store *ss, ss_val tab);
 ss_val ss_tab_finish (ss_tab *ot);
+ss_val ss_tab_store (ss_tab *ot);
 ss_val ss_tab_intern (ss_tab *ot, ss_val v);
 ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
 ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
@@ -154,6 +151,7 @@ typedef struct ss_dict ss_dict;
 
 ss_dict *ss_dict_init (ss_store *ss, ss_val dict, int weak);
 ss_val ss_dict_finish (ss_dict *d);
+ss_val ss_dict_store (ss_dict *d);
 void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
 ss_val ss_dict_get (ss_dict *d, ss_val key);
 void ss_dict_add (ss_dict *d, ss_val key, ss_val val);

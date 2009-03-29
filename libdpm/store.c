@@ -402,7 +402,7 @@ ss_assert_in_store (ss_store *ss, ss_val obj)
  * referenced objects except tables and dictionaries with weak
  * references are copied; then a couple of rounds are made over the
  * dictionaries until the ripples have settled; then the delayed
- * tables and dictionries are copied.
+ * tables and dictionaries are copied.
  */
 
 #define WEAK_DICT_DISPATCH_TAG 0x79
@@ -440,7 +440,7 @@ ss_gc_delay_p (ss_val obj)
 {
   return (ss_is (obj, TAB_DISPATCH_TAG)
 	  || ss_is (obj, TAB_SEARCH_TAG)
-	  || ss_is (obj, WEAK_DICT_SEARCH_TAG)
+	  || ss_is (obj, WEAK_DICT_DISPATCH_TAG)
 	  || ss_is (obj, WEAK_DICT_SEARCH_TAG));
 }
 
@@ -483,7 +483,7 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
   if (gc->phase == 0 && ss_gc_delay_p (obj))
    {
      if (gc->n_delayed >= MAX_DELAYED)
-       dyn_error ("too many weak tables\n");
+       dyn_error ("too many weak tables");
      gc->delayed[gc->n_delayed++] = obj;
      return obj;
    }
@@ -765,7 +765,7 @@ ss_gc (ss_store *ss)
 ss_store *
 ss_maybe_gc (ss_store *ss)
 {
-  if (ss->head->alloced > ss->head->len / 10)
+  if (ss->head->alloced > 5*1024*1024)
     {
       fprintf (stderr, "(Garbage collecting...");
       fflush (stderr);
@@ -1358,14 +1358,18 @@ ss_tab_init (ss_store *ss, ss_val root)
 }
 
 ss_val 
+ss_tab_store (ss_tab *ot)
+{
+  ot->root = ss_store_object (ot->store, ot->root);
+  return ot->root;
+}
+
+ss_val
 ss_tab_finish (ss_tab *ot)
 {
-  ss_val root;
-
-  root = ss_store_object (ot->store, ot->root);
+  ss_val r = ss_tab_store (ot);
   free (ot);
-
-  return root;
+  return r;
 }
 
 ss_val 
@@ -1685,14 +1689,18 @@ ss_dict_init (ss_store *ss, ss_val root, int weak)
 }
 
 ss_val 
-ss_dict_finish (ss_dict *d)
+ss_dict_store (ss_dict *d)
 {
-  ss_val root;
+  d->root = ss_store_object (d->store, d->root);
+  return d->root;
+}
 
-  root = ss_store_object (d->store, d->root);
+ss_val
+ss_dict_finish  (ss_dict *d)
+{
+  ss_val r = ss_dict_store (d);
   free (d);
-
-  return root;
+  return r;
 }
 
 ss_val

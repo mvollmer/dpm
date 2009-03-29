@@ -34,6 +34,7 @@
 #include <bzlib.h>
 
 #include "dyn.h"
+#include "store.h"
 
 /* Memory */
 
@@ -1988,6 +1989,7 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
 	      || strchr (str, ')')
 	      || strchr (str, '"')
 	      || strchr (str, ' ')
+	      || strchr (str, '%')
 	      || strchr (str, '\t')
 	      || strchr (str, '\n')))
 	dyn_write (out, "%S", str);
@@ -2015,6 +2017,20 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
     dyn_write (out, "$%V", dyn_eval_token_form (val));
   else
     dyn_write (out, "<%s>", dyn_type_name (val));
+}
+
+static void
+dyn_write_ss_val (dyn_output out, ss_val val, int quoted)
+{
+  if (ss_is_blob (val))
+    {
+      if (quoted)
+	dyn_write_quoted (out, (char *)ss_blob_start (val), ss_len (val));
+      else
+	dyn_write_string (out, (char *)ss_blob_start (val), ss_len (val));
+    }
+  else
+    dyn_write (out, "<record>");
 }
 
 void
@@ -2055,6 +2071,18 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 		dyn_write_val (out, val, 1);
 	      }
 	      break;
+	    case 'r':
+	      {
+		ss_val val = va_arg (ap, ss_val);
+		dyn_write_ss_val (out, val, 0);
+	      }
+	      break;
+	    case 'R':
+	      {
+		ss_val val = va_arg (ap, ss_val);
+		dyn_write_ss_val (out, val, 1);
+	      }
+	      break;
 	    case 'm':
 	      {
 		char *msg = strerror (err);
@@ -2065,7 +2093,14 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 	      {
 		char buf[40];
 		sprintf (buf, "%d", va_arg (ap, int));
-		dyn_write_string (out, buf, 1);
+		dyn_write_string (out, buf, strlen (buf));
+	      }
+	      break;
+	    case 'f':
+	      {
+		char buf[80];
+		sprintf (buf, "%g", va_arg (ap, double));
+		dyn_write_string (out, buf, strlen(buf));
 	      }
 	      break;
 	    case '%':
@@ -2316,12 +2351,143 @@ dyn_read_string (const char *str)
   return dyn_read (dyn_open_string (str, -1));
 }
 
-/* Eval
+/* Interpreted functions
  */
+
+typedef enum {
+  dyn_interp_lambda,
+  dyn_interp_subr,
+  dyn_interp_spec
+} dyn_interp_kind;
+  
+struct dyn_interp_struct {
+  dyn_interp_kind kind;
+  union {
+    struct {
+      dyn_val parms;
+      dyn_val body;
+      dyn_val env;
+    } lambda;
+    dyn_val (*subr) (dyn_val args);
+    dyn_val (*spec) (dyn_val form, dyn_val env);
+  } u;
+};
+
+static void
+dyn_interp_unref (dyn_type *type, void *object)
+{
+  struct dyn_interp_struct *interp = object;
+  if (interp->kind == dyn_interp_lambda)
+    {
+      dyn_unref (interp->u.lambda.parms);     
+      dyn_unref (interp->u.lambda.body);
+      dyn_unref (interp->u.lambda.env);
+    }
+}
+
+static int
+dyn_interp_equal (void *a, void *b)
+{
+  return 0;
+}
+
+DYN_DECLARE_TYPE (dyn_interp);
+DYN_DEFINE_TYPE (dyn_interp, "interpreted-function");
+
+static dyn_val
+dyn_make_interp_lambda (dyn_val parms, dyn_val body, dyn_val env)
+{
+  dyn_interp interp = dyn_new (dyn_interp);
+  interp->kind = dyn_interp_lambda;
+  interp->u.lambda.parms = dyn_ref (parms);
+  interp->u.lambda.body = dyn_ref (body);
+  interp->u.lambda.env = dyn_ref (env);
+  return interp;
+}
+
+static dyn_val
+dyn_make_interp_subr (dyn_val (*subr) (dyn_val args))
+{
+  dyn_interp interp = dyn_new (dyn_interp);
+  interp->kind = dyn_interp_subr;
+  interp->u.subr = subr;
+  return interp;
+}
+
+static dyn_val
+dyn_make_interp_spec (dyn_val (*spec) (dyn_val form, dyn_val env))
+{
+  dyn_interp interp = dyn_new (dyn_interp);
+  interp->kind = dyn_interp_spec;
+  interp->u.spec = spec;
+  return interp;
+}
+
+/* Eval and its toplevel.
+ */
+
+static dyn_seq_builder toplevel; // XXX - do something better
+
+static dyn_val
+dyn_top_ref (dyn_val name)
+{
+  for (int i = 0; i < toplevel->len; i++)
+    {
+      dyn_val pair = toplevel->elts[toplevel->offset+i];
+      if (dyn_equal (dyn_first (pair), name))
+	return dyn_second (pair);
+    }
+  return NULL;
+}
+
+static dyn_val
+dyn_top_def (dyn_val name, dyn_val val)
+{
+  dyn_seq_prepend (toplevel, dyn_pair (name, val));
+  return NULL;
+}
+
+static dyn_val
+dyn_eval_string (dyn_val string, dyn_val env)
+{
+  dyn_val val = dyn_lookup (string, env);
+  if (val == NULL)
+    val = dyn_top_ref (string);
+  if (val == NULL)
+    dyn_error ("Undefined: %v", string);
+  return val;
+}
+
+static dyn_val
+dyn_eval_args (dyn_val form, dyn_val env)
+{
+  dyn_seq_builder arg_builder;
+  dyn_seq_start (arg_builder);
+  for (int i = 1; i < dyn_len (form); i++)
+    dyn_seq_append (arg_builder, dyn_eval (dyn_elt (form, i), env));
+  return dyn_seq_finish (arg_builder);
+}
+
+static dyn_val
+dyn_eval_extend_env (dyn_val parms, dyn_val args, dyn_val env)
+{
+  if (dyn_len (parms) != dyn_len (args))
+    dyn_error ("wrong number of arguments (expected %s): %d",
+	       dyn_len (parms), dyn_len (args));
+  
+  dyn_seq_builder env_builder;
+  dyn_seq_start (env_builder);
+  for (int i = 0; i < dyn_len (parms); i++)
+    dyn_seq_append (env_builder, dyn_pair (dyn_elt (parms, i),
+					   dyn_elt (args, i)));
+  dyn_seq_concat_back (env_builder, env);
+  return dyn_seq_finish (env_builder);
+}
 
 dyn_val
 dyn_eval (dyn_val form, dyn_val env)
 {
+ eval:
   if (dyn_is_pair (form))
     {
       return dyn_pair (dyn_eval (dyn_first (form), env),
@@ -2339,22 +2505,168 @@ dyn_eval (dyn_val form, dyn_val env)
     {
       form = dyn_eval_token_form (form);
       if (dyn_is_string (form))
-	{
-	  dyn_val val = dyn_lookup (form, env);
-	  if (val == NULL)
-	    {
-	      // XXX - use toplevel
-	      dyn_error ("Undefined: %v", form);
-	    }
-	  return val;
-	}
+	return dyn_eval_string (form, env);
+      else if (dyn_is_pair (form))
+	return dyn_top_def (dyn_first (form),
+			    dyn_eval (dyn_second (form), env));
       else if (dyn_is_seq (form))
-	dyn_error ("no compound forms yet, sorry: %V", form);
+	goto apply;
       else
 	dyn_error ("unsupported evaluation form: %V", form);
     }
   else
     return form;
+
+ apply:
+  if (dyn_len (form) < 1)
+    dyn_error ("invalid empty sequence");
+
+  dyn_val form_op = dyn_elt (form, 0), op;
+  if (dyn_is_string (form_op))
+    op = dyn_eval_string (form_op, NULL);
+  else
+    op = dyn_eval (form_op, env);
+
+  if (dyn_is (op, dyn_interp_type))
+    {
+      dyn_interp interp = op;
+      if (interp->kind == dyn_interp_spec)
+	{
+	  form = interp->u.spec (form, env);
+	  goto eval;
+	}
+      else if (interp->kind == dyn_interp_subr)
+	{
+	  dyn_val args = dyn_eval_args (form, env);
+	  return interp->u.subr (args);
+	}
+      else if (interp->kind == dyn_interp_lambda)
+	{
+	  dyn_val args = dyn_eval_args (form, env);
+	  env = dyn_eval_extend_env (interp->u.lambda.parms,
+				     args,
+				     interp->u.lambda.env);
+	  form = interp->u.lambda.body;
+	  goto eval;
+	}
+      else
+	abort ();
+    }
+  else
+    dyn_error ("can't apply: %V", op);
+}
+
+static double
+dyn_elt_num (dyn_val seq, int i)
+{
+  return atof (dyn_to_string (dyn_elt (seq, i)));
+}
+
+static dyn_val
+dyn_subr_sum (dyn_val args)
+{
+  double res = 0;
+  for (int i = 0; i < dyn_len (args); i++)
+    res += dyn_elt_num (args, i);
+  return dyn_format ("%f", res);
+}
+
+static dyn_val
+dyn_subr_sub (dyn_val args)
+{
+  double res = 0;
+  if (dyn_len (args) == 1)
+    res = -dyn_elt_num (args, 0);
+  else if (dyn_len (args) > 1)
+    {
+      res = dyn_elt_num (args, 0);
+      for (int i = 1; i < dyn_len (args); i++)
+	res -= dyn_elt_num (args, i);
+    }
+  return dyn_format ("%f", res);
+}
+
+static dyn_val
+dyn_subr_mult (dyn_val args)
+{
+  double res = 1;
+  for (int i = 0; i < dyn_len (args); i++)
+    res *= dyn_elt_num (args, i);
+  return dyn_format ("%f", res);
+}
+
+static dyn_val
+dyn_subr_div (dyn_val args)
+{
+  double res = 1;
+  if (dyn_len (args) == 1)
+    res = 1.0 / dyn_elt_num (args, 0);
+  else if (dyn_len (args) > 1)
+    {
+      res = dyn_elt_num (args, 0);
+      for (int i = 1; i < dyn_len (args); i++)
+	res /= dyn_elt_num (args, i);
+    }
+  return dyn_format ("%f", res);
+}
+
+static dyn_val
+dyn_subr_numeq (dyn_val args)
+{
+  for (int i = 1; i < dyn_len (args); i++)
+    if (dyn_elt_num (args, 0) != dyn_elt_num (args, i))
+      return NULL;
+  return dyn_from_string ("t");
+}
+
+static dyn_val
+dyn_subr_equal (dyn_val args)
+{
+  for (int i = 1; i < dyn_len (args); i++)
+    if (!dyn_equal (dyn_elt (args, 0), dyn_elt (args, i)))
+      return NULL;
+  return dyn_from_string ("t");
+}
+
+static dyn_val
+dyn_spec_if (dyn_val form, dyn_val env)
+{
+  int i = 1;
+  while (i < dyn_len (form))
+    {
+      if (i < dyn_len (form) - 1)
+	{
+	  if (dyn_eval (dyn_elt (form, i), env))
+	    return dyn_elt (form, i+1);
+	  i += 2;
+	}
+      else
+	return dyn_elt (form, i);
+    }
+  return NULL;
+}
+
+static dyn_val
+dyn_spec_do (dyn_val form, dyn_val env)
+{
+  int i;
+  for (i = 1; i < dyn_len (form) - 1; i++)
+    dyn_eval (dyn_elt (form, i), env);
+  if (i > 0)
+    return dyn_elt (form, i);
+  else
+    return NULL;
+}
+
+static dyn_val
+dyn_spec_lambda (dyn_val form, dyn_val env)
+{
+  if (dyn_len (form) != 3)
+    dyn_error ("short lambda: %V", form);
+
+  return dyn_make_interp_lambda (dyn_elt (form, 1),
+				 dyn_elt (form, 2),
+				 env);
 }
 
 static void
@@ -2382,11 +2694,40 @@ void dyn_ensure_init ()
       DYN_ENSURE_TYPE (dyn_end_of_input);
       DYN_ENSURE_TYPE (dyn_eval_token);
       DYN_ENSURE_TYPE (dyn_end_of_input);
+      DYN_ENSURE_TYPE (dyn_interp);
+
+      dyn_seq_start (toplevel);
 
       dyn_stdout = dyn_create_output_fd (1);
       dyn_end_of_input_token = dyn_new (dyn_end_of_input);
 
+      dyn_top_def (dyn_from_string ("+"),
+		   dyn_make_interp_subr (dyn_subr_sum));
+
+      dyn_top_def (dyn_from_string ("-"),
+		   dyn_make_interp_subr (dyn_subr_sub));
+
+      dyn_top_def (dyn_from_string ("*"),
+		   dyn_make_interp_subr (dyn_subr_mult));
+
+      dyn_top_def (dyn_from_string ("/"),
+		   dyn_make_interp_subr (dyn_subr_div));
+
+      dyn_top_def (dyn_from_string ("="),
+		   dyn_make_interp_subr (dyn_subr_numeq));
+
+      dyn_top_def (dyn_from_string ("equal"),
+		   dyn_make_interp_subr (dyn_subr_equal));
+
+      dyn_top_def (dyn_from_string ("if"),
+		   dyn_make_interp_spec (dyn_spec_if));
+
+      dyn_top_def (dyn_from_string ("do"),
+		   dyn_make_interp_spec (dyn_spec_do));
+
+      dyn_top_def (dyn_from_string ("lambda"),
+		   dyn_make_interp_spec (dyn_spec_lambda));
+
       atexit (dyn_report);
     }
 }
-

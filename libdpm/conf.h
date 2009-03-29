@@ -37,6 +37,7 @@ dpm_conf_var *dpm_conf_find (const char *name);
 dyn_val dpm_conf_get (dpm_conf_var *var);
 int dpm_conf_true (dpm_conf_var *var);
 int dpm_conf_int (dpm_conf_var *var);
+const char *dpm_conf_string (dpm_conf_var *var);
 void dpm_conf_set (dpm_conf_var *var, dyn_val val);
 void dpm_conf_let (dpm_conf_var *var, dyn_val val);
 

@@ -18,7 +18,13 @@
 #ifndef DPM_DYN_H
 #define DPM_DYN_H
 
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
+#include <limits.h>
 
 /* Some mild dynamic language features for C: non-local control flow,
    dynamic extents, dynamic variables, and a simple dynamic type
@@ -100,7 +106,7 @@ void *dyn_strndup (const char *str, int n);
 void dyn_begin ();
 void dyn_end ();
 
-#define dyn_block for (int i = dyn_begin(), 1; i; i = dyn_end(), 0)
+#define dyn_block for (int __i__ __attribute__ ((cleanup (dyn_end))) = (dyn_begin(), 1); __i__; __i__=0)
 
 void dyn_on_unwind (void (*func) (int for_throw, void *data), void *data);
 
@@ -298,7 +304,7 @@ dyn_input dyn_open_zlib (dyn_input compressed);
 dyn_input dyn_open_bz2 (dyn_input compressed);
 
 void dyn_input_push_limit (dyn_input in, int len);
-void dpm_input_pop_limit (dyn_input in);
+void dyn_input_pop_limit (dyn_input in);
 
 void dyn_input_count_lines (dyn_input in);
 int dyn_input_lineno (dyn_input in);
@@ -309,6 +315,7 @@ char *dyn_input_mark (dyn_input in);
 const char *dyn_input_pos (dyn_input in);
 void dyn_input_set_pos (dyn_input in, const char *pos);
 int dyn_input_grow (dyn_input in, int min);
+int dyn_input_must_grow (dyn_input in, int n);
 
 void dyn_input_advance (dyn_input in, int n);
 int dyn_input_find (dyn_input in, const char *delims);

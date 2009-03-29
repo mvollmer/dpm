@@ -64,6 +64,12 @@ dpm_conf_int (dpm_conf_var *conf)
   return atoi (dyn_to_string (dyn_get (conf->var)));
 }
 
+const char *
+dpm_conf_string (dpm_conf_var *conf)
+{
+  return dyn_to_string (dyn_get (conf->var));
+}
+
 void
 dpm_conf_set (dpm_conf_var *conf, dyn_val val)
 {
@@ -101,24 +107,20 @@ dpm_conf_parse (const char *filename)
       if (dyn_is_eof (form))
 	break;
 
-      if (dyn_is_pair (form))
+      dyn_val element = dyn_eval (form, NULL);
+
+      if (dyn_is_pair (element))
 	{
-	  dyn_val var = dyn_first (form);
-	  dyn_val val = dyn_second (form);
+	  dyn_val var = dyn_first (element);
+	  dyn_val val = dyn_second (element);
 	  
 	  if (!dyn_is_string (var))
 	    dyn_error ("variable names must be strings");
 
-	  // dyn_print ("var %V val %V\n", var, val);
-
-	  dpm_conf_set (dpm_conf_find (dyn_to_string (var)),
-			dyn_eval (val, NULL));
+	  dpm_conf_set (dpm_conf_find (dyn_to_string (var)), val);
 	}
-      else
-	{
-	  dyn_write (dyn_stdout, "Unhandled form %V\n", form);
-	  dyn_output_flush (dyn_stdout);
-	}
+      else if (element)
+	dyn_print ("Unhandled configuration element: %V\n", element);
     }
 
   dyn_end ();
