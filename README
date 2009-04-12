@@ -48,25 +48,8 @@ packages), but only as a crutch: dpm will notice changes in
   Particularily files like /var/lib/dpkg/status and .deb archives, of
   course.
 
-  In libdpm, dpm.h
+  In libdpm, parse.h
 
 - Importing the existing apt and dpkg state into a store.
 
-  This includes defining the data structure of the store.  For
-  starters, there will be one "status" record per package, which
-  points to a number of "version" records.
-
-  The status record contains the status, like not-installed,
-  half-installed, installed, etc; a list of installed files, a list of
-  conffiles, the installed version, the list of available versions,
-  etc.
-
-  A version record contains information about a single deb file,
-  either from the deb itself or from a repository.  Debs are
-  ultimately identified by their checksum, but only one deb for each
-  given version is kept in the store.
-
-  The version record can store any key/value pair that is found in a
-  control file.  Some of them are handled specially and are found in
-  fixed locations and are preparsed.  Dependencies of course, and
-  debtags.
+  See libdpm/db.h

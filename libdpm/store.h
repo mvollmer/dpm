@@ -80,27 +80,22 @@
    data structures and algorithms.
  */
 
-extern dyn_type ss_store_type;
-
-struct ss_store;
-typedef struct ss_store ss_store;
-
-typedef void ss_error_callback (ss_store *ss, const char *message);
+DYN_DECLARE_TYPE (ss_store);
 
 #define SS_READ  0
 #define SS_WRITE 1
 #define SS_TRUNC 2
 
-ss_store *ss_open (const char *filename, int mode);
+ss_store ss_open (const char *filename, int mode);
 
-ss_store *ss_maybe_gc (ss_store *ss);
-ss_store *ss_gc (ss_store *ss);
+ss_store ss_maybe_gc (ss_store ss);
+ss_store ss_gc (ss_store ss);
 
 struct ss_opaque;
 typedef struct ss_opaque *ss_val;
 
-ss_val ss_get_root (ss_store *ss);
-void ss_set_root (ss_store *ss, ss_val root);
+ss_val ss_get_root (ss_store ss);
+void ss_set_root (ss_store ss, ss_val root);
 
 #define SS_BLOB_TAG 0x7F
 
@@ -119,20 +114,20 @@ int ss_ref_int (ss_val v, int index);
 int ss_is_blob (ss_val v);
 void *ss_blob_start (ss_val b);
 
-ss_val ss_new (ss_store *ss, int tag, int n, ...);
-ss_val ss_newv (ss_store *ss, int tag, int n, ss_val *refs);
-ss_val ss_blob_new (ss_store *ss, int blob_len, void *blob);
+ss_val ss_new (ss_store ss, int tag, int n, ...);
+ss_val ss_newv (ss_store ss, int tag, int n, ss_val *refs);
+ss_val ss_blob_new (ss_store ss, int blob_len, void *blob);
 
-ss_store *ss_find_object_store (ss_val v);
+ss_store ss_find_object_store (ss_val v);
 
-ss_val ss_copy (ss_store *ss, ss_val v);
-ss_val ss_insert (ss_store *ss, ss_val obj, int index, ss_val v);
-ss_val ss_insert_many (ss_store *ss, ss_val obj, int index, int n, ...);
+ss_val ss_copy (ss_store ss, ss_val v);
+ss_val ss_insert (ss_store ss, ss_val obj, int index, ss_val v);
+ss_val ss_insert_many (ss_store ss, ss_val obj, int index, int n, ...);
 
 struct ss_tab;
 typedef struct ss_tab ss_tab;
 
-ss_tab *ss_tab_init (ss_store *ss, ss_val tab);
+ss_tab *ss_tab_init (ss_store ss, ss_val tab);
 ss_val ss_tab_finish (ss_tab *ot);
 ss_val ss_tab_store (ss_tab *ot);
 ss_val ss_tab_intern (ss_tab *ot, ss_val v);
@@ -145,11 +140,11 @@ void ss_tab_foreach (ss_tab *ot,
 struct ss_dict;
 typedef struct ss_dict ss_dict;
 
-#define SS_DICT_STRONG          0
-#define SS_DICT_WEAK_KEYS       1
-#define SS_DICT_WEAK_VALUE_SETS 2
+#define SS_DICT_STRONG    0
+#define SS_DICT_WEAK_KEYS 1
+#define SS_DICT_WEAK_SETS 2
 
-ss_dict *ss_dict_init (ss_store *ss, ss_val dict, int weak);
+ss_dict *ss_dict_init (ss_store ss, ss_val dict, int weak);
 ss_val ss_dict_finish (ss_dict *d);
 ss_val ss_dict_store (ss_dict *d);
 void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
@@ -159,11 +154,24 @@ void ss_dict_del (ss_dict *d, ss_val key, ss_val val);
 void ss_dict_foreach (ss_dict *d,
 		      void (*func) (ss_val key, ss_val val, void *data),
 		      void *data);
+void ss_dict_foreach_member (ss_dict *d, 
+			     void (*func) (ss_val key, ss_val val, void *data),
+			     void *data);
+void ss_dict_update (ss_dict *d,
+		     ss_val (*func) (ss_val key, ss_val val, void *data),
+		     void *data);
+void ss_dict_update_members (ss_dict *d, 
+			     ss_val (*func) (ss_val key, ss_val val,
+					     void *data),
+			     void *data);
+
+ss_val ss_ref_safely (ss_val obj, int i);
+int ss_streq (ss_val obj, const char *str);
 
 /* Debugging
  */
-void ss_scan_store (ss_store *ss);
-int ss_id (ss_store *ss, ss_val x);
+void ss_scan_store (ss_store ss);
+int ss_id (ss_store ss, ss_val x);
 void ss_tab_dump (ss_tab *ot);
 
 #endif /* !DPM_STORE_H */

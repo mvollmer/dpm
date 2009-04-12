@@ -298,6 +298,8 @@ dyn_val dyn_apply_schema (dyn_val val, dyn_val schema);
 DYN_DECLARE_TYPE (dyn_input);
 DYN_DECLARE_TYPE (dyn_output);
 
+int dyn_file_exists (const char *filename);
+
 dyn_input dyn_open_file (const char *filename);
 dyn_input dyn_open_string (const char *str, int len);
 dyn_input dyn_open_zlib (dyn_input compressed);
@@ -349,7 +351,7 @@ dyn_val dyn_format (const char *fmt, ...);
 dyn_val dyn_formatv (const char *fmt, va_list ap);
 
 dyn_val dyn_eval (dyn_val form, dyn_val env);
-dyn_val dyn_load (dyn_input in);
+dyn_val dyn_eval_string (dyn_val string, dyn_val env);
 
 typedef struct {
   dyn_val val;

@@ -29,10 +29,12 @@
 static dpm_conf_var *conf_vars;
 
 void
-dpm_conf_register (dpm_conf_var *conf)
+dpm_conf_register (dpm_conf_var *conf, const char *def)
 {
   conf->next = conf_vars;
   conf_vars = conf;
+  if (def)
+    dpm_conf_set (conf, dyn_eval_string (dyn_from_string (def), NULL));
 }
 
 dpm_conf_var *

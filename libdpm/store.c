@@ -75,8 +75,20 @@
 #define SS_BLOB_LEN_TO_WORDS(l)  (((l)+3)>>2)
 
 #define SS_IS_FORWARD(o)    (SS_HEADER(o)&0x80000000)
-#define SS_GET_FORWARD(o)   ((uint32_t *)(SS_HEADER(o)&~0x80000000))
+#define SS_GET_FORWARD(o)   ((uint32_t)(SS_HEADER(o)&~0x80000000))
+#define SS_SET_FORWARD2(o,f) (ss_set_forward_carefully (o, (uint32_t)(f)))
 #define SS_SET_FORWARD(o,f) (SS_SET_WORD(o,0, 0x80000000 | (uint32_t)(f)))
+
+#define SS_OFFSET(ss,obj)      (((uint32_t)obj)-((uint32_t)((ss)->head)))
+#define SS_FROM_OFFSET(ss,off) ((ss_val)(((uint32_t)((ss)->head))+((uint32_t)off)))
+
+static void
+ss_set_forward_carefully (void *o, uint32_t f)
+{
+  if (f & 0x80000000)
+    abort ();
+  SS_SET_FORWARD2(o,f);
+}
 
 #define SS_IS_INT(o)    ((((uint32_t)o)&3)==3)
 #define SS_TO_INT(o)    (((uint32_t)o)>>2)
@@ -107,13 +119,16 @@ struct ss_header {
 
 static void ss_store_unref (dyn_type *, void *);
 
-dyn_type ss_store_type = {
-  .name = "struct-store",
-  .unref = ss_store_unref
-};
+static int
+ss_store_equal (void *a, void *b)
+{
+  return 0;
+}
 
-struct ss_store {
-  ss_store *next_store;
+DYN_DEFINE_TYPE (ss_store, "struct-store");
+
+struct ss_store_struct {
+  ss_store next_store;
 
   char *filename;
 
@@ -130,14 +145,14 @@ struct ss_store {
 /* Opening stores.
  */
 
-static ss_store *all_stores = NULL;
+static ss_store all_stores = NULL;
 
 #define MAX_SIZE    (512*1024*1024)
 #define GROW_MASK   (2*1024*1024-1)
 //#define GROW_MASK    (4*1024-1)        // for testing
 
 static void
-ss_grow (ss_store *ss, size_t size)
+ss_grow (ss_store ss, size_t size)
 {
   size = (size + GROW_MASK) & ~GROW_MASK;
   if (size >= MAX_SIZE)
@@ -153,7 +168,7 @@ ss_grow (ss_store *ss, size_t size)
 }
 
 static void
-ss_sync (ss_store *ss, uint32_t root_off)
+ss_sync (ss_store ss, uint32_t root_off)
 {
   uint32_t *start = ss->start + ss->head->len;
   uint32_t *end = ss->next;
@@ -184,15 +199,15 @@ ss_sync (ss_store *ss, uint32_t root_off)
     dyn_error ("Can't write-protect header of %s: %m", ss->filename);
 }
 
-ss_store *
+ss_store 
 ss_open (const char *filename, int mode)
 {
   struct stat buf;
   int prot;
 
-  ss_store *ss;
+  ss_store ss;
 
-  ss = dyn_malloc (sizeof (ss_store));
+  ss = dyn_new (ss_store);
   ss->next_store = NULL;
   ss->filename = dyn_strdup (filename);
   ss->head = NULL;
@@ -232,6 +247,11 @@ ss_open (const char *filename, int mode)
   if (ss->head == MAP_FAILED)
     dyn_error ("Can't map %s: %m", ss->filename);
 
+#if 0
+  if (((unsigned long)ss->head) > (0x80000000 - MAX_SIZE))
+    dyn_error ("Map too high: %x", ss->head);
+#endif
+    
   if (mode == SS_TRUNC)
     {
       ftruncate (ss->fd, 0);
@@ -285,8 +305,8 @@ ss_open (const char *filename, int mode)
 static void
 ss_store_unref (dyn_type *type, void *object)
 {
-  ss_store *ss = object;
-  ss_store **sp;
+  ss_store ss = object;
+  ss_store *sp;
 
   for (sp = &all_stores; *sp; sp = &(*sp)->next_store)
     if (*sp == ss)
@@ -302,10 +322,10 @@ ss_store_unref (dyn_type *type, void *object)
   free (ss->filename);
 }
 
-ss_store *
+ss_store 
 ss_find_object_store (ss_val o)
 {
-  ss_store *ss;
+  ss_store ss;
 
   for (ss = all_stores; ss; ss = ss->next_store)
     if ((char *)(ss->head + 1) <= (char *)o && (char *)o < (char *)ss->next)
@@ -318,7 +338,7 @@ ss_find_object_store (ss_val o)
  */
 
 ss_val 
-ss_get_root (ss_store *ss)
+ss_get_root (ss_store ss)
 {
   if (ss->head->root == 0 || SS_IS_INT (ss->head->root))
     return (ss_val )ss->head->root;
@@ -327,7 +347,7 @@ ss_get_root (ss_store *ss)
 }
 
 void
-ss_set_root (ss_store *ss, ss_val root)
+ss_set_root (ss_store ss, ss_val root)
 {
   uint32_t off;
 
@@ -343,7 +363,7 @@ ss_set_root (ss_store *ss, ss_val root)
  */
 
 static uint32_t *
-ss_alloc (ss_store *ss, size_t words)
+ss_alloc (ss_store ss, size_t words)
 {
   uint32_t *obj, *new_next;
 
@@ -362,17 +382,18 @@ ss_alloc (ss_store *ss, size_t words)
 }
 
 int
-ss_is_stored (ss_store *ss, ss_val obj)
+ss_is_stored (ss_store ss, ss_val obj)
 {
   uint32_t *w = (uint32_t *)obj;
   return ss == NULL || (ss->start <= w && w < ss->next);
 }
 
 void
-ss_assert_in_store (ss_store *ss, ss_val obj)
+ss_assert_in_store (ss_store ss, ss_val obj)
 {
   if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
     return;
+  abort ();
   dyn_error ("Rogue pointer.");
 }
     
@@ -405,6 +426,8 @@ ss_assert_in_store (ss_store *ss, ss_val obj)
  * tables and dictionaries are copied.
  */
 
+#define WEAK_SETS_DISPATCH_TAG 0x77
+#define WEAK_SETS_SEARCH_TAG   0x78
 #define WEAK_DICT_DISPATCH_TAG 0x79
 #define WEAK_DICT_SEARCH_TAG   0x7A
 #define DICT_DISPATCH_TAG      0x7B
@@ -415,8 +438,8 @@ ss_assert_in_store (ss_store *ss, ss_val obj)
 #define MAX_DELAYED 1024
 
 typedef struct {
-  ss_store *from_store;
-  ss_store *to_store;
+  ss_store from_store;
+  ss_store to_store;
   int phase;
   int again;
   int n_delayed;
@@ -428,7 +451,7 @@ static ss_val ss_dict_gc_copy (ss_gc_data *gc, ss_val dict);
 static ss_val ss_tab_gc_copy (ss_gc_data *gc, ss_val tab);
 
 int
-ss_id (ss_store *ss, ss_val x)
+ss_id (ss_store ss, ss_val x)
 {
   if (x == NULL || ss_is_int (x))
     return -1;
@@ -441,7 +464,9 @@ ss_gc_delay_p (ss_val obj)
   return (ss_is (obj, TAB_DISPATCH_TAG)
 	  || ss_is (obj, TAB_SEARCH_TAG)
 	  || ss_is (obj, WEAK_DICT_DISPATCH_TAG)
-	  || ss_is (obj, WEAK_DICT_SEARCH_TAG));
+	  || ss_is (obj, WEAK_DICT_SEARCH_TAG)
+	  || ss_is (obj, WEAK_SETS_DISPATCH_TAG)
+	  || ss_is (obj, WEAK_SETS_SEARCH_TAG));
 }
 
 static int
@@ -475,7 +500,13 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
     return obj;
 
   if (SS_IS_FORWARD (obj))
-    return (ss_val)SS_GET_FORWARD (obj);
+    {
+      uint32_t off = SS_GET_FORWARD (obj);
+      if (off == 0)
+	return NULL;
+      else
+	return SS_FROM_OFFSET (gc->to_store, off);
+    }
 
   if (ss_is_stored (gc->to_store, obj))
     return obj;
@@ -494,7 +525,9 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
   if (ss_is (obj, DICT_DISPATCH_TAG)
       || ss_is (obj, DICT_SEARCH_TAG)
       || ss_is (obj, WEAK_DICT_DISPATCH_TAG)
-      || ss_is (obj, WEAK_DICT_SEARCH_TAG))
+      || ss_is (obj, WEAK_DICT_SEARCH_TAG)
+      || ss_is (obj, WEAK_SETS_DISPATCH_TAG)
+      || ss_is (obj, WEAK_SETS_SEARCH_TAG))
     return ss_dict_gc_copy (gc, obj);
   else
     {
@@ -514,7 +547,7 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
 	    ss_set ((ss_val)copy, i, ss_ref (obj, i));
 	}
 
-      SS_SET_FORWARD (obj, copy);
+      SS_SET_FORWARD (obj, SS_OFFSET (gc->to_store, copy));
       return (ss_val)copy;
     }
 }
@@ -535,8 +568,37 @@ static void
 ss_dict_gc_set (ss_val key, ss_val val, void *data)
 {
   ss_gc_dict_data *dd = (ss_gc_dict_data *)data;
-  if (dd->weak == SS_DICT_STRONG || ss_gc_alive_p (dd->gc, key))
-    ss_dict_set (dd->d, ss_gc_copy (dd->gc, key), ss_gc_copy (dd->gc, val));
+  if (dd->weak == SS_DICT_STRONG)
+    {
+      ss_dict_set (dd->d, ss_gc_copy (dd->gc, key), ss_gc_copy (dd->gc, val));
+    }
+  else if (dd->weak == SS_DICT_WEAK_KEYS)
+    {
+      if (ss_gc_alive_p (dd->gc, key))
+	  ss_dict_set (dd->d,
+		       ss_gc_copy (dd->gc, key), ss_gc_copy (dd->gc, val));
+    }
+  else if (dd->weak == SS_DICT_WEAK_SETS)
+    {
+      if (val)
+	{
+	  int len = ss_len (val), n = 0;
+	  ss_val new_elts[len];
+	  for (int i = 0; i < len; i++)
+	    {
+	      ss_val elt = ss_ref (val, i);
+	      if (elt && ss_gc_alive_p (dd->gc, elt))
+		new_elts[n++] = ss_gc_copy (dd->gc, elt);
+	    }
+	  if (n > 0)
+	    ss_dict_set (dd->d,
+			 ss_gc_copy (dd->gc, key), ss_newv (dd->gc->to_store,
+							    ss_tag (val), n,
+							    new_elts));
+	}
+    }
+  else
+    abort ();
 }
 
 static int
@@ -551,6 +613,10 @@ ss_dict_weak_kind (ss_val node)
       || ss_is (node, WEAK_DICT_DISPATCH_TAG))
     return SS_DICT_WEAK_KEYS;
 
+  if (ss_is (node, WEAK_SETS_SEARCH_TAG)
+      || ss_is (node, WEAK_SETS_DISPATCH_TAG))
+    return SS_DICT_WEAK_SETS;
+
   abort ();
 }
 
@@ -561,6 +627,8 @@ ss_dict_dispatch_tag (int weak)
     return DICT_DISPATCH_TAG;
   else if (weak == SS_DICT_WEAK_KEYS)
     return WEAK_DICT_DISPATCH_TAG;
+  else if (weak == SS_DICT_WEAK_SETS)
+    return WEAK_SETS_DISPATCH_TAG;
   else
     abort ();
 }
@@ -578,7 +646,12 @@ ss_dict_gc_copy (ss_gc_data *gc, ss_val node)
 
   copy = ss_dict_finish (dd.d);
   if (node)
-    SS_SET_FORWARD (node, copy);
+    {
+      if (copy)
+	SS_SET_FORWARD (node, SS_OFFSET (gc->to_store, copy));
+      else
+	SS_SET_FORWARD (node, 0);
+    }
   return copy;
 }
 
@@ -638,7 +711,11 @@ ss_tab_gc_copy (ss_gc_data *gc, ss_val node)
 	}
     }
 
-  SS_SET_FORWARD (node, copy);
+  if (copy)
+    SS_SET_FORWARD (node, SS_OFFSET (gc->to_store, copy));
+  else
+    SS_SET_FORWARD (node, 0);
+
   return copy;
 }
 
@@ -680,19 +757,41 @@ ss_gc_copy_root (ss_gc_data *gc)
 }
 
 static void
-ss_gc_dict_ripple_entry (ss_val key, ss_val val, void *data)
+ss_gc_dict_ripple_key_entry (ss_val key, ss_val val, void *data)
 {
   ss_gc_data *gc = (ss_gc_data *)data;
 
   /* If the key is alive, we make sure that the value is alive, too.
-     Since the value might be used as a key in another dict, we need
-     to scan again.
+     Since the value might be used in another dict, we need to scan
+     again.
    */
   if (ss_gc_alive_p (gc, key)
       && !ss_gc_alive_p (gc, val))
     {
       ss_gc_copy (gc, val);
       gc->again = 1;
+    }
+}
+
+static void
+ss_gc_dict_ripple_set_entry (ss_val key, ss_val val, void *data)
+{
+  ss_gc_data *gc = (ss_gc_data *)data;
+
+  /* If any of the values are alive, we make sure that the key is
+     alive, too.  Since the key might be used in another dict, we need
+     to scan again.
+   */
+  if (val && !ss_gc_alive_p (gc, key))
+    {
+      int len = ss_len (val);
+      for (int i = 0; i < len; i++)
+	if (ss_gc_alive_p (gc, ss_ref (val, i)))
+	  {
+	    ss_gc_copy (gc, key);
+	    gc->again = 1;
+	    break;
+	  }
     }
 }
 
@@ -710,7 +809,11 @@ ss_gc_ripple_dicts (ss_gc_data *gc)
 	if (ss_is (d, WEAK_DICT_DISPATCH_TAG)
 	    || ss_is (d, WEAK_DICT_SEARCH_TAG))
 	  ss_dict_node_foreach (WEAK_DICT_DISPATCH_TAG,
-				d, ss_gc_dict_ripple_entry, gc);
+				d, ss_gc_dict_ripple_key_entry, gc);
+	else if (ss_is (d, WEAK_SETS_DISPATCH_TAG)
+		 || ss_is (d, WEAK_SETS_SEARCH_TAG))
+	  ss_dict_node_foreach (WEAK_SETS_DISPATCH_TAG,
+				d, ss_gc_dict_ripple_set_entry, gc);
       }
   } while (gc->again);
 }
@@ -723,8 +826,8 @@ ss_gc_copy_delayed (ss_gc_data *gc)
   ss_gc_scan (gc);
 }
 
-ss_store *
-ss_gc (ss_store *ss)
+ss_store 
+ss_gc (ss_store ss)
 {
   ss_gc_data gc;
   ss_val new_root;
@@ -762,8 +865,8 @@ ss_gc (ss_store *ss)
   return gc.to_store;
 }
 
-ss_store *
-ss_maybe_gc (ss_store *ss)
+ss_store 
+ss_maybe_gc (ss_store ss)
 {
   if (ss->head->alloced > 5*1024*1024)
     {
@@ -853,7 +956,7 @@ ss_set (ss_val obj, int i, ss_val val)
 }
 
 ss_val 
-ss_newv (ss_store *ss, int tag, int len, ss_val *vals)
+ss_newv (ss_store ss, int tag, int len, ss_val *vals)
 {
   uint32_t *w = ss_alloc (ss, len + 1);
   int i;
@@ -869,7 +972,7 @@ ss_newv (ss_store *ss, int tag, int len, ss_val *vals)
 }
 
 ss_val 
-ss_new (ss_store *ss, int tag, int len, ...)
+ss_new (ss_store ss, int tag, int len, ...)
 {
   uint32_t *w = ss_alloc (ss, len + 1);
   va_list ap;
@@ -889,7 +992,7 @@ ss_new (ss_store *ss, int tag, int len, ...)
 }
 
 ss_val 
-ss_make (ss_store *ss, int tag, int len, ss_val init)
+ss_make (ss_store ss, int tag, int len, ss_val init)
 {
   int i;
   uint32_t *w = ss_alloc (ss, len + 1);
@@ -914,7 +1017,7 @@ ss_blob_start (ss_val b)
 }
 
 ss_val 
-ss_blob_new (ss_store *ss, int len, void *blob)
+ss_blob_new (ss_store ss, int len, void *blob)
 {
   uint32_t *w = ss_alloc (ss, SS_BLOB_LEN_TO_WORDS(len) + 1);
 
@@ -925,7 +1028,7 @@ ss_blob_new (ss_store *ss, int len, void *blob)
 }
 
 ss_val 
-ss_copy (ss_store *ss, ss_val obj)
+ss_copy (ss_store ss, ss_val obj)
 {
   if (obj == NULL || ss_is_int (obj))
     return obj;
@@ -942,7 +1045,7 @@ ss_copy (ss_store *ss, ss_val obj)
 }
 
 ss_val 
-ss_insert_many (ss_store *ss, ss_val obj, int index, int n, ...)
+ss_insert_many (ss_store ss, ss_val obj, int index, int n, ...)
 {
   int len = ss_len (obj), i;
   ss_val vals[len+n];
@@ -971,13 +1074,13 @@ ss_insert_many (ss_store *ss, ss_val obj, int index, int n, ...)
 }
 
 ss_val 
-ss_insert (ss_store *ss, ss_val obj, int index, ss_val val)
+ss_insert (ss_store ss, ss_val obj, int index, ss_val val)
 {
   return ss_insert_many (ss, obj, index, 1, val);
 }
 
 ss_val
-ss_remove_many (ss_store *ss, ss_val obj, int index, int n)
+ss_remove_many (ss_store ss, ss_val obj, int index, int n)
 {
   int len = ss_len (obj), i;
   ss_val vals[len-n];
@@ -998,7 +1101,7 @@ ss_remove_many (ss_store *ss, ss_val obj, int index, int n)
 }
 
 static ss_val 
-ss_store_object (ss_store *ss, ss_val obj)
+ss_store_object (ss_store ss, ss_val obj)
 {
   ss_val copy;
 
@@ -1021,7 +1124,7 @@ ss_store_object (ss_store *ss, ss_val obj)
 }
 
 static ss_val 
-ss_unstore_object (ss_store *ss, ss_val obj)
+ss_unstore_object (ss_store ss, ss_val obj)
 {
   if (ss_is_stored (ss, obj))
     return ss_copy (NULL, obj);
@@ -1065,7 +1168,7 @@ ss_hash (ss_val o)
 }
 
 static uint32_t
-ss_id_hash (ss_store *ss, ss_val o)
+ss_id_hash (ss_store ss, ss_val o)
 {
   return ((uint32_t)o - (uint32_t)(ss->start)) & 0x3FFFFFFF;
 }
@@ -1132,7 +1235,7 @@ ss_mapvec_get (ss_val vec, int index)
 }
 
 static ss_val 
-ss_mapvec_set (ss_store *ss, ss_val vec, int index, ss_val val)
+ss_mapvec_set (ss_store ss, ss_val vec, int index, ss_val val)
 {
   ss_val new_vec;
   uint32_t map = ss_to_int (ss_ref (vec, 0)) | 0xC0000000;
@@ -1205,9 +1308,9 @@ ss_mapvec_set (ss_store *ss, ss_val vec, int index, ss_val val)
 
 static ss_val 
 ss_hash_node_lookup (int dispatch_tag,
-		     ss_val (*action) (ss_store *ss, ss_val node,
+		     ss_val (*action) (ss_store ss, ss_val node,
 				       int hash, void *data),
-		     ss_store *ss,
+		     ss_store ss,
 		     ss_val node, int shift,
 		     int hash, void *data)
 {
@@ -1263,7 +1366,7 @@ ss_hash_node_lookup (int dispatch_tag,
  */
 
 ss_val
-ss_tab_intern_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_tab_intern_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_val *objp = (ss_val *)data;
   ss_val obj = *objp;
@@ -1298,7 +1401,7 @@ typedef struct {
 } ss_tab_intern_blob_data;
 
 ss_val
-ss_tab_intern_blob_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_tab_intern_blob_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_tab_intern_blob_data *d = (ss_tab_intern_blob_data *)data;
 
@@ -1324,7 +1427,7 @@ ss_tab_intern_blob_action (ss_store *ss, ss_val node, int hash, void *data)
 }
 
 ss_val
-ss_tab_intern_soft_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_tab_intern_soft_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_tab_intern_blob_data *d = (ss_tab_intern_blob_data *)data;
 
@@ -1344,12 +1447,12 @@ ss_tab_intern_soft_action (ss_store *ss, ss_val node, int hash, void *data)
 }
 
 struct ss_tab {
-  ss_store *store;
+  ss_store store;
   ss_val root;
 };
 
 ss_tab *
-ss_tab_init (ss_store *ss, ss_val root)
+ss_tab_init (ss_store ss, ss_val root)
 {
   ss_tab *ot = dyn_malloc (sizeof (ss_tab));
   ot->store = ss;
@@ -1500,7 +1603,7 @@ ss_tab_dump (ss_tab *ot)
  */
 
 struct ss_dict {
-  ss_store *store;
+  ss_store store;
   int dispatch_tag;
   int search_tag;
   ss_val root;
@@ -1513,7 +1616,7 @@ typedef struct {
 } ss_dict_action_data;
 
 ss_val
-ss_dict_get_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_dict_get_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_dict_action_data *d = (ss_dict_action_data *)data;
 
@@ -1538,7 +1641,7 @@ ss_dict_get_action (ss_store *ss, ss_val node, int hash, void *data)
 }
 
 ss_val
-ss_dict_set_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_dict_set_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_dict_action_data *d = (ss_dict_action_data *)data;
 
@@ -1576,7 +1679,7 @@ ss_dict_set_action (ss_store *ss, ss_val node, int hash, void *data)
 }
 
 static ss_val
-ss_set_add (ss_store *ss, ss_val set, ss_val val)
+ss_set_add (ss_store ss, ss_val set, ss_val val)
 {
   int len = ss_len (set), i;
   for (i = 0; i < len; i++)
@@ -1586,7 +1689,7 @@ ss_set_add (ss_store *ss, ss_val set, ss_val val)
 }
 
 static ss_val
-ss_set_rem (ss_store *ss, ss_val set, ss_val val)
+ss_set_rem (ss_store ss, ss_val set, ss_val val)
 {
   int len = ss_len (set), i;
   for (i = 0; i < len; i++)
@@ -1601,7 +1704,7 @@ ss_set_rem (ss_store *ss, ss_val set, ss_val val)
 }
 
 ss_val
-ss_dict_add_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_dict_add_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_dict_action_data *d = (ss_dict_action_data *)data;
 
@@ -1633,7 +1736,7 @@ ss_dict_add_action (ss_store *ss, ss_val node, int hash, void *data)
 }
 
 ss_val
-ss_dict_del_action (ss_store *ss, ss_val node, int hash, void *data)
+ss_dict_del_action (ss_store ss, ss_val node, int hash, void *data)
 {
   ss_dict_action_data *d = (ss_dict_action_data *)data;
 
@@ -1667,7 +1770,7 @@ ss_dict_del_action (ss_store *ss, ss_val node, int hash, void *data)
 }
 
 ss_dict *
-ss_dict_init (ss_store *ss, ss_val root, int weak)
+ss_dict_init (ss_store ss, ss_val root, int weak)
 {
   ss_dict *d = dyn_malloc (sizeof (ss_dict));
   d->store = ss;
@@ -1680,6 +1783,11 @@ ss_dict_init (ss_store *ss, ss_val root, int weak)
     {
       d->search_tag = WEAK_DICT_SEARCH_TAG;
       d->dispatch_tag = WEAK_DICT_DISPATCH_TAG;      
+    }
+  else if (weak == SS_DICT_WEAK_SETS)
+    {
+      d->search_tag = WEAK_SETS_SEARCH_TAG;
+      d->dispatch_tag = WEAK_SETS_DISPATCH_TAG;      
     }
   else
     abort ();
@@ -1769,11 +1877,169 @@ ss_dict_foreach (ss_dict *d,
   ss_dict_node_foreach (d->dispatch_tag, d->root, func, data);
 }
 
+static ss_val
+ss_dict_node_update (ss_store ss, int dispatch_tag, ss_val node,
+		     ss_val (*func) (ss_val key, ss_val val, void *data),
+		     void *data)
+{
+  if (node == NULL)
+    return node;
+  else if (!ss_is (node, dispatch_tag))
+    {
+      int len = ss_len(node), i;
+      for (i = 1; i < len; i += 2)
+	{
+	  ss_val old_val = ss_ref (node, i+1), new_val;
+	  new_val = func (ss_ref (node, i), old_val, data);
+	  if (new_val != old_val)
+	    {
+	      if (new_val)
+		{
+		  node = ss_unstore_object (ss, node);
+		  ss_set (node, i+1, new_val);
+		}
+	      else
+		{
+		  node = ss_remove_many (NULL, node, i, 2);
+		  i -= 2;
+		  len -= 2;
+		}
+	    }
+	}
+      return node;
+    }
+  else
+    {
+      int len = ss_len(node), i;
+      for (i = 1; i < len; i++)
+	{
+	  ss_val old_val = ss_ref (node, i), new_val;
+	  new_val = ss_dict_node_update (ss, dispatch_tag, old_val, func, data);
+	  if (new_val != old_val)
+	    {
+	      node = ss_unstore_object (ss, node);
+	      ss_set (node, i, new_val);
+	    }
+	}
+      return node;
+    }
+}
+
+void
+ss_dict_update (ss_dict *d,
+		ss_val (*func) (ss_val key, ss_val val, void *data), void *data)
+{
+  d->root = ss_dict_node_update (d->store, d->dispatch_tag, d->root,
+				 func, data);
+}
+
+struct foreach_member_data {
+  void (*func) (ss_val key, ss_val val, void *data);
+  void *data;
+};
+
+static void
+foreach_member (ss_val key, ss_val val, void *data)
+{
+  struct foreach_member_data *fmd = data;
+
+  if (val)
+    {
+      int len = ss_len (val);
+      for (int i = 0; i < len; i++)
+	{
+	  ss_val member = ss_ref (val, i);
+	  if (member)
+	    fmd->func (key, member, fmd->data);
+	}
+    }
+}
+
+void
+ss_dict_foreach_member (ss_dict *d, 
+			void (*func) (ss_val key, ss_val val, void *data),
+			void *data)
+{
+  struct foreach_member_data fmd;
+  fmd.func = func;
+  fmd.data = data;
+  ss_dict_foreach (d, foreach_member, &fmd);
+}
+
+struct update_members_data {
+  ss_store ss;
+  ss_val (*func) (ss_val key, ss_val val, void *data);
+  void *data;
+};
+
+static ss_val
+update_members (ss_val key, ss_val val, void *data)
+{
+  struct update_members_data *umd = data;
+
+  if (val)
+    {
+      int len = ss_len (val);
+      for (int i = 0; i < len; i++)
+	{
+	  ss_val member = ss_ref (val, i);
+	  if (member)
+	    {
+	      ss_val new_member = umd->func (key, member, umd->data);
+	      if (new_member != member)
+		{
+		  if (new_member)
+		    {
+		      val = ss_unstore_object (umd->ss, val);
+		      ss_set (val, i, new_member);
+		    }
+		  else
+		    {
+		      val = ss_remove_many (NULL, val, i, 1);
+		      i -= 1;
+		      len -= 1;
+		    }
+		}
+	    }
+	}
+    }
+  return val;
+}
+
+void
+ss_dict_update_members (ss_dict *d, 
+			ss_val (*func) (ss_val key, ss_val val, void *data),
+			void *data)
+{
+  struct update_members_data umd;
+  umd.ss = d->store;
+  umd.func = func;
+  umd.data = data;
+  ss_dict_update (d, update_members, &umd);
+}
+
+ss_val
+ss_ref_safely (ss_val obj, int i)
+{
+  if (obj && !ss_is_blob (obj) && i < ss_len (obj))
+    return ss_ref (obj, i);
+  return NULL;
+}
+
+int
+ss_streq (ss_val obj, const char *str)
+{
+  return (obj
+	  && ss_is_blob (obj)
+	  && ss_len (obj) == strlen (str)
+	  && strcmp (ss_blob_start (obj), str) == 0);
+}
+
 /* Debugging
  */
 
 void
-ss_dump_store (ss_store *ss, const char *header)
+ss_dump_store (ss_store ss, const char *header)
 {
   printf ("Store %p, %s.\n", ss, header);
   printf (" filename:  %s\n", ss->filename);
@@ -1792,7 +2058,7 @@ ss_dump_store (ss_store *ss, const char *header)
 }
 
 void
-ss_scan_store (ss_store *ss)
+ss_scan_store (ss_store ss)
 {
   uint32_t *w = ss->start;
 

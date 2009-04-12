@@ -219,7 +219,7 @@ dyn_from_stringn (const char *str, int len)
   dyn_string string = dyn_alloc (dyn_string_type, len + 1);
   strncpy (string->chars, str, len);
   string->chars[len] = 0;
-  // fprintf (stderr, "%p = %.*s\n", val, len, str);
+  // fprintf (stderr, "%p = %.*s\n", string, len, str);
   return string;
 }
 
@@ -954,9 +954,6 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
 	  if (dyn_len (schema) != 3)
 	    dyn_error ("invalid schema: %V", schema);
 
-	  dyn_val first_schema = dyn_elt (schema, 1);
-	  dyn_val second_schema = dyn_elt (schema, 2);
-
 	  dyn_val first_result;
 	  if (!dyn_apply_schema_with_env (dyn_first (val), dyn_elt (schema, 1),
 					  &first_result, soft,
@@ -1057,10 +1054,11 @@ dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
 	  if (dyn_len (schema) != 2)
 	    dyn_error ("invalid schema: %V", schema);
 
-	  dyn_val schema = dyn_elt (schema, 1);
+	  dyn_val not_schema = dyn_elt (schema, 1);
 	  dyn_val unused_result;
-	  if (dyn_apply_schema_with_env (val, schema, &unused_result, 1, env))
-	    dyn_schema_mismatch (schema, val, soft);
+	  if (dyn_apply_schema_with_env (val, not_schema, &unused_result, 1,
+					 env))
+	    return dyn_schema_mismatch (schema, val, soft);
 	  else
 	    {
 	      *result = val;
@@ -1140,6 +1138,13 @@ dyn_apply_schema (dyn_val val, dyn_val schema)
 }
 
 /* Input streams */
+
+int
+dyn_file_exists (const char *filename)
+{
+  struct stat buf;
+  return stat (filename, &buf) == 0;
+}
 
 static void dyn_input_unref (dyn_type *, void *);
 
@@ -1286,6 +1291,10 @@ dyn_open_file (const char *filename)
   else if (has_suffix (filename, ".bz2"))
     in = dyn_open_bz2 (in);
 
+  /* Read a bit already so that dyn_input_mark does not return NULL
+     when it is the first thing being called.
+  */
+  dyn_input_grow (in, 1);
   return in;
 }
 
@@ -1403,6 +1412,7 @@ bzerrfmt (int ret)
 struct dyn_bzlib_handle {
   dyn_input source;
   bz_stream stream;
+  int end_of_stream;
 };
 
 static int
@@ -1415,7 +1425,7 @@ dyn_bz2_read (void *handle, char *buf, int n)
   z->stream.avail_out = n;
 
   /* Loop until we have produced some output */
-  while (z->stream.avail_out == n)
+  while (!z->end_of_stream && z->stream.avail_out == n)
     {
       /* Get more input if needed. */
       if (z->stream.avail_in == 0)
@@ -1433,7 +1443,10 @@ dyn_bz2_read (void *handle, char *buf, int n)
 	dyn_error (bzerrfmt (ret), ret);
 
       if (ret == BZ_STREAM_END)
-	break;
+	{
+	  z->end_of_stream = 1;
+	  break;
+	}
     }
 
   return n - z->stream.avail_out;
@@ -1459,6 +1472,9 @@ dyn_open_bz2 (dyn_input source)
   z->stream.bzalloc = NULL;
   z->stream.bzfree = NULL;
   z->stream.opaque = NULL;
+
+  z->stream.avail_in = 0;
+  z->end_of_stream = 0;
 
   in->handle = z;
   in->read = dyn_bz2_read;
@@ -1595,7 +1611,6 @@ dyn_input_set_pos (dyn_input in, const char *pos)
 {
   if (in->lineno > 0)
     {
-      char *p;
       if (in->pos < pos)
 	{
 	  for (char *p = in->pos; p < pos; p++)
@@ -1886,9 +1901,10 @@ dyn_output dyn_stdout;
 dyn_val
 dyn_formatv (const char *fmt, va_list ap)
 {
+  dyn_begin ();
   dyn_output out = dyn_create_output_string ();
   dyn_writev (out, fmt, ap);
-  return dyn_output_commit (out);
+  return dyn_end_with (dyn_output_commit (out));
 }
 
 dyn_val
@@ -2093,6 +2109,13 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 	      {
 		char buf[40];
 		sprintf (buf, "%d", va_arg (ap, int));
+		dyn_write_string (out, buf, strlen (buf));
+	      }
+	      break;
+	    case 'x':
+	      {
+		char buf[40];
+		sprintf (buf, "%x", va_arg (ap, int));
 		dyn_write_string (out, buf, strlen (buf));
 	      }
 	      break;
@@ -2448,7 +2471,7 @@ dyn_top_def (dyn_val name, dyn_val val)
 }
 
 static dyn_val
-dyn_eval_string (dyn_val string, dyn_val env)
+dyn_eval_identifier (dyn_val string, dyn_val env)
 {
   dyn_val val = dyn_lookup (string, env);
   if (val == NULL)
@@ -2505,7 +2528,7 @@ dyn_eval (dyn_val form, dyn_val env)
     {
       form = dyn_eval_token_form (form);
       if (dyn_is_string (form))
-	return dyn_eval_string (form, env);
+	return dyn_eval_identifier (form, env);
       else if (dyn_is_pair (form))
 	return dyn_top_def (dyn_first (form),
 			    dyn_eval (dyn_second (form), env));
@@ -2523,7 +2546,7 @@ dyn_eval (dyn_val form, dyn_val env)
 
   dyn_val form_op = dyn_elt (form, 0), op;
   if (dyn_is_string (form_op))
-    op = dyn_eval_string (form_op, NULL);
+    op = dyn_eval_identifier (form_op, NULL);
   else
     op = dyn_eval (form_op, env);
 
@@ -2554,6 +2577,12 @@ dyn_eval (dyn_val form, dyn_val env)
     }
   else
     dyn_error ("can't apply: %V", op);
+}
+
+dyn_val
+dyn_eval_string (dyn_val string, dyn_val env)
+{
+  return dyn_eval (dyn_read_string (string), env);
 }
 
 static double

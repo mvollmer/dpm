@@ -46,17 +46,23 @@ void dpm_db_open ();
 void dpm_db_checkpoint ();
 void dpm_db_done ();
 
-void dpm_db_update_packages (const char *packages_file);
-void dpm_db_import_deb (const char *deb_file);
-void dpm_db_import_status (const char *status_file);
+void dpm_db_update (dyn_val sources, dyn_val dists,
+		    dyn_val comps, dyn_val archs);
 
 typedef ss_val dpm_package;
 typedef ss_val dpm_version;
 
-dpm_package dpm_db_find_package (const char *name);
-ss_val      dpm_db_get_available (dpm_package pkg);
-dpm_version dpm_db_get_installed (dpm_package pkg);
+void dpm_db_foreach_package (void (*func) (dpm_package pkg, void *data), 
+			     void *data);
 
-void dpm_db_dump_version (dpm_version ver);
+dpm_package dpm_db_find_package (const char *name);
+
+ss_val      dpm_db_available (dpm_package pkg);
+dpm_version dpm_db_installed (dpm_package pkg);
+
+ss_val dpm_db_version_get (dpm_version ver, const char *field);
+ss_val dpm_db_version_shortdesc (dpm_version ver);
+
+void dpm_db_stats ();
 
 #endif /* !DPM_DB_H */

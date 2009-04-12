@@ -29,7 +29,7 @@ typedef struct dpm_conf_var {
   dyn_var var[1];
 } dpm_conf_var;
 
-void dpm_conf_register (dpm_conf_var *var);
+void dpm_conf_register (dpm_conf_var *var, const char *def);
 void dpm_conf_dump (void);
 
 dpm_conf_var *dpm_conf_find (const char *name);
@@ -41,7 +41,7 @@ const char *dpm_conf_string (dpm_conf_var *var);
 void dpm_conf_set (dpm_conf_var *var, dyn_val val);
 void dpm_conf_let (dpm_conf_var *var, dyn_val val);
 
-#define DPM_CONF_DECLARE(_sym,_name,_schema,_doc)			\
+#define DPM_CONF_DECLARE(_sym,_name,_schema,_def,_doc)			\
   dpm_conf_var _sym[1] = { {					        \
     .name = _name,							\
     .docstring = _doc							\
@@ -51,8 +51,8 @@ void dpm_conf_let (dpm_conf_var *var, dyn_val val);
   _sym##__declare ()							\
   {									\
     dyn_ensure_init();							\
-    _sym[0].schema = (dyn_read_string (#_schema));			\
-    dpm_conf_register (_sym);				        \
+    _sym[0].schema = (dyn_read_string (_schema));			\
+    dpm_conf_register (_sym, _def);					\
   }
 
 void dpm_conf_parse (const char *filename);

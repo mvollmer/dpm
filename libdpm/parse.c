@@ -28,6 +28,51 @@
 
 #include "parse.h"
 
+void
+dpm_parse_lines (dyn_input in,
+		 void (*func) (dyn_input in,
+			       int n_fields,
+			       const char **fields, int *field_lens,
+			       void *data),
+		 void *data)
+{
+  const int max_fields = 512;
+  int n_fields;
+  const char *fields[max_fields];
+  int field_lens[max_fields];
+  
+  n_fields = 0;
+  dyn_input_set_mark (in);
+
+  while (1)
+    {
+      dyn_input_skip (in, " \t");
+      if (dyn_input_looking_at (in, "\n"))
+	{
+	  func (in, n_fields, fields, field_lens, data);
+	  dyn_input_advance (in, 1);
+	  dyn_input_set_mark (in);
+	  n_fields = 0;
+	}
+      else if (dyn_input_grow (in, 1) < 1)
+	{
+	  if (n_fields > 0)
+	    func (in, n_fields, fields, field_lens, data);
+	  dyn_input_set_mark (in);
+	  return;
+	}
+      else
+	{
+	  if (n_fields == max_fields)
+	    dyn_error ("too many fields");
+	  fields[n_fields] = dyn_input_pos (in);
+	  dyn_input_find (in, " \t\n");
+	  field_lens[n_fields] = dyn_input_pos (in) - fields[n_fields];
+	  n_fields++;
+	}
+    }
+}
+
 static int
 linear_whitespace_p (char c)
 {
@@ -138,9 +183,7 @@ dpm_parse_control (dyn_input in,
 	  int name_len, value_off, value_len;
 
 	  if (!dyn_input_looking_at (in, ":"))
-	    dyn_error ("No field name in '%.*s'",
-		       dyn_input_pos (in) - dyn_input_mark (in),
-		       dyn_input_mark (in));
+	    dyn_error ("No field name");
 
 	  name_len = dyn_input_pos (in) - dyn_input_mark (in);
 
@@ -166,6 +209,102 @@ dpm_parse_control (dyn_input in,
     }
 
   return in_header;
+}
+
+int
+dpm_parse_control_fields (dyn_input in, dpm_control_fields *result)
+{
+  int in_header = 0;
+
+  result->n = 0;
+  result->max = 0;
+  result->names = NULL;
+  result->values = NULL;
+
+  dyn_input_set_mark (in);
+
+  int name_off = 0;
+  while (dyn_input_find (in, ":\n")
+	 || dyn_input_pos (in) > dyn_input_mark (in) + name_off)
+    {
+      if (dyn_input_pos (in) == dyn_input_mark (in) + name_off)
+	{
+	  /* Empty line.  Gobble it up when we haven't seen a field yet.
+	   */
+	  if (!in_header)
+	    {
+	      dyn_input_advance (in, 1);
+	      dyn_input_set_mark (in);
+	    }
+	  else
+	    break;
+	}
+      else
+	{
+	  int value_off, value_len;
+	  char *value;
+
+	  if (!dyn_input_looking_at (in, ":"))
+	    dyn_error ("No field name");
+
+	  *((char *)dyn_input_pos(in)) = 0;
+	  dyn_input_advance (in, 1);
+
+	  value_off = dyn_input_pos (in) - dyn_input_mark (in);
+
+	  dyn_input_find_after (in, "\n");
+	  while (dyn_input_looking_at (in, " ")
+		 || dyn_input_looking_at (in, "\t"))
+	    dyn_input_find_after (in, "\n");
+
+	  value = dyn_input_mark (in) + value_off;
+	  value_len = dyn_input_pos (in) - value;
+	  decode_value (&value, &value_len);
+	  value[value_len] = 0;
+	  value_off = value - dyn_input_mark (in);
+
+	  if (result->n >= result->max)
+	    {
+	      result->max += 64;
+	      result->names = dyn_realloc (result->names,
+					   sizeof(char*) * result->max);
+	      result->values = dyn_realloc (result->values,
+					    sizeof(char*) * result->max);
+	    }
+
+	  result->names[result->n] = (char *)name_off;
+	  result->values[result->n] = (char *)value_off;
+	  result->n += 1;
+
+	  name_off = dyn_input_pos (in) - dyn_input_mark (in);
+	  in_header = 1;
+	}
+    }
+
+  char *mark = dyn_input_mark (in);
+  for (int i = 0; i < result->n; i++)
+    {
+      result->names[i] = mark + (int)result->names[i];
+      result->values[i] = mark + (int)result->values[i];
+    }
+
+  return in_header;
+}
+
+char *
+dpm_control_fields_get (dpm_control_fields *fields, const char *name)
+{
+  for (int i = 0; i < fields->n; i++)
+    if (strcmp (fields->names[i], name) == 0)
+      return fields->values[i];
+  return NULL;
+}
+
+void
+dpm_control_fields_free (dpm_control_fields *fields)
+{
+  free (fields->names);
+  free (fields->values);
 }
 
 static uintmax_t

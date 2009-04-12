@@ -39,12 +39,29 @@
  * validated input.  They won't give nice and helpful error messages.)
  */
 
+void dpm_parse_lines (dyn_input in,
+		      void (*func) (dyn_input in,
+				    int n_fields,
+				    const char **fields, int *field_lens,
+				    void *data),
+		      void *data);
+
 int dpm_parse_control (dyn_input in,
 		       void (*func) (dyn_input in,
 				     const char *name, int name_len,
 				     const char *value, int value_len,
 				     void *data),
 		       void *data);
+
+typedef struct {
+  int n, max;
+  char **names;
+  char **values;
+} dpm_control_fields;
+
+int dpm_parse_control_fields (dyn_input in, dpm_control_fields *result);
+char *dpm_control_fields_get (dpm_control_fields *fields, const char *name);
+void dpm_control_fields_free (dpm_control_fields *fields);
 
 void dpm_parse_ar (dyn_input in,
 		   void (*func) (dyn_input in,

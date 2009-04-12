@@ -22,24 +22,32 @@
 #include "db.h"
 #include "conf.h"
 #include "parse.h"
+#include "acq.h"
 
-DPM_CONF_DECLARE (database, "database", string,
+DPM_CONF_DECLARE (database, "database",
+		  "string", "dpm.db",
 		  "The filename of the database.")
+
+DPM_CONF_DECLARE (keyring, "keyring",
+		  "string", "/usr/share/keyrings/debian-archive-keyring.gpg",
+		  "The keyring to use.")
 
 /* The root:
 
    - format              (string, "dpm-0")
    - strings             (string table)
-   - available versions  (package name -> list of versions)
-   - installed version   (package name -> something, maybe version)
+   - available versions  (package name -> list of versions, weak sets)
+   - installed version   (package name -> something, maybe version, strong)
+   - indices             (path -> index, strong)
 
    A version:
 
    - package             (interned string)
    - version             (string)
    - architecture        (interned string)
-   - index               (interned string)
    - relations           (list of relations)
+   - tags                (list of strings)
+   - shortdesc           (string)
    - fields              (field name -> string)
 
    A relation:
@@ -49,15 +57,32 @@ DPM_CONF_DECLARE (database, "database", string,
    - package             (interned string)
    - version             (string)
 
+   A package index:
+
+   - path                (string, "http://ftp.fi.debian.org/.../Packages.bz2")
+   - release             (release index or null)
+   - versions            (list of versions)
+
+   A release index
+
+   - path                (string, "http://ftp.fi.debian.org/.../Release")
+   - dist                (interned string, "stable")
+   - valid keys          (list of strings, fingerprints)
+
    All strings used as dictionary keys are interned, of course.
+   
+   Control field values are interned as well, to save space.  Lot's of
+   values are duplicated between different architectures and version.
+
 */
 
 struct dpm_db_struct {
-  ss_store *store;
+  ss_store store;
   
   ss_tab *strings;
   ss_dict *available;
   ss_dict *installed;
+  ss_dict *indices;
 };
 
 static void
@@ -73,6 +98,8 @@ dpm_db_unref (dyn_type *type, void *object)
     ss_dict_finish (db->available);
   if (db->installed)
     ss_dict_finish (db->installed);
+  if (db->indices)
+    ss_dict_finish (db->indices);
 
   dyn_unref (db->store);
 }
@@ -87,41 +114,23 @@ DYN_DECLARE_TYPE (dpm_db);
 DYN_DEFINE_TYPE (dpm_db, "db");
 
 static dyn_val
-dpm_db_make (ss_store *store)
+dpm_db_make (ss_store store)
 {
   dpm_db db = dyn_new (dpm_db);
   db->store = dyn_ref (store);
   db->strings = NULL;
   db->available = NULL;
   db->installed = NULL;
+  db->indices = NULL;
   return db;
 }
 
 static dyn_var cur_db[1];
 
-static ss_val
-ss_ref_safely (ss_val obj, int i)
-{
-  if (obj && !ss_is_blob (obj) && i < ss_len (obj))
-    return ss_ref (obj, i);
-  return NULL;
-}
-
-static int
-ss_streq (ss_val obj, const char *str)
-{
-  return (obj
-	  && ss_is_blob (obj)
-	  && ss_len (obj) == strlen (str)
-	  && strcmp (ss_blob_start (obj), str) == 0);
-}
-
 void
 dpm_db_open ()
 {
   const char *name = dpm_conf_string (database);
-  if (name == NULL)
-    name = "dpm.db";
 
   dpm_db db = dpm_db_make (ss_open (name, SS_WRITE));
   dyn_let (cur_db, db);
@@ -133,9 +142,11 @@ dpm_db_open ()
 
   db->strings = ss_tab_init (db->store, ss_ref_safely (root, 1));
   db->available = ss_dict_init (db->store,
-				ss_ref_safely (root, 2), SS_DICT_STRONG);
+				ss_ref_safely (root, 2), SS_DICT_WEAK_SETS);
   db->installed = ss_dict_init (db->store,
 				ss_ref_safely (root, 3), SS_DICT_STRONG);
+  db->indices = ss_dict_init (db->store,
+			      ss_ref_safely (root, 4), SS_DICT_STRONG);
 }
 
 void
@@ -143,11 +154,12 @@ dpm_db_checkpoint ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_val root = ss_new (db->store, 0, 4,
+  ss_val root = ss_new (db->store, 0, 5,
 			ss_blob_new (db->store, 5, "dpm-0"),
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->available),
-			ss_dict_store (db->installed));
+			ss_dict_store (db->installed),
+			ss_dict_store (db->indices));
   ss_set_root (db->store, root);
 }
 
@@ -164,6 +176,8 @@ dpm_db_done ()
     ss_dict_finish (db->available);
   if (db->installed)
     ss_dict_finish (db->installed);
+  if (db->indices)
+    ss_dict_finish (db->indices);
 
   ss_maybe_gc (db->store);
 
@@ -171,6 +185,7 @@ dpm_db_done ()
   db->strings = NULL;
   db->available = NULL;
   db->installed = NULL;
+  db->indices = NULL;
 
   dyn_set (cur_db, NULL);
 }
@@ -202,43 +217,56 @@ dpm_db_installed (dpm_package pkg)
   return ss_dict_get (db->installed, pkg);
 }
 
-/* Utils that should be in store.c
- */
-
-struct foreach_member_data {
-  void (*func) (ss_val key, ss_val val, void *data);
-  void *data;
-};
-
-static void
-foreach_member (ss_val key, ss_val val, void *data)
+static ss_val
+intern_soft (dpm_db db, const char *string)
 {
-  struct foreach_member_data *fmd = data;
-
-  if (val)
-    {
-      for (int i = 0; i < ss_len (val); i++)
-	{
-	  ss_val member = ss_ref (val, i);
-	  if (member)
-	    fmd->func (key, member, fmd->data);
-	}
-    }
+  return ss_tab_intern_soft (db->strings, strlen (string), (void *)string);
 }
 
-static void
-ss_dict_foreach_member (ss_dict *d, 
-			void (*func) (ss_val key, ss_val val, void *data),
-			void *data)
+dpm_package
+dpm_db_find_version (const char *package, const char *version,
+		     const char *architecture)
 {
-  struct foreach_member_data fmd;
-  fmd.func = func;
-  fmd.data = data;
-  ss_dict_foreach (d, foreach_member, &fmd);
+  dpm_db db = dyn_get (cur_db);
+
+  dpm_package pkg_sym = intern_soft (db, package);
+  dpm_package ver_sym = intern_soft (db, version);
+  dpm_package arch_sym = intern_soft (db, architecture);
+
+  if (pkg_sym == NULL || ver_sym == NULL || arch_sym == NULL)
+    return NULL;
+
+  ss_val versions = dpm_db_available (pkg_sym);
+  if (versions)
+    {
+      for (int i = 0; i < ss_len (versions); i++)
+	{
+	  dpm_version ver = ss_ref (versions, i);
+	  if (ss_ref (ver, 1) == ver_sym && ss_ref (ver, 2) == arch_sym)
+	    return ver;
+	}
+    }
+
+  dpm_version installed = dpm_db_installed (pkg_sym);
+  if (installed
+      && ss_ref (installed, 1) == ver_sym
+      && ss_ref (installed, 2) == arch_sym)
+    return installed;
+
+  return NULL;
 }
 
 /* Importing
  */
+
+typedef ss_val dpm_release_index;
+typedef ss_val dpm_package_index;
+
+static ss_val
+store_string (dpm_db db, const char *string)
+{
+  return ss_blob_new (db->store, strlen (string), (void *)string);
+}
 
 static ss_val
 intern (dpm_db db, const char *string)
@@ -246,131 +274,287 @@ intern (dpm_db db, const char *string)
   return ss_tab_intern_blob (db->strings, strlen (string), (void *)string);
 }
 
-static void
-note_available (dpm_db db, dpm_version version)
-{
-  dpm_package package = ss_ref (version, 0);
-  ss_val avail = ss_dict_get (db->available, package);
-  if (avail)
-    for (int i = 0; i < ss_len (avail); i++)
-      {
-	dpm_version v = ss_ref (avail, i);
-	if (ss_ref (v, 1) == ss_ref (version, 1)
-	    && ss_ref (v, 2) == ss_ref (version, 2))
-	  ss_dict_del (db->available, package, v);
-      }
-  ss_dict_add (db->available, package, version);
-}
-
 typedef struct {
   dpm_db db;
-  ss_val package_key;
-  ss_val version_key;
-  ss_val architecture_key;
-  ss_val index;
 
-  ss_val package;
-  ss_val version;
-  ss_val architecture;
-  ss_val fields[512];
-  int n;
+  int n_versions, max_versions;
+  dpm_version *versions;
+
+  int n_new;
 } parse_data;
-
-
-void
-remove_index_1 (ss_val key, ss_val member, void *data)
-{
-  parse_data *pd = data;
-  if (ss_ref (member, 3) == pd->index)
-    ss_dict_del (pd->db->available, key, member);
-}
-
-void
-remove_index (parse_data *pd)
-{
-  ss_dict_foreach_member (pd->db->available, remove_index_1, pd);
-}
-
-void
-header (dyn_input in,
-	const char *name, int name_len,
-	const char *value, int value_len,
-	void *data)
-{
-  parse_data *pd = (parse_data *)data;
-  dpm_db db = pd->db;
-
-  ss_val key = ss_tab_intern_blob (db->strings, name_len, (void *)name);
-  ss_val val = ss_blob_new (db->store, value_len, (void *)value);
-
-  if (key == pd->package_key)
-    pd->package = ss_tab_intern (db->strings, val);
-  else if (key == pd->version_key)
-    pd->version = ss_tab_intern (db->strings, val);
-  else if (key == pd->architecture_key)
-    pd->architecture = ss_tab_intern (db->strings, val);
-  else
-    {
-      pd->fields[pd->n] = key;
-      pd->fields[pd->n+1] = val;
-      pd->n += 2;
-      if (pd->n > 511)
-	dyn_error ("too many fields");
-    }
-}
 
 static int
 parse_package_stanza (parse_data *pd, dyn_input in)
 {
   dpm_db db = pd->db;
 
-  pd->package = NULL;
-  pd->version = NULL;
-  pd->architecture = NULL;
-  pd->n = 0;
+  dpm_control_fields fields;
 
-  if (dpm_parse_control (in, header, pd))
+  if (dpm_parse_control_fields (in, &fields))
     {
-      if (pd->package == NULL)
-	dyn_error ("Stanza without package");
-      if (pd->version == NULL)
-	dyn_error ("Package without version: %r", pd->package);
-      if (pd->architecture == NULL)
-	dyn_error ("Package without architecture: %r", pd->package);
+      char *package = dpm_control_fields_get (&fields, "Package");
+      char *version = dpm_control_fields_get (&fields, "Version");
+      char *architecture = dpm_control_fields_get (&fields, "Architecture");
 
-      // dyn_print ("(adding %r %r)\n", pd->package, pd->version);
-      ss_val version = ss_new (db->store, 0, 6,
-			       pd->package,
-			       pd->version,
-			       pd->architecture,
-			       pd->index,
-			       NULL,
-			       ss_newv (db->store, 0,
-					pd->n, pd->fields));
-      ss_dict_add (pd->db->available, pd->package, version);
+      if (package == NULL)
+	dyn_error ("Stanza without package");
+      if (version == NULL)
+	dyn_error ("Package without version: %s", package);
+      if (architecture == NULL)
+	dyn_error ("Package without architecture: %s", package);
+
+      dpm_version ver = dpm_db_find_version (package, version, architecture);
+      
+      if (ver == NULL)
+	{
+	  dpm_package pkg = intern (pd->db, package);
+	  ss_val db_fields[2*fields.n];
+
+	  pd->n_new += 1;
+
+	  for (int i = 0; i < fields.n; i++)
+	    {
+	      db_fields[2*i] = intern (pd->db, fields.names[i]);
+	      db_fields[2*i+1] = intern (pd->db, fields.values[i]);
+	    }
+	  
+	  char *desc = dpm_control_fields_get (&fields, "Description");
+	  if (desc)
+	    {
+	      char *pos = strchr (desc, '\n');
+	      if (pos)
+		*pos = 0;
+	    }
+
+	  ver = ss_new (db->store, 0, 7,
+			pkg,
+			intern (pd->db, version),
+			intern (pd->db, architecture),
+			NULL,
+			NULL,
+			desc? intern (pd->db, desc) : NULL,
+			ss_newv (db->store, 0,
+				 2*fields.n, db_fields));
+	  ss_dict_add (pd->db->available, pkg, ver);
+	}
+
+      if (pd->n_versions >= pd->max_versions)
+	{
+	  pd->max_versions += 1024;
+	  pd->versions = dyn_realloc (pd->versions,
+				       sizeof(dpm_version) * pd->max_versions);
+	}
+      pd->versions[pd->n_versions++] = ver;
+
+      dpm_control_fields_free (&fields);
       return 1;
     }
   else
     return 0;
 }
 
-void
-dpm_db_update_packages (const char *file)
+static void
+dpm_db_update_index (dyn_val path, ss_dict *old_indices,
+		     dpm_release_index release, dyn_val sha256)
 {
   dyn_block 
     {
       parse_data pd;
       pd.db = dyn_get (cur_db);
-      pd.package_key = intern (pd.db, "Package");
-      pd.version_key = intern (pd.db, "Version");
-      pd.architecture_key = intern (pd.db, "Architecture");
-      pd.index = intern (pd.db, basename (file));
 
-      dyn_input in = dyn_open_file (file);
-      remove_index (&pd);
+      pd.max_versions = 0;
+      pd.n_versions = 0;
+      pd.versions = NULL;
+
+      pd.n_new = 0;
+
+      ss_val interned_path = intern (pd.db, path);
+
+      dpm_acq_code code = dpm_acquire (dyn_to_string (path));
+      if (code == DPM_ACQ_UNCHANGED
+	  && ss_dict_get (old_indices, interned_path))
+	{
+	  dyn_print ("%v unchanged\n", path);
+	  ss_dict_set (pd.db->indices, interned_path,
+		       ss_dict_get (old_indices, interned_path));
+	  return;
+	}
+
+      dyn_input in = dpm_acq_open_local (dyn_to_string (path));
       while (parse_package_stanza (&pd, in))
 	;
+
+      dyn_print ("%v: %d new\n", path, pd.n_new);
+
+      dpm_package_index index = ss_new (pd.db->store, 0, 3,
+					interned_path,
+					release,
+					ss_newv (pd.db->store, 0,
+						 pd.n_versions,
+						 pd.versions));
+      free (pd.versions);
+
+      ss_dict_set (pd.db->indices, interned_path, index);
     }
+}
+
+/* Release index
+ */
+
+typedef struct {
+  dpm_db db;
+
+  dpm_release_index release;
+
+  int index_prefix_len;
+  int n_indices;
+  dyn_val index_paths[128];
+  dyn_val index_sha256[128];
+} release_parse_data;
+
+static void
+sha256_line (dyn_input in,
+	     int n_fields, const char **fields, int *field_lens,
+	     void *data)
+{
+  release_parse_data *pd = data;
+
+  if (n_fields == 3)
+    {
+      for (int i = 0; i < pd->n_indices; i++)
+	{
+	  const char *p = dyn_to_string (pd->index_paths[i]);
+	  if (field_lens[2] + pd->index_prefix_len == strlen (p)
+	      && strncmp (p + pd->index_prefix_len,
+			  fields[2], field_lens[2]) == 0)
+	    {
+	      pd->index_sha256[i] = dyn_from_stringn (fields[0], field_lens[0]);
+	      break;
+	    }
+	}
+    }
+}
+
+static void
+release_field (dyn_input in,
+	       const char *name, int name_len,
+	       const char *value, int value_len,
+	       void *data)
+{
+  release_parse_data *pd = data;
+
+  if (strncmp (name, "SHA256", name_len) == 0)
+    {
+      dyn_input val_in = dyn_open_string (value, value_len);
+      dpm_parse_lines (val_in, sha256_line, pd);
+    }
+}
+
+static dpm_release_index
+dpm_db_update_release (dyn_val source, dyn_val dist,
+		       dyn_val comps, dyn_val archs,
+		       ss_dict *old_indices)
+{
+  dyn_begin ();
+
+  release_parse_data pd;
+  pd.db = dyn_get (cur_db);
+  
+  dyn_val path = dyn_format ("%v/dists/%v/Release", source, dist);
+  ss_val release = ss_new (pd.db->store, 0, 3,
+			   store_string (pd.db, dyn_to_string (path)),
+			   intern (pd.db, dyn_to_string (path)),
+			   NULL);
+  
+  pd.release = release;
+
+  pd.index_prefix_len = strlen (dyn_to_string (path)) - strlen ("Release");
+  pd.n_indices = 0;
+  for (int i = 0; i < dyn_len (comps); i++)
+    for (int j = 0; j < dyn_len (archs); j++)
+      {
+	pd.index_paths[pd.n_indices] =
+	  dyn_format ("%v/dists/%v/%v/binary-%v/Packages.gz",
+		      source, dist, dyn_elt (comps, i), dyn_elt (archs, j));
+	pd.index_sha256[pd.n_indices] = NULL;
+	pd.n_indices += 1;
+      }
+
+  dyn_input in = dpm_acq_open (path);
+  dpm_parse_control (in, release_field, &pd);
+
+  for (int i = 0; i < pd.n_indices; i++)
+    dpm_db_update_index (pd.index_paths[i], old_indices,
+			 release, pd.index_sha256[i]);
+
+  dyn_end ();
+
+  return release;
+}
+
+void
+dpm_db_update (dyn_val srcs, dyn_val dists,
+	       dyn_val comps, dyn_val archs)
+{
+  dpm_db db = dyn_get (cur_db);
+  ss_dict *old_indices = db->indices;
+  db->indices = ss_dict_init (db->store, NULL, SS_DICT_STRONG);
+
+  for (int i = 0; i < dyn_len (srcs); i++)
+    for (int j = 0; j < dyn_len (dists); j++)
+      {
+	dpm_db_update_release (dyn_elt (srcs, i), dyn_elt (dists, j),
+			       comps, archs, old_indices);
+	dpm_db_checkpoint ();
+      }
+
+  ss_dict_finish (old_indices);
+}
+
+/* Iterating
+ */
+
+typedef struct {
+  void (*func) (dpm_package pkg, void *data);
+  void *data;
+} foreach_package_data;
+
+static void
+foreach_available_package (ss_val key, ss_val val, void *data)
+{
+  foreach_package_data *d = data;
+
+  if (val)
+    d->func (key, d->data);
+}
+
+void
+dpm_db_foreach_package (void (*func) (dpm_package pkg, void *data),
+			void *data)
+{
+  dpm_db db = dyn_get (cur_db);
+  foreach_package_data d;
+
+  d.func = func;
+  d.data = data;
+  ss_dict_foreach (db->available, foreach_available_package, &d);
+}
+
+ss_val
+dpm_db_version_get (dpm_version ver, const char *field)
+{
+  ss_val fields = ss_ref (ver, 6);
+  if (fields)
+    for (int i = 0; i < ss_len (fields); i += 2)
+      if (ss_streq (ss_ref (fields, i), field))
+	return ss_ref (fields, i+1);
+  return NULL;
+}
+
+ss_val
+dpm_db_version_shortdesc (dpm_version ver)
+{
+  return ss_ref (ver, 5);
 }
 
 /* Dumping
@@ -381,7 +565,13 @@ dump_available (ss_val key, ss_val val, void *data)
 {
   dyn_print ("%r:", key);
   for (int i = 0; i < ss_len (val); i++)
-    dyn_print (" %r", ss_ref (ss_ref (val, i), 3));
+    {
+      ss_val v = ss_ref (val, i);
+      if (v)
+	dyn_print (" %r", ss_ref (v, 3));
+      else
+	dyn_print (" <null>");
+    }
   dyn_print ("\n");
 }
 
@@ -392,3 +582,37 @@ dpm_db_dump ()
 
   ss_dict_foreach (db->available, dump_available, NULL);
 }
+
+/* Stats
+ */
+
+typedef struct {
+  int n_packages;
+  int n_versions;
+} stats;
+
+static void
+collect_stats (ss_val key, ss_val val, void *data)
+{
+  stats *s = data;
+  
+  s->n_packages += 1;
+  if (val)
+    s->n_versions += ss_len (val);
+}
+
+void
+dpm_db_stats ()
+{
+  dpm_db db = dyn_get (cur_db);
+
+  stats s;
+  s.n_packages = 0;
+  s.n_versions = 0;
+
+  ss_dict_foreach (db->available, collect_stats, &s);
+
+  fprintf (stderr, "%d packages, %d versions\n",
+	   s.n_packages, s.n_versions);
+}
+
