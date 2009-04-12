@@ -61,6 +61,7 @@ DPM_CONF_DECLARE (keyring, "keyring",
 
    - path                (string, "http://ftp.fi.debian.org/.../Packages.bz2")
    - release             (release index or null)
+   - checktime           (time_t blob, time of last online check)
    - versions            (list of versions)
 
    A release index
@@ -353,6 +354,18 @@ parse_package_stanza (parse_data *pd, dyn_input in)
     return 0;
 }
 
+static time_t
+blob_to_time (ss_val val)
+{
+  return *(time_t *)ss_blob_start (val);
+}
+
+static ss_val
+blob_from_time (ss_store ss, time_t t)
+{
+  return ss_blob_new (ss, sizeof (t), &t);
+}
+
 static void
 dpm_db_update_index (dyn_val path, ss_dict *old_indices,
 		     dpm_release_index release, dyn_val sha256)
@@ -369,32 +382,59 @@ dpm_db_update_index (dyn_val path, ss_dict *old_indices,
       pd.n_new = 0;
 
       ss_val interned_path = intern (pd.db, path);
+      dpm_package_index old_index = ss_dict_get (old_indices, interned_path);
+      dpm_package_index new_index = NULL;
 
-      dpm_acq_code code = dpm_acquire (dyn_to_string (path));
-      if (code == DPM_ACQ_UNCHANGED
-	  && ss_dict_get (old_indices, interned_path))
+      if (old_index
+	  && blob_to_time (ss_ref (old_index, 2)) > time(NULL) - 5*60)
 	{
-	  dyn_print ("%v unchanged\n", path);
-	  ss_dict_set (pd.db->indices, interned_path,
-		       ss_dict_get (old_indices, interned_path));
-	  return;
+	  dyn_print ("%v not checked\n", path);
+	  // XXX - hmm, the release index might need updating.
+	  new_index = old_index;
 	}
+      else
+	{
+	  ss_val now = blob_from_time (pd.db->store, time(NULL));
 
-      dyn_input in = dpm_acq_open_local (dyn_to_string (path));
-      while (parse_package_stanza (&pd, in))
-	;
+	  dpm_acq_code code = dpm_acquire (dyn_to_string (path));
+	  if (code == DPM_ACQ_NOT_FOUND)
+	    {
+	      dyn_print ("%v not found\n", path);
+	    }	
+	  else if (code == DPM_ACQ_UNCHANGED && old_index)
+	    {
+	      dyn_print ("%v unchanged\n", path);
+	      new_index = ss_new (pd.db->store, 0, 4,
+				  interned_path,
+				  release,
+				  now,
+				  ss_ref (old_index, 3));
+	    }
+	  else
+	    {
+	      if (old_index)
+		dyn_print ("%v changed\n", path);
+	      else
+		dyn_print ("%v new\n", path);
 
-      dyn_print ("%v: %d new\n", path, pd.n_new);
+	      dyn_input in = dpm_acq_open_local (dyn_to_string (path));
+	      while (parse_package_stanza (&pd, in))
+		;
 
-      dpm_package_index index = ss_new (pd.db->store, 0, 3,
-					interned_path,
-					release,
-					ss_newv (pd.db->store, 0,
-						 pd.n_versions,
-						 pd.versions));
-      free (pd.versions);
+	      dyn_print ("%d new versions\n", pd.n_new);
 
-      ss_dict_set (pd.db->indices, interned_path, index);
+	      new_index = ss_new (pd.db->store, 0, 4,
+				  interned_path,
+				  release,
+				  now,
+				  ss_newv (pd.db->store, 0,
+					   pd.n_versions,
+					   pd.versions));
+	      free (pd.versions);
+	    }
+	}
+      
+      ss_dict_set (pd.db->indices, interned_path, new_index);
     }
 }
 
@@ -481,11 +521,14 @@ dpm_db_update_release (dyn_val source, dyn_val dist,
       }
 
   dyn_input in = dpm_acq_open (path);
-  dpm_parse_control (in, release_field, &pd);
+  if (in)
+    {
+      dpm_parse_control (in, release_field, &pd);
 
-  for (int i = 0; i < pd.n_indices; i++)
-    dpm_db_update_index (pd.index_paths[i], old_indices,
-			 release, pd.index_sha256[i]);
+      for (int i = 0; i < pd.n_indices; i++)
+	dpm_db_update_index (pd.index_paths[i], old_indices,
+			     release, pd.index_sha256[i]);
+    }
 
   dyn_end ();
 

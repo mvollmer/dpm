@@ -77,7 +77,10 @@ dpm_acquire (const char *file)
     return DPM_ACQ_NOT_FOUND; // XXX - could be other errors, of course.
 
   time_t mtime_after = dpm_acq_modification_time (file);
-  if (mtime_before == mtime_after)
+
+  if (mtime_after == 0)
+    return DPM_ACQ_NOT_FOUND;
+  else if (mtime_before == mtime_after)
     return DPM_ACQ_UNCHANGED;
   else
     return DPM_ACQ_CHANGED;
@@ -89,6 +92,8 @@ dpm_acq_open (const char *file)
   dpm_acq_code code = dpm_acquire (file);
   if (code != DPM_ACQ_NOT_FOUND)
     return dpm_acq_open_local (file);
+  else
+    return NULL;
 }
 
 dyn_input
