@@ -75,3 +75,11 @@
 /libdpm/conf.lo
 /libdpm/conf.o
 /dpm/Makefile.in
+/libdpm/acq.lo
+/libdpm/acq.o
+/libdpm/db.lo
+/libdpm/db.o
+/libdpm/dpm-store-tool
+/libdpm/log
+/libdpm/test-db
+/libdpm/test-db.o
