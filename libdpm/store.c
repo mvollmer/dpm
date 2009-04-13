@@ -70,7 +70,7 @@
 #define SS_HEADER(o)          (SS_WORD(o,0))
 #define SS_TAG(o)             ((int)(SS_HEADER(o)>>24))
 #define SS_LEN(o)             ((int)(SS_HEADER(o)&0xFFFFFF))
-#define SS_SET_HEADER(o,t,l)  (SS_SET_WORD(o,0,((t)&0x7F) << 24 | (len)))
+#define SS_SET_HEADER(o,t,l)  (SS_SET_WORD(o,0,((t)&0x7F) << 24 | (l)))
 
 #define SS_BLOB_LEN_TO_WORDS(l)  (((l)+3)>>2)
 
@@ -362,13 +362,15 @@ ss_set_root (ss_store ss, ss_val root)
 /* Allocating new objects.
  */
 
+static uint32_t *ss_alloc_unstored (size_t words);
+
 static uint32_t *
 ss_alloc (ss_store ss, size_t words)
 {
   uint32_t *obj, *new_next;
 
   if (ss == NULL)
-    return dyn_malloc (words * sizeof(uint32_t));
+    return ss_alloc_unstored (words);
 
   new_next = ss->next + words;
   ss->alloced_words += words;
@@ -1044,60 +1046,91 @@ ss_copy (ss_store ss, ss_val obj)
     }
 }
 
-ss_val 
-ss_insert_many (ss_store ss, ss_val obj, int index, int n, ...)
+/* Mutations and unstored objects.
+
+   Normally, objects are inmutable.  However, you can create
+   'unstored' objects which are not backed by any file and don't
+   observe transactions etc.  No stored object can refer to an
+   unstored object, of course.
+
+   Unstored objects have the same layout as stored objects so that
+   they can be used interchangeably with the stored objects.  They
+   also support modifying their content and efficiently changing their
+   size in small steps.
+
+   The idea is that you create your data structure incrementally until
+   all objects are in place and have the right size, and then ou store
+   the whole thing in one go.  This is advantagous to doing it all in
+   the store itself since much less garbage is created.
+
+   (Creating a lot of garbage in a store is a problem since it can not
+   be collected on-demand, only when the store is otherwise unused.)
+
+   A unstored object is created when using NULL as the store with any
+   of the object creation functions.
+
+   The following mutation functions are capable of operating on both
+   stored and unstored objects.  They generally create a new object
+   that is the modified version of the input object.  If the input
+   object is unstored, the functions will destroy it.
+ */
+
+static size_t
+round_up_len (size_t n)
 {
-  int len = ss_len (obj), i;
-  ss_val vals[len+n];
-  va_list ap;
-
-  i = 0;
-  while (i < index)
-    {
-      vals[i] = ss_ref (obj, i);
-      i++;
-    }
-  va_start (ap, n);
-  while (i < index + n)
-    {
-      vals[i] = va_arg (ap, ss_val);
-      i++;
-    }
-  va_end (ap);
-  while (i < len + n)
-    {
-      vals[i] = ss_ref (obj, i-n);
-      i++;
-    }
-
-  return ss_newv (ss, ss_tag (obj), len + n, vals);
+  if (n > 128)
+    return (n + 1023) & ~1023;
+  else if (n > 16)
+    return 128;
+  else
+    return 16;
 }
 
-ss_val 
-ss_insert (ss_store ss, ss_val obj, int index, ss_val val)
+static ss_val
+ss_realloc_unstored (ss_val obj, size_t words)
 {
-  return ss_insert_many (ss, obj, index, 1, val);
+  /* Hopefully dyn_realloc will do the right thing quickly if the size
+     doesn't actually change.  XXX - check that.
+   */
+  ss_val new_obj = dyn_realloc (obj, sizeof(uint32_t)*round_up_len (words));
+  if (obj && new_obj != obj && SS_TAG (new_obj) != SS_BLOB_TAG)
+    {
+      /* Need to relocate all references.
+       */
+      uint32_t off = (char *)new_obj - (char *)obj;
+      int len = SS_LEN (new_obj);
+      uint32_t *elts = ((uint32_t *)new_obj) + 1;
+      for (int i = 0; i < len; i++)
+	{
+	  if (elts[i] && !ss_is_int (elts[i]))
+	    elts[i] -= off;
+	}
+    }
+  return new_obj;
 }
 
-ss_val
-ss_remove_many (ss_store ss, ss_val obj, int index, int n)
+static uint32_t *
+ss_alloc_unstored (size_t words)
 {
-  int len = ss_len (obj), i;
-  ss_val vals[len-n];
+  return (uint32_t *)ss_realloc_unstored (NULL, words);
+}
 
-  i = 0;
-  while (i < index)
-    {
-      vals[i] = ss_ref (obj, i);
-      i++;
-    }
-  while (i < len - n)
-    {
-      vals[i] = ss_ref (obj, i + n);
-      i++;
-    }
+static void
+ss_free_unstored (ss_val obj)
+{
+  free (obj);
+}
 
-  return ss_newv (ss, ss_tag (obj), len - n, vals);
+static int
+ss_is_unstored (ss_val obj)
+{
+  // XXX - makes this faster (but we usually have at most two stores,
+  //       so this is not that horrible)
+
+  for (ss_store s = all_stores; s; s = s->next_store)
+    if (ss_is_stored (s, obj))
+      return 0;
+  return 1;
 }
 
 static ss_val 
@@ -1119,8 +1152,115 @@ ss_store_object (ss_store ss, ss_val obj)
       copy = ss_newv (ss, ss_tag (obj), ss_len (obj), vals);
     }
 
-  free (obj);
+  ss_free_unstored (obj);
   return copy;
+}
+
+ss_val 
+ss_insert_many (ss_store ss, ss_val obj, int index, int n, ...)
+{
+  int obj_is_unstored = ss_is_unstored (obj);
+
+  if (ss == NULL && obj_is_unstored)
+    {
+      int len = ss_len (obj);
+      obj = ss_realloc_unstored (obj, len + n);
+      SS_SET_HEADER (obj, SS_TAG (obj), len + n);
+      uint32_t *elts = ((uint32_t *)obj)+1;
+      memmove (elts + index + n, elts + index, sizeof(uint32_t)*(len-index));
+      
+      va_list ap;
+      va_start (ap, n);
+      for (int i = 0; i < n; i++)
+	ss_set (obj, index+i, va_arg (ap, ss_val));
+      va_end (ap);
+
+      return obj;
+    }
+  else
+    {
+      int len = ss_len (obj), i;
+      ss_val vals[len+n];
+      va_list ap;
+      
+      i = 0;
+      while (i < index)
+	{
+	  vals[i] = ss_ref (obj, i);
+	  i++;
+	}
+      va_start (ap, n);
+      while (i < index + n)
+	{
+	  vals[i] = va_arg (ap, ss_val);
+	  i++;
+	}
+      va_end (ap);
+      while (i < len + n)
+	{
+	  vals[i] = ss_ref (obj, i-n);
+	  i++;
+	}
+
+      int tag = SS_TAG (obj);
+
+      if (obj_is_unstored)
+	ss_free_unstored (obj);
+
+      return ss_newv (ss, tag, len + n, vals);
+    }
+}
+
+ss_val 
+ss_insert (ss_store ss, ss_val obj, int index, ss_val val)
+{
+  return ss_insert_many (ss, obj, index, 1, val);
+}
+
+ss_val
+ss_append (ss_store ss, ss_val obj, ss_val val)
+{
+  return ss_insert_many (ss, obj, ss_len (obj), 1, val);
+}
+
+ss_val
+ss_remove_many (ss_store ss, ss_val obj, int index, int n)
+{
+  int obj_is_unstored = ss_is_unstored (obj);
+
+  if (ss == NULL && obj_is_unstored)
+    {
+      fprintf (stderr, "doing it\n");
+      int len = ss_len (obj);
+      SS_SET_HEADER (obj, SS_TAG (obj), len - n);
+      uint32_t *elts = ((uint32_t *)obj)+1;
+      memmove (elts + index, elts + index + n, sizeof(uint32_t)*(len-index-n));
+      return obj;
+    }
+  else
+    {
+      int len = ss_len (obj), i;
+      ss_val vals[len-n];
+      
+      i = 0;
+      while (i < index)
+	{
+	  vals[i] = ss_ref (obj, i);
+	  i++;
+	}
+      while (i < len - n)
+	{
+	  vals[i] = ss_ref (obj, i + n);
+	  i++;
+	}
+
+      int tag = SS_TAG (obj);
+
+      if (obj_is_unstored)
+	ss_free_unstored (obj);
+
+      return ss_newv (ss, tag, len - n, vals);
+    }
 }
 
 static ss_val 
@@ -1252,8 +1392,6 @@ ss_mapvec_set (ss_store ss, ss_val vec, int index, ss_val val)
       else
 	{
 	  new_vec = ss_insert (NULL, vec, pos, val);
-	  if (!ss_is_stored (ss, vec))
-	    free (vec);
 	  map |= bit;
 	  ss_set (new_vec, 0, ss_from_int (map));
 	}
@@ -1265,8 +1403,6 @@ ss_mapvec_set (ss_store ss, ss_val vec, int index, ss_val val)
 	  if (index < 30)
 	    {
 	      new_vec = ss_remove_many (NULL, vec, pos, 1);
-	      if (!ss_is_stored (ss, vec))
-		free (vec);
 	      map &= ~bit;
 	      ss_set (new_vec, 0, ss_from_int (map));
 	    }
@@ -1681,11 +1817,13 @@ ss_dict_set_action (ss_store ss, ss_val node, int hash, void *data)
 static ss_val
 ss_set_add (ss_store ss, ss_val set, ss_val val)
 {
+#if 0
   int len = ss_len (set), i;
   for (i = 0; i < len; i++)
     if (ss_ref (set, i) == val)
       return set;
-  return ss_insert (ss, set, 0, val);
+#endif
+  return ss_append (ss, set, val);
 }
 
 static ss_val

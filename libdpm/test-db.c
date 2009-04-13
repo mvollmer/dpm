@@ -46,6 +46,8 @@ show (const char *package)
       dpm_db_open ();
       
       dpm_package pkg = dpm_db_find_package (package);
+      dpm_version ver_to_show = NULL;
+
       if (pkg)
 	{
 	  ss_val versions = dpm_db_available (pkg);
@@ -55,9 +57,15 @@ show (const char *package)
 	      {
 		dpm_version ver = ss_ref (versions, i);
 		dyn_print (" %r (%r)", ss_ref (ver, 1), ss_ref (ver, 2));
+		if (!ver_to_show)
+		  ver_to_show = ver;
 	      }
 	  dyn_print ("\n");
 	}
+
+      if (ver_to_show)
+	dpm_db_show_version (ver_to_show);
+
       dpm_db_done ();
     }
 }
@@ -115,6 +123,32 @@ stats ()
   dpm_db_done ();
 }
 
+static void
+list_versions (ss_val versions)
+{
+  if (versions)
+    for (int i = 0; i < ss_len (versions); i++)
+      {
+	dpm_version ver = ss_ref (versions, i);
+	dyn_print ("%r %r (%r) - %r\n",
+		   ss_ref (ver, 0),
+		   ss_ref (ver, 1),
+		   ss_ref (ver, 2),
+		   dpm_db_version_shortdesc (ver));
+      }
+}
+
+void
+query (const char *exp)
+{
+  if (exp)
+    {
+      dpm_db_open ();
+      list_versions (dpm_db_query_tag (exp));
+      dpm_db_done ();
+    }
+}
+
 int
 main (int argc, char **argv)
 {
@@ -130,9 +164,11 @@ main (int argc, char **argv)
     show (argv[2]);
   else if (strcmp (argv[1], "stats") == 0)
     stats ();
- else if (strcmp (argv[1], "search") == 0)
+  else if (strcmp (argv[1], "search") == 0)
     search (argv[2]);
-   else
+  else if (strcmp (argv[1], "query") == 0)
+    query (argv[2]);
+  else
     usage ();
 
   return 0;

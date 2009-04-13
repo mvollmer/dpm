@@ -39,6 +39,7 @@ DPM_CONF_DECLARE (keyring, "keyring",
    - available versions  (package name -> list of versions, weak sets)
    - installed version   (package name -> something, maybe version, strong)
    - indices             (path -> index, strong)
+   - tags                (tag -> versions)
 
    A version:
 
@@ -84,6 +85,7 @@ struct dpm_db_struct {
   ss_dict *available;
   ss_dict *installed;
   ss_dict *indices;
+  ss_dict *tags;
 };
 
 static void
@@ -101,6 +103,8 @@ dpm_db_unref (dyn_type *type, void *object)
     ss_dict_finish (db->installed);
   if (db->indices)
     ss_dict_finish (db->indices);
+  if (db->tags)
+    ss_dict_finish (db->tags);
 
   dyn_unref (db->store);
 }
@@ -123,6 +127,7 @@ dpm_db_make (ss_store store)
   db->available = NULL;
   db->installed = NULL;
   db->indices = NULL;
+  db->tags = NULL;
   return db;
 }
 
@@ -148,6 +153,8 @@ dpm_db_open ()
 				ss_ref_safely (root, 3), SS_DICT_STRONG);
   db->indices = ss_dict_init (db->store,
 			      ss_ref_safely (root, 4), SS_DICT_STRONG);
+  db->tags = ss_dict_init (db->store,
+			   ss_ref_safely (root, 5), SS_DICT_WEAK_SETS);
 }
 
 void
@@ -155,12 +162,13 @@ dpm_db_checkpoint ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_val root = ss_new (db->store, 0, 5,
+  ss_val root = ss_new (db->store, 0, 6,
 			ss_blob_new (db->store, 5, "dpm-0"),
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->available),
 			ss_dict_store (db->installed),
-			ss_dict_store (db->indices));
+			ss_dict_store (db->indices),
+			ss_dict_store (db->tags));
   ss_set_root (db->store, root);
 }
 
@@ -179,6 +187,8 @@ dpm_db_done ()
     ss_dict_finish (db->installed);
   if (db->indices)
     ss_dict_finish (db->indices);
+  if (db->tags)
+    ss_dict_finish (db->tags);
 
   ss_maybe_gc (db->store);
 
@@ -187,6 +197,7 @@ dpm_db_done ()
   db->available = NULL;
   db->installed = NULL;
   db->indices = NULL;
+  db->tags = NULL;
 
   dyn_set (cur_db, NULL);
 }
@@ -278,66 +289,144 @@ intern (dpm_db db, const char *string)
 typedef struct {
   dpm_db db;
 
+  ss_val package_key;
+  ss_val version_key;
+  ss_val architecture_key;
+  ss_val description_key;
+  ss_val tag_key;
+
+  ss_val package;
+  ss_val version;
+  ss_val architecture;
+  ss_val shortdesc;
+
+  int n_tags;
+  ss_val tags[64];
+
+  int n_fields;
+  ss_val fields[64];
+
   int n_versions, max_versions;
   dpm_version *versions;
+} package_stanza_data;
 
-  int n_new;
-} parse_data;
+void
+package_stanza_tag (dyn_input in,
+		    const char *field, int field_len,
+		    void *data)
+{
+  package_stanza_data *pd = data;
+
+  if (pd->n_tags >= 64)
+    dyn_error ("Too many tags");
+
+  pd->tags[pd->n_tags++] = ss_tab_intern_blob (pd->db->strings,
+					       field_len, (void *)field);
+}
+
+void
+package_stanza_field (dyn_input in,
+		      const char *name, int name_len,
+		      const char *value, int value_len,
+		      void *data)
+{
+  package_stanza_data *pd = data;
+  dpm_db db = pd->db;
+
+  ss_val key = ss_tab_intern_blob (db->strings, name_len, (void *)name);
+
+  if (key == pd->tag_key)
+    {
+      dyn_block
+	{
+	  dyn_input t = dyn_open_string (value, value_len);
+	  dpm_parse_comma_fields (t, package_stanza_tag, pd);
+	}
+    }
+  else
+    {
+      ss_val val = ss_tab_intern_blob (db->strings, value_len, (void *)value);
+
+      if (key == pd->package_key)
+	pd->package = val;
+      else if (key == pd->version_key)
+	pd->version = val;
+      else if (key == pd->architecture_key)
+	pd->architecture = val;
+      else
+	{
+	  pd->fields[pd->n_fields] = key;
+	  pd->fields[pd->n_fields+1] = val;
+	  pd->n_fields += 2;
+	  if (pd->n_fields > 63)
+	    dyn_error ("too many fields");
+	}
+      
+      if (key == pd->description_key)
+	{
+	  char *desc = ss_blob_start (val);
+	  char *pos = memchr (desc, '\n', ss_len (val));
+	  if (pos)
+	    pd->shortdesc = ss_tab_intern_blob (db->strings, pos-desc, desc);
+	  else
+	    pd->shortdesc = val;
+	}
+    }
+}
 
 static int
-parse_package_stanza (parse_data *pd, dyn_input in)
+parse_package_stanza (package_stanza_data *pd, dyn_input in)
 {
   dpm_db db = pd->db;
 
-  dpm_control_fields fields;
+  /* We could check for an existing version record with the same
+     package/version/architecture triple here and avoid inserting the
+     current one.
+     
+     But that is not always correct since overrides in the
+     repository can change without changing the triple.  In
+     essence, the version of a package does not really apply to
+     its control section.
+     
+     Thus, we always import a new version record here without
+     trying to skip those we might already have.  To keep churn
+     low anyway, we rely on external mechanisms to only feed us
+     stanzas that have actually changed.  This needs to happen
+     with cooperation from the repo, unfortunately, since the
+     current pdiff files are line-by-line diffs, not
+     stanza-by-stanza.
+  */
 
-  if (dpm_parse_control_fields (in, &fields))
+  pd->package = NULL;
+  pd->version = NULL;
+  pd->architecture = NULL;
+  pd->shortdesc = NULL;
+  pd->n_tags = 0;
+  pd->n_fields = 0;
+
+  if (dpm_parse_control (in, package_stanza_field, pd))
     {
-      char *package = dpm_control_fields_get (&fields, "Package");
-      char *version = dpm_control_fields_get (&fields, "Version");
-      char *architecture = dpm_control_fields_get (&fields, "Architecture");
-
-      if (package == NULL)
+      if (pd->package == NULL)
 	dyn_error ("Stanza without package");
-      if (version == NULL)
-	dyn_error ("Package without version: %s", package);
-      if (architecture == NULL)
-	dyn_error ("Package without architecture: %s", package);
+      if (pd->version == NULL)
+	dyn_error ("Package without version: %r", pd->package);
+      if (pd->architecture == NULL)
+	dyn_error ("Package without architecture: %r", pd->package);
 
-      dpm_version ver = dpm_db_find_version (package, version, architecture);
-      
-      if (ver == NULL)
-	{
-	  dpm_package pkg = intern (pd->db, package);
-	  ss_val db_fields[2*fields.n];
+      dpm_version ver = ss_new (db->store, 0, 7,
+				pd->package,
+				pd->version,
+				pd->architecture,
+				NULL,
+				ss_newv (db->store, 0,
+					 pd->n_tags, pd->tags),
+				pd->shortdesc,
+				ss_newv (db->store, 0,
+					 pd->n_fields, pd->fields));
 
-	  pd->n_new += 1;
-
-	  for (int i = 0; i < fields.n; i++)
-	    {
-	      db_fields[2*i] = intern (pd->db, fields.names[i]);
-	      db_fields[2*i+1] = intern (pd->db, fields.values[i]);
-	    }
-	  
-	  char *desc = dpm_control_fields_get (&fields, "Description");
-	  if (desc)
-	    {
-	      char *pos = strchr (desc, '\n');
-	      if (pos)
-		*pos = 0;
-	    }
-
-	  ver = ss_new (db->store, 0, 7,
-			pkg,
-			intern (pd->db, version),
-			intern (pd->db, architecture),
-			NULL,
-			NULL,
-			desc? intern (pd->db, desc) : NULL,
-			ss_newv (db->store, 0,
-				 2*fields.n, db_fields));
-	  ss_dict_add (pd->db->available, pkg, ver);
-	}
+      ss_dict_add (pd->db->available, pd->package, ver);
+      for (int i = 0; i < pd->n_tags; i++)
+	ss_dict_add (pd->db->tags, pd->tags[i], ver);
 
       if (pd->n_versions >= pd->max_versions)
 	{
@@ -347,7 +436,6 @@ parse_package_stanza (parse_data *pd, dyn_input in)
 	}
       pd->versions[pd->n_versions++] = ver;
 
-      dpm_control_fields_free (&fields);
       return 1;
     }
   else
@@ -372,14 +460,18 @@ dpm_db_update_index (dyn_val path, ss_dict *old_indices,
 {
   dyn_block 
     {
-      parse_data pd;
+      package_stanza_data pd;
       pd.db = dyn_get (cur_db);
+
+      pd.package_key = intern (pd.db, "Package");
+      pd.version_key = intern (pd.db, "Version");
+      pd.architecture_key = intern (pd.db, "Architecture");
+      pd.description_key = intern (pd.db, "Description");
+      pd.tag_key = intern (pd.db, "Tag");
 
       pd.max_versions = 0;
       pd.n_versions = 0;
       pd.versions = NULL;
-
-      pd.n_new = 0;
 
       ss_val interned_path = intern (pd.db, path);
       dpm_package_index old_index = ss_dict_get (old_indices, interned_path);
@@ -421,7 +513,7 @@ dpm_db_update_index (dyn_val path, ss_dict *old_indices,
 	      while (parse_package_stanza (&pd, in))
 		;
 
-	      dyn_print ("%d new versions\n", pd.n_new);
+	      dyn_print ("%d versions\n", pd.n_versions);
 
 	      new_index = ss_new (pd.db->store, 0, 4,
 				  interned_path,
@@ -598,6 +690,40 @@ ss_val
 dpm_db_version_shortdesc (dpm_version ver)
 {
   return ss_ref (ver, 5);
+}
+
+ss_val
+dpm_db_query_tag (const char *tag)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  ss_val interned_tag = intern_soft (db, tag);
+  if (interned_tag)
+    return ss_dict_get (db->tags, interned_tag);
+  else
+    return NULL;
+}
+
+void
+dpm_db_show_version (dpm_version ver)
+{
+  dyn_print ("Package: %r\n", ss_ref (ver, 0));
+  dyn_print ("Version: %r\n", ss_ref (ver, 1));
+  dyn_print ("Architecture: %r\n", ss_ref (ver, 2));
+
+  ss_val fields = ss_ref (ver, 6);
+  for (int i = 0; i < ss_len (fields); i += 2)
+    dyn_print ("%r: %r\n", ss_ref (fields, i), ss_ref (fields, i+1));
+
+  ss_val tags = ss_ref (ver, 4);
+  if (tags)
+    {
+      int len = ss_len (tags);
+      dyn_print ("Tags:");
+      for (int i = 0; i < len; i++)
+	dyn_print (" %r%s", ss_ref (tags, i), (i < len-1)? ",":"");
+      dyn_print ("\n");
+    }
 }
 
 /* Dumping

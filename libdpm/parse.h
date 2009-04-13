@@ -39,6 +39,12 @@
  * validated input.  They won't give nice and helpful error messages.)
  */
 
+void dpm_parse_comma_fields (dyn_input in,
+			     void (*func) (dyn_input in,
+					   const char *field, int field_len,
+					   void *data),
+			     void *data);
+
 void dpm_parse_lines (dyn_input in,
 		      void (*func) (dyn_input in,
 				    int n_fields,

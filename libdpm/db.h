@@ -63,6 +63,10 @@ dpm_version dpm_db_installed (dpm_package pkg);
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
+ss_val dpm_db_query_tag (const char *tag);
+
+void dpm_db_show_version (dpm_version ver);
+
 void dpm_db_stats ();
 
 #endif /* !DPM_DB_H */
