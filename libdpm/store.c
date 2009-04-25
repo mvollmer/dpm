@@ -1121,6 +1121,22 @@ ss_free_unstored (ss_val obj)
   free (obj);
 }
 
+static void
+ss_deep_free_unstored (ss_store ss, ss_val obj)
+{
+  if (obj == NULL || ss_is_int (obj) || ss_is_stored (ss, obj))
+    return;
+  
+  if (!ss_is_blob (obj))
+    {
+      int len = ss_len(obj), i;
+      for (i = 0; i < len; i++)
+	ss_deep_free_unstored (ss, ss_ref (obj, i));
+    }
+
+  ss_free_unstored (obj);
+}
+
 static int
 ss_is_unstored (ss_val obj)
 {
@@ -1603,6 +1619,13 @@ ss_tab_store (ss_tab *ot)
   return ot->root;
 }
 
+void
+ss_tab_abort (ss_tab *ot)
+{
+  ss_deep_free_unstored (ot->store, ot->root);
+  free (ot);
+}
+
 ss_val
 ss_tab_finish (ss_tab *ot)
 {
@@ -1939,6 +1962,13 @@ ss_dict_store (ss_dict *d)
 {
   d->root = ss_store_object (d->store, d->root);
   return d->root;
+}
+
+void
+ss_dict_abort (ss_dict *d)
+{
+  ss_deep_free_unstored (d->store, d->root);
+  free (d);
 }
 
 ss_val

@@ -129,6 +129,7 @@ typedef struct ss_tab ss_tab;
 
 ss_tab *ss_tab_init (ss_store ss, ss_val tab);
 ss_val ss_tab_finish (ss_tab *ot);
+void ss_tab_abort (ss_tab *ot);
 ss_val ss_tab_store (ss_tab *ot);
 ss_val ss_tab_intern (ss_tab *ot, ss_val v);
 ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
@@ -146,6 +147,7 @@ typedef struct ss_dict ss_dict;
 
 ss_dict *ss_dict_init (ss_store ss, ss_val dict, int weak);
 ss_val ss_dict_finish (ss_dict *d);
+void ss_dict_abort (ss_dict *d);
 ss_val ss_dict_store (ss_dict *d);
 void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
 ss_val ss_dict_get (ss_dict *d, ss_val key);
