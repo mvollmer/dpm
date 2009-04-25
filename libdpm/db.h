@@ -46,8 +46,8 @@ void dpm_db_open ();
 void dpm_db_checkpoint ();
 void dpm_db_done ();
 
-void dpm_db_update (dyn_val sources, dyn_val dists,
-		    dyn_val comps, dyn_val archs);
+void dpm_db_full_update (dyn_val sources, dyn_val dists,
+			 dyn_val comps, dyn_val archs);
 
 typedef ss_val dpm_package;
 typedef ss_val dpm_version;

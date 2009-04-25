@@ -34,7 +34,7 @@ update ()
   dyn_val archs = dpm_conf_get (architectures);
 
   dpm_db_open ();
-  dpm_db_update (srcs, dists, comps, archs);
+  dpm_db_maybe_full_update (srcs, dists, comps, archs);
   dpm_db_done ();
 }
 
