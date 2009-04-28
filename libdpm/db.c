@@ -59,6 +59,7 @@ DPM_CONF_DECLARE (keyring, "keyring",
    - depends
    - conflicts
    - provides
+   - replaces
    - breaks
    - recommends
    - enhances
@@ -378,6 +379,7 @@ typedef struct {
   ss_val depends_key;
   ss_val conflicts_key;
   ss_val provides_key;
+  ss_val replaces_key;
   ss_val breaks_key;
   ss_val recommends_key;
   ss_val enhances_key;
@@ -392,6 +394,7 @@ typedef struct {
   ss_val depends;
   ss_val conflicts;
   ss_val provides;
+  ss_val replaces;
   ss_val breaks;
   ss_val recommends;
   ss_val enhances;
@@ -518,6 +521,8 @@ package_stanza_field (dyn_input in,
     ud->conflicts = package_stanza_relation_field (ud, value, value_len);
   else if (key == ud->provides_key)
     ud->provides = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->replaces_key)
+    ud->replaces = package_stanza_relation_field (ud, value, value_len);
   else if (key == ud->breaks_key)
     ud->breaks = package_stanza_relation_field (ud, value, value_len);
   else if (key == ud->recommends_key)
@@ -597,6 +602,7 @@ parse_package_stanza (update_data *ud, dyn_input in)
   ud->depends = NULL;
   ud->conflicts = NULL;
   ud->provides = NULL;
+  ud->replaces = NULL;
   ud->breaks = NULL;
   ud->recommends = NULL;
   ud->enhances = NULL;
@@ -625,11 +631,12 @@ parse_package_stanza (update_data *ud, dyn_input in)
 			ud->package,
 			ud->version,
 			ud->architecture,
-			ss_new (db->store, 0, 8,
+			ss_new (db->store, 0, 9,
 				ud->pre_depends,
 				ud->depends,
 				ud->conflicts,
 				ud->provides,
+				ud->replaces,
 				ud->breaks,
 				ud->recommends,
 				ud->enhances,
@@ -826,6 +833,7 @@ dpm_db_full_update (dyn_val srcs, dyn_val dists,
   ud.depends_key = intern (ud.db, "Depends");
   ud.conflicts_key = intern (ud.db, "Conflicts");
   ud.provides_key = intern (ud.db, "Provides");
+  ud.replaces_key = intern (ud.db, "Replaces");
   ud.breaks_key = intern (ud.db, "Breaks");
   ud.recommends_key = intern (ud.db, "Recommends");
   ud.enhances_key = intern (ud.db, "Enhances");
@@ -990,10 +998,11 @@ dpm_db_show_version (dpm_version ver)
   show_relations ("Depends", ss_ref (relations, 1));
   show_relations ("Conflicts", ss_ref (relations, 2));
   show_relations ("Provides", ss_ref (relations, 3));
-  show_relations ("Breaks", ss_ref (relations, 4));
-  show_relations ("Recommends", ss_ref (relations, 5));
-  show_relations ("Enhances", ss_ref (relations, 6));
-  show_relations ("Suggests", ss_ref (relations, 7));
+  show_relations ("Replaces", ss_ref (relations, 4));
+  show_relations ("Breaks", ss_ref (relations, 5));
+  show_relations ("Recommends", ss_ref (relations, 6));
+  show_relations ("Enhances", ss_ref (relations, 7));
+  show_relations ("Suggests", ss_ref (relations, 8));
 
   ss_val fields = ss_ref (ver, 6);
   for (int i = 0; i < ss_len (fields); i += 2)

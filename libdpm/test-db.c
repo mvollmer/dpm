@@ -201,10 +201,11 @@ list_versions (ss_val versions, dpm_package rev)
 	    show_filtered_relations ("Depends", ss_ref (rels_rec, 1), rev);
 	    show_filtered_relations ("Conflicts", ss_ref (rels_rec, 2), rev);
 	    show_filtered_relations ("Provides", ss_ref (rels_rec, 3), rev);
-	    show_filtered_relations ("Breaks", ss_ref (rels_rec, 4), rev);
-	    show_filtered_relations ("Recommends", ss_ref (rels_rec, 5), rev);
-	    show_filtered_relations ("Enhances", ss_ref (rels_rec, 6), rev);
-	    show_filtered_relations ("Suggests", ss_ref (rels_rec, 7), rev);
+	    show_filtered_relations ("Replaces", ss_ref (rels_rec, 4), rev);
+	    show_filtered_relations ("Breaks", ss_ref (rels_rec, 5), rev);
+	    show_filtered_relations ("Recommends", ss_ref (rels_rec, 6), rev);
+	    show_filtered_relations ("Enhances", ss_ref (rels_rec, 7), rev);
+	    show_filtered_relations ("Suggests", ss_ref (rels_rec, 8), rev);
 	  }
       }
 }
