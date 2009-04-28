@@ -64,6 +64,7 @@ ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
 ss_val dpm_db_query_tag (const char *tag);
+ss_val dpm_db_reverse_relations (const char *package);
 
 void dpm_db_show_version (dpm_version ver);
 

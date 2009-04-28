@@ -21,7 +21,7 @@ libdpm_la_LIBADD = -lz -lbz2
 pkginclude_HEADERS = dpm.h dyn.h parse.h conf.h
 
 bin_PROGRAMS = dpm-store-tool
-noinst_PROGRAMS = test test-store test-dyn test-conf test-db
+noinst_PROGRAMS = test test-store test-dyn test-conf test-db test-parse
 
 test_SOURCES = test.c
 test_LDADD = libdpm.la
@@ -37,6 +37,9 @@ test_conf_LDADD = libdpm.la
 
 test_db_SOURCES = test-db.c
 test_db_LDADD = libdpm.la
+
+test_parse_SOURCES = test-parse.c
+test_parse_LDADD = libdpm.la
 
 dpm_store_tool_SOURCES = store-tool.c
 dpm_store_tool_LDADD = libdpm.la

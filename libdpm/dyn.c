@@ -1302,7 +1302,7 @@ dyn_input
 dyn_open_string (const char *str, int len)
 {
   dyn_input in = dyn_input_new (NULL);
-  dyn_input_set_static_buffer (in, (char *)str, (len < 0)? strlen (str) : len);
+  dyn_input_set_static_buffer (in, str, (len < 0)? strlen (str) : len);
   return in;
 }
 
@@ -1598,6 +1598,12 @@ char *
 dyn_input_mark (dyn_input in)
 {
   return in->mark;
+}
+
+int
+dyn_input_off (dyn_input in)
+{
+  return in->pos - in->mark;
 }
 
 const char *
@@ -2124,6 +2130,21 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 		char buf[80];
 		sprintf (buf, "%g", va_arg (ap, double));
 		dyn_write_string (out, buf, strlen(buf));
+	      }
+	      break;
+	    case 'I':
+	      {
+		dyn_input in = va_arg (ap, dyn_input);
+		dyn_write_string (out,
+				  dyn_input_mark (in), 
+				  dyn_input_off (in));
+	      }
+	      break;
+	    case 'B':
+	      {
+		const char *str = va_arg (ap, const char *);
+		int len = va_arg (ap, int);
+		dyn_write_string (out, str, len);
 	      }
 	      break;
 	    case '%':

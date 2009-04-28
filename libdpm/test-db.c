@@ -26,7 +26,7 @@ usage ()
 }
 
 void
-update ()
+update (int force)
 {
   dyn_val srcs = dpm_conf_get (sources);
   dyn_val dists = dpm_conf_get (distributions);
@@ -34,7 +34,10 @@ update ()
   dyn_val archs = dpm_conf_get (architectures);
 
   dpm_db_open ();
-  dpm_db_maybe_full_update (srcs, dists, comps, archs);
+  if (force)
+    dpm_db_full_update (srcs, dists, comps, archs);
+  else
+    dpm_db_maybe_full_update (srcs, dists, comps, archs);
   dpm_db_done ();
 }
 
@@ -123,8 +126,64 @@ stats ()
   dpm_db_done ();
 }
 
+enum {
+  DPM_ANY,
+  DPM_EQ,
+  DPM_LESS,
+  DPM_LESSEQ,
+  DPM_GREATER,
+  DPM_GREATEREQ
+};
+
+const char *relname[] = {
+  [DPM_EQ] = "=",
+  [DPM_LESS] = "<<",
+  [DPM_LESSEQ] = "<=",
+  [DPM_GREATER] = ">>",
+  [DPM_GREATEREQ] = ">="
+};
+
 static void
-list_versions (ss_val versions)
+show_relation (ss_val rel)
+{
+  for (int i = 0; i < ss_len (rel); i += 3)
+    {
+      int op = ss_ref_int (rel, i);
+      if (i > 0)
+	dyn_print (" | ");
+      dyn_print ("%r", ss_ref (rel, i+1));
+      if (op != DPM_ANY)
+	dyn_print (" (%s %r)", relname[op], ss_ref (rel, i+2));
+    }
+}
+
+static void
+show_filtered_relations (const char *field, ss_val rels, dpm_package pkg)
+{
+  if (rels)
+    {
+      int first = 1;
+      for (int i = 0; i < ss_len (rels); i++)
+	{
+	  ss_val rel = ss_ref (rels, i);
+	  for (int j = 0; j < ss_len (rel); j += 3)
+	    if (ss_ref (rel, j+1) == pkg)
+	      {
+		if (first)
+		  dyn_print ("  %s: ", field);
+		else
+		  dyn_print (", ");
+		show_relation (rel);
+		first = 0;
+	      }
+	}
+      if (!first)
+	dyn_print ("\n");
+    }
+}
+
+static void
+list_versions (ss_val versions, dpm_package rev)
 {
   if (versions)
     for (int i = 0; i < ss_len (versions); i++)
@@ -135,6 +194,18 @@ list_versions (ss_val versions)
 		   ss_ref (ver, 1),
 		   ss_ref (ver, 2),
 		   dpm_db_version_shortdesc (ver));
+	if (rev)
+	  {
+	    ss_val rels_rec = ss_ref (ver, 3);
+	    show_filtered_relations ("Pre-Depends", ss_ref (rels_rec, 0), rev);
+	    show_filtered_relations ("Depends", ss_ref (rels_rec, 1), rev);
+	    show_filtered_relations ("Conflicts", ss_ref (rels_rec, 2), rev);
+	    show_filtered_relations ("Provides", ss_ref (rels_rec, 3), rev);
+	    show_filtered_relations ("Breaks", ss_ref (rels_rec, 4), rev);
+	    show_filtered_relations ("Recommends", ss_ref (rels_rec, 5), rev);
+	    show_filtered_relations ("Enhances", ss_ref (rels_rec, 6), rev);
+	    show_filtered_relations ("Suggests", ss_ref (rels_rec, 7), rev);
+	  }
       }
 }
 
@@ -144,7 +215,20 @@ query (const char *exp)
   if (exp)
     {
       dpm_db_open ();
-      list_versions (dpm_db_query_tag (exp));
+      list_versions (dpm_db_query_tag (exp), NULL);
+      dpm_db_done ();
+    }
+}
+
+void
+list_reverse_relations (const char *package)
+{
+  if (package)
+    {
+      dpm_db_open ();
+      ss_val versions = dpm_db_reverse_relations (package);
+      if (versions)
+	list_versions (versions, dpm_db_find_package (package));
       dpm_db_done ();
     }
 }
@@ -159,7 +243,9 @@ main (int argc, char **argv)
     dpm_conf_parse ("test-db.conf");
 
   if (strcmp (argv[1], "update") == 0)
-    update ();
+    update (0);
+  else if (strcmp (argv[1], "force-update") == 0)
+    update (1);
   else if (strcmp (argv[1], "show") == 0)
     show (argv[2]);
   else if (strcmp (argv[1], "stats") == 0)
@@ -168,6 +254,8 @@ main (int argc, char **argv)
     search (argv[2]);
   else if (strcmp (argv[1], "query") == 0)
     query (argv[2]);
+  else if (strcmp (argv[1], "reverse") == 0)
+    list_reverse_relations (argv[2]);
   else
     usage ();
 

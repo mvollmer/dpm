@@ -313,6 +313,7 @@ int dyn_input_lineno (dyn_input in);
 
 void dyn_input_set_mark (dyn_input in);
 char *dyn_input_mark (dyn_input in);
+int dyn_input_off (dyn_input in);
 
 const char *dyn_input_pos (dyn_input in);
 void dyn_input_set_pos (dyn_input in, const char *pos);

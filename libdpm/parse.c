@@ -72,6 +72,85 @@ dpm_parse_comma_fields (dyn_input in,
     }
 }
 
+int
+dpm_parse_relation (dyn_input in,
+		    void (*func) (dyn_input in,
+				  const char *name, int name_len,
+				  const char *op, int op_len,
+				  const char *version, int version_len,
+				  void *data),
+		    void *data)
+{
+  while (1)
+    {
+      int name_len;
+
+      dyn_input_skip (in, " \t\n");
+      if (dyn_input_grow (in, 1) < 1)
+	return 0;
+      
+      dyn_input_set_mark (in);
+      dyn_input_find (in, " \t\n,(|");
+      name_len = dyn_input_off (in);
+      
+      dyn_input_skip (in, " \t\n");
+      if (dyn_input_looking_at (in, "("))
+	{
+	  int op_offset, version_offset;
+	  int op_len, version_len;
+
+	  dyn_input_advance (in, 1);
+
+	  dyn_input_skip (in, " \t\n");
+	  op_offset = dyn_input_off (in);
+	  dyn_input_skip (in, "<>=");
+	  op_len = dyn_input_off (in) - op_offset;
+	  
+	  dyn_input_skip (in, " \t\n");
+	  if (dyn_input_looking_at (in, ")")
+	      || dyn_input_looking_at (in, ",")
+	      || dyn_input_looking_at (in, "|"))
+	    dyn_error ("missing version in relation: %I", in);
+
+	  version_offset = dyn_input_off (in);
+	  dyn_input_find (in, " \t\n),|");
+	  version_len = dyn_input_off (in) - version_offset;
+	  
+	  dyn_input_skip (in, " \t\n");
+	  if (!dyn_input_looking_at (in, ")"))
+	    dyn_error ("missing parentheses in relation");
+	  dyn_input_advance (in, 1);
+
+	  char *mark = dyn_input_mark (in);
+	  func (in,
+		mark, name_len,
+		mark + op_offset, op_len,
+		mark + version_offset, version_len,
+		data);
+	}
+      else
+	{
+	  char *mark = dyn_input_mark (in);
+	  func (in, mark, name_len, NULL, 0, NULL, 0, data);
+	}
+
+      dyn_input_skip (in, " \t\n");
+      if (dyn_input_grow (in, 1) == 0)
+	return 1;
+      else if (dyn_input_looking_at (in, ","))
+	{
+	  dyn_input_advance (in, 1);
+	  return 1;
+	}
+      else if (dyn_input_looking_at (in, "|"))
+	{
+	  dyn_input_advance (in, 1);
+	}
+      else
+	dyn_error ("snytax error in relation");
+    }
+}
+
 void
 dpm_parse_lines (dyn_input in,
 		 void (*func) (dyn_input in,

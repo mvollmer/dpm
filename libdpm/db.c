@@ -40,6 +40,7 @@ DPM_CONF_DECLARE (keyring, "keyring",
    - installed version   (package name -> something, maybe version, strong)
    - indices             (path -> index, strong)
    - tags                (tag -> versions)
+   - reverse_relations   (package name -> list of versions, weak sets)
    - update_time         (time of most recent full update, time_t blob)
 
    A version:
@@ -47,17 +48,28 @@ DPM_CONF_DECLARE (keyring, "keyring",
    - package             (interned string)
    - version             (string)
    - architecture        (interned string)
-   - relations           (list of relations)
+   - relations           (relation record, could be inlined)
    - tags                (list of strings)
    - shortdesc           (string)
    - fields              (field name -> string)
 
+   A relation record:
+
+   - pre-depends
+   - depends
+   - conflicts
+   - provides
+   - breaks
+   - recommends
+   - enhances
+   - suggests
+
    A relation:
 
-   - type                (interned string)
    - op                  (int)
    - package             (interned string)
    - version             (string)
+   [ repeat for each additional alternative ]
 
    A package index:
 
@@ -77,6 +89,15 @@ DPM_CONF_DECLARE (keyring, "keyring",
    values are duplicated between different architectures and versions.
 */
 
+enum {
+  DPM_ANY,
+  DPM_EQ,
+  DPM_LESS,
+  DPM_LESSEQ,
+  DPM_GREATER,
+  DPM_GREATEREQ
+};
+
 struct dpm_db_struct {
   ss_store store;
   
@@ -85,6 +106,7 @@ struct dpm_db_struct {
   ss_dict *installed;
   ss_dict *indices;
   ss_dict *tags;
+  ss_dict *reverse_rels;
 
   time_t update_time;
 };
@@ -104,6 +126,8 @@ dpm_db_unref (dyn_type *type, void *object)
     ss_dict_abort (db->indices);
   if (db->tags)
     ss_dict_abort (db->tags);
+  if (db->reverse_rels)
+    ss_dict_abort (db->reverse_rels);
 
   dyn_unref (db->store);
 }
@@ -127,6 +151,7 @@ dpm_db_make (ss_store store)
   db->installed = NULL;
   db->indices = NULL;
   db->tags = NULL;
+  db->reverse_rels = NULL;
   db->update_time = 0;
   return db;
 }
@@ -170,7 +195,9 @@ dpm_db_open ()
 			      ss_ref_safely (root, 4), SS_DICT_STRONG);
   db->tags = ss_dict_init (db->store,
 			   ss_ref_safely (root, 5), SS_DICT_WEAK_SETS);
-  db->update_time = blob_to_time (ss_ref_safely (root, 6));
+  db->reverse_rels = ss_dict_init (db->store,
+				   ss_ref_safely (root, 6), SS_DICT_WEAK_SETS);
+  db->update_time = blob_to_time (ss_ref_safely (root, 7));
 }
 
 void
@@ -178,13 +205,14 @@ dpm_db_checkpoint ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_val root = ss_new (db->store, 0, 7,
+  ss_val root = ss_new (db->store, 0, 8,
 			ss_blob_new (db->store, 5, "dpm-0"),
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->available),
 			ss_dict_store (db->installed),
 			ss_dict_store (db->indices),
 			ss_dict_store (db->tags),
+			ss_dict_store (db->reverse_rels),
 			blob_from_time (db->store, db->update_time));
   ss_set_root (db->store, root);
 }
@@ -204,6 +232,8 @@ dpm_db_done ()
     ss_dict_abort (db->indices);
   if (db->tags)
     ss_dict_abort (db->tags);
+  if (db->reverse_rels)
+    ss_dict_abort (db->reverse_rels);
 
   ss_maybe_gc (db->store);
 
@@ -213,6 +243,7 @@ dpm_db_done ()
   db->installed = NULL;
   db->indices = NULL;
   db->tags = NULL;
+  db->reverse_rels = NULL;
 
   dyn_set (cur_db, NULL);
 }
@@ -321,6 +352,8 @@ intern (dpm_db db, const char *string)
   return ss_tab_intern_blob (db->strings, strlen (string), (void *)string);
 }
 
+// XXX - remove limits
+
 typedef struct {
   dpm_db db;
 
@@ -341,10 +374,34 @@ typedef struct {
   ss_val description_key;
   ss_val tag_key;
 
+  ss_val pre_depends_key;
+  ss_val depends_key;
+  ss_val conflicts_key;
+  ss_val provides_key;
+  ss_val breaks_key;
+  ss_val recommends_key;
+  ss_val enhances_key;
+  ss_val suggests_key;
+
   ss_val package;
   ss_val version;
   ss_val architecture;
   ss_val shortdesc;
+
+  ss_val pre_depends;
+  ss_val depends;
+  ss_val conflicts;
+  ss_val provides;
+  ss_val breaks;
+  ss_val recommends;
+  ss_val enhances;
+  ss_val suggests;
+
+  int n_alternatives;
+  ss_val alternatives[3*64];
+
+  int n_relations;
+  ss_val relations[2048];
 
   int n_tags;
   ss_val tags[64];
@@ -371,6 +428,70 @@ package_stanza_tag (dyn_input in,
 }
 
 void
+package_stanza_relation (dyn_input in,
+			 const char *name, int name_len,
+			 const char *op, int op_len,
+			 const char *version, int version_len,
+			 void *data)
+{
+  update_data *ud = data;
+  
+  int op_code;
+  if (op == NULL)
+    op_code = DPM_ANY;
+  else if (op_len == 1 && !strncmp (op, "=", 1))
+    op_code = DPM_EQ;
+  else if (op_len == 2 && !strncmp (op, "<<", 2))
+    op_code = DPM_LESS;
+  else if (op_len == 2 && !strncmp (op, "<=", 2))
+    op_code = DPM_LESSEQ;
+  else if (op_len == 2 && !strncmp (op, ">>", 2))
+    op_code = DPM_GREATER;
+  else if (op_len == 2 && !strncmp (op, ">=", 2))
+    op_code = DPM_GREATEREQ;
+  else if (op_len == 1 && !strncmp (op, "<", 1))
+    op_code = DPM_LESSEQ;    // sic
+  else if (op_len == 1 && !strncmp (op, ">", 1))
+    op_code = DPM_GREATEREQ; // sic
+  else
+    dyn_error ("Unknown relation operator: %B", op, op_len);
+
+  if (ud->n_alternatives >= 3*64)
+    dyn_error ("Too many alternatives: %r", ud->package);
+
+  int i = ud->n_alternatives;
+  ud->alternatives[i++] = ss_from_int (op_code);
+  ud->alternatives[i++] = ss_tab_intern_blob (ud->db->strings,
+					      name_len, (void *)name);
+  ud->alternatives[i++] = (version
+			   ? ss_tab_intern_blob (ud->db->strings,
+						 version_len, (void *)version)
+			   : NULL);
+  ud->n_alternatives = i;
+}
+
+ss_val
+package_stanza_relation_field (update_data *ud, const char *value, int value_len)
+{
+  dyn_input in = dyn_open_string (value, value_len);
+
+  ud->n_alternatives = 0;
+  ud->n_relations = 0;
+  while (dpm_parse_relation (in, package_stanza_relation, ud))
+    {
+      if (ud->n_relations >= 2048)
+	dyn_error ("Too many relations: %r", ud->package);
+      
+      ud->relations[ud->n_relations++] = ss_newv (ud->db->store, 0,
+						  ud->n_alternatives, 
+						  ud->alternatives);
+      ud->n_alternatives = 0;
+    }
+
+  return ss_newv (ud->db->store, 0, ud->n_relations, ud->relations);
+}
+
+void
 package_stanza_field (dyn_input in,
 		      const char *name, int name_len,
 		      const char *value, int value_len,
@@ -389,6 +510,22 @@ package_stanza_field (dyn_input in,
 	  dpm_parse_comma_fields (t, package_stanza_tag, ud);
 	}
     }
+  else if (key == ud->pre_depends_key)
+    ud->pre_depends = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->depends_key)
+    ud->depends = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->conflicts_key)
+    ud->conflicts = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->provides_key)
+    ud->provides = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->breaks_key)
+    ud->breaks = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->recommends_key)
+    ud->recommends = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->enhances_key)
+    ud->enhances = package_stanza_relation_field (ud, value, value_len);
+  else if (key == ud->suggests_key)
+    ud->suggests = package_stanza_relation_field (ud, value, value_len);
   else
     {
       ss_val val = ss_tab_intern_blob (db->strings, value_len, (void *)value);
@@ -420,6 +557,32 @@ package_stanza_field (dyn_input in,
     }
 }
 
+static void
+record_version (dpm_db db, dpm_version ver)
+{
+  dpm_package pkg = ss_ref (ver, 0);
+  ss_val rels_rec = ss_ref (ver, 3);
+  ss_val tags = ss_ref (ver, 4);
+
+  ss_dict_add (db->available, pkg, ver);
+
+  for (int i = 0; i < ss_len (rels_rec); i++)
+    {
+      ss_val rels = ss_ref (rels_rec, i);
+      if (rels)
+	for (int j = 0; j < ss_len (rels); j++)
+	  {
+	    ss_val rel = ss_ref (rels, j);
+	    for (int k = 0; k < ss_len (rel); k += 3)
+	      ss_dict_add (db->reverse_rels, ss_ref (rel, k+1), ver);
+	  }
+    }
+
+  if (tags)
+    for (int i = 0; i < ss_len (tags); i++)
+      ss_dict_add (db->tags, ss_ref (tags, i), ver);
+}
+
 static int
 parse_package_stanza (update_data *ud, dyn_input in)
 {
@@ -429,6 +592,16 @@ parse_package_stanza (update_data *ud, dyn_input in)
   ud->version = NULL;
   ud->architecture = NULL;
   ud->shortdesc = NULL;
+
+  ud->pre_depends = NULL;
+  ud->depends = NULL;
+  ud->conflicts = NULL;
+  ud->provides = NULL;
+  ud->breaks = NULL;
+  ud->recommends = NULL;
+  ud->enhances = NULL;
+  ud->suggests = NULL;
+
   ud->n_tags = 0;
   ud->n_fields = 0;
 
@@ -452,16 +625,22 @@ parse_package_stanza (update_data *ud, dyn_input in)
 			ud->package,
 			ud->version,
 			ud->architecture,
-			NULL,
+			ss_new (db->store, 0, 8,
+				ud->pre_depends,
+				ud->depends,
+				ud->conflicts,
+				ud->provides,
+				ud->breaks,
+				ud->recommends,
+				ud->enhances,
+				ud->suggests),
 			ss_newv (db->store, 0,
 				 ud->n_tags, ud->tags),
 			ud->shortdesc,
 			ss_newv (db->store, 0,
 				 ud->n_fields, ud->fields));
 
-	  ss_dict_add (ud->db->available, ud->package, ver);
-	  for (int i = 0; i < ud->n_tags; i++)
-	    ss_dict_add (ud->db->tags, ud->tags[i], ver);
+	  record_version (ud->db, ver);
 
 	  ud->new_versions++;
 	}
@@ -534,13 +713,8 @@ reuse_index (update_data *ud, dpm_release_index release,
       dpm_package version = ss_ref (ver, 1);
       dpm_package architecture = ss_ref (ver, 2);
 
-      if (find_version (ud->db, pkg, version,  architecture) == NULL)
-	{
-	  ss_dict_add (ud->db->available, ss_ref (ver, 0), ver);
-	  ss_val tags = ss_ref (ver, 4);
-	  for (int j = 0; j < ss_len (tags); j++)
-	    ss_dict_add (ud->db->tags, ss_ref (tags, j), ver);
-	}
+      if (find_version (ud->db, pkg, version, architecture) == NULL)
+	record_version (ud->db, ver);
     }
   
   ss_dict_set (ud->db->indices, interned_path, index);
@@ -647,11 +821,22 @@ dpm_db_full_update (dyn_val srcs, dyn_val dists,
   ud.architecture_key = intern (ud.db, "Architecture");
   ud.description_key = intern (ud.db, "Description");
   ud.tag_key = intern (ud.db, "Tag");
+
+  ud.pre_depends_key = intern (ud.db, "Pre-Depends");
+  ud.depends_key = intern (ud.db, "Depends");
+  ud.conflicts_key = intern (ud.db, "Conflicts");
+  ud.provides_key = intern (ud.db, "Provides");
+  ud.breaks_key = intern (ud.db, "Breaks");
+  ud.recommends_key = intern (ud.db, "Recommends");
+  ud.enhances_key = intern (ud.db, "Enhances");
+  ud.suggests_key = intern (ud.db, "Suggests");
   
   ud.n_indices = 0;
   ud.old_indices = ud.db->indices;
   ud.db->indices = ss_dict_init (ud.db->store, NULL, SS_DICT_STRONG);
-  
+  ss_dict_abort (ud.db->available);
+  ud.db->available = ss_dict_init (ud.db->store, NULL, SS_DICT_WEAK_SETS);
+
   for (int i = 0; i < dyn_len (srcs); i++)
     for (int j = 0; j < dyn_len (dists); j++)
       add_release (&ud, dyn_elt (srcs, i), dyn_elt (dists, j),
@@ -742,12 +927,73 @@ dpm_db_query_tag (const char *tag)
     return NULL;
 }
 
+ss_val
+dpm_db_reverse_relations (const char *package)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  dpm_package pkg = dpm_db_find_package (package);
+  if (pkg)
+    return ss_dict_get (db->reverse_rels, pkg);
+  else
+    return NULL;
+}
+
+const char *relname[] = {
+  [DPM_EQ] = "=",
+  [DPM_LESS] = "<<",
+  [DPM_LESSEQ] = "<=",
+  [DPM_GREATER] = ">>",
+  [DPM_GREATEREQ] = ">="
+};
+
+static void
+show_relation (ss_val rel)
+{
+  for (int i = 0; i < ss_len (rel); i += 3)
+    {
+      int op = ss_ref_int (rel, i);
+      if (i > 0)
+	dyn_print (" | ");
+      dyn_print ("%r", ss_ref (rel, i+1));
+      if (op != DPM_ANY)
+	dyn_print (" (%s %r)", relname[op], ss_ref (rel, i+2));
+    }
+}
+
+static void
+show_relations (const char *field, ss_val rels)
+{
+  if (rels)
+    {
+      dyn_print ("%s: ", field);
+      for (int i = 0; i < ss_len (rels); i++)
+	{
+	  if (i > 0)
+	    dyn_print (", ");
+	  show_relation (ss_ref (rels, i));
+	}
+      dyn_print ("\n");
+    }
+}
+
 void
 dpm_db_show_version (dpm_version ver)
 {
   dyn_print ("Package: %r\n", ss_ref (ver, 0));
   dyn_print ("Version: %r\n", ss_ref (ver, 1));
   dyn_print ("Architecture: %r\n", ss_ref (ver, 2));
+
+  ss_val relations = ss_ref (ver, 3);
+
+  show_relations ("Pre-Depends", ss_ref (relations, 0));
+  show_relations ("Depends", ss_ref (relations, 1));
+  show_relations ("Conflicts", ss_ref (relations, 2));
+  show_relations ("Provides", ss_ref (relations, 3));
+  show_relations ("Breaks", ss_ref (relations, 4));
+  show_relations ("Recommends", ss_ref (relations, 5));
+  show_relations ("Enhances", ss_ref (relations, 6));
+  show_relations ("Suggests", ss_ref (relations, 7));
 
   ss_val fields = ss_ref (ver, 6);
   for (int i = 0; i < ss_len (fields); i += 2)
