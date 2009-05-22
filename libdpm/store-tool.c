@@ -29,6 +29,7 @@ usage ()
   fprintf (stderr,
 	   "Usage: store-tool gc FILE\n"
 	   "       store-tool scan FILE\n"
+	   "       store-tool info FILE\n"
 	   "       store-tool dump FILE\n");
   exit (1);
 }
@@ -36,7 +37,7 @@ usage ()
 void
 cmd_gc (char *file)
 {
-  ss_store *ss = ss_open (file, SS_WRITE);
+  ss_store ss = ss_open (file, SS_WRITE);
   
   ss = ss_gc (ss);
 }
@@ -44,13 +45,13 @@ cmd_gc (char *file)
 void
 cmd_scan (char *file)
 {
-  ss_store *ss = ss_open (file, SS_READ);
+  ss_store ss = ss_open (file, SS_READ);
   
   ss_scan_store (ss);
 }
 
 void
-dump_reference (ss_store *ss, ss_val o)
+dump_reference (ss_store ss, ss_val o)
 {
   int i;
 
@@ -72,7 +73,7 @@ dump_reference (ss_store *ss, ss_val o)
 }
 
 void
-dump_object (ss_store *ss, ss_val o)
+dump_object (ss_store ss, ss_val o)
 {
   int i;
 
@@ -110,9 +111,17 @@ dump_object (ss_store *ss, ss_val o)
 void
 cmd_dump (char *file)
 {
-  ss_store *ss = ss_open (file, SS_READ);
+  ss_store ss = ss_open (file, SS_READ);
   
   dump_object (ss, ss_get_root (ss));
+}
+
+void
+cmd_info (char *file)
+{
+  ss_store ss = ss_open (file, SS_READ);
+  
+  ss_dump_store (ss, file);
 }
 
 int
@@ -132,6 +141,10 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "gc") == 0)
     {
       cmd_gc (argv[2]);
+    }
+  else if (strcmp (argv[1], "info") == 0)
+    {
+      cmd_info (argv[2]);
     }
   else
     usage ();

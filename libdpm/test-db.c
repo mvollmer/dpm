@@ -54,12 +54,15 @@ show (const char *package)
       if (pkg)
 	{
 	  ss_val versions = dpm_db_available (pkg);
-	  dyn_print ("%r:", pkg);
+	  dyn_print ("%r [%d]:", dpm_pkg_name (pkg), dpm_pkg_id (pkg));
 	  if (versions)
 	    for (int i = 0; i < ss_len (versions); i++)
 	      {
 		dpm_version ver = ss_ref (versions, i);
-		dyn_print (" %r (%r)", ss_ref (ver, 1), ss_ref (ver, 2));
+		dyn_print (" %r (%r) [%d]",
+			   dpm_ver_version (ver),
+			   dpm_ver_architecture (ver),
+			   dpm_ver_id (ver));
 		if (!ver_to_show)
 		  ver_to_show = ver;
 	      }
@@ -101,9 +104,9 @@ search_package (dpm_package pkg, void *data)
   {
     ss_val desc = NULL;
     if (versions && ss_len (versions) > 0)
-      desc = dpm_db_version_shortdesc (ss_ref (versions, 0));
+      desc = dpm_ver_shortdesc (ss_ref (versions, 0));
     
-    dyn_print ("%r - %r\n", pkg, desc);
+    dyn_print ("%r - %r\n", dpm_pkg_name (pkg), desc);
   }
 }
 
@@ -144,16 +147,22 @@ const char *relname[] = {
 };
 
 static void
+show_relation_part (ss_val rel, int i)
+{
+  int op = dpm_rel_op (rel, i);
+  dyn_print ("%r", dpm_pkg_name (dpm_rel_package (rel, i)));
+  if (op != DPM_ANY)
+    dyn_print (" (%s %r)", relname[op], dpm_rel_version (rel, i));
+}
+
+static void
 show_relation (ss_val rel)
 {
   for (int i = 0; i < ss_len (rel); i += 3)
     {
-      int op = ss_ref_int (rel, i);
       if (i > 0)
 	dyn_print (" | ");
-      dyn_print ("%r", ss_ref (rel, i+1));
-      if (op != DPM_ANY)
-	dyn_print (" (%s %r)", relname[op], ss_ref (rel, i+2));
+      show_relation_part (rel, i);
     }
 }
 
@@ -167,7 +176,7 @@ show_filtered_relations (const char *field, ss_val rels, dpm_package pkg)
 	{
 	  ss_val rel = ss_ref (rels, i);
 	  for (int j = 0; j < ss_len (rel); j += 3)
-	    if (ss_ref (rel, j+1) == pkg)
+	    if (dpm_rel_package (rel, j) == pkg)
 	      {
 		if (first)
 		  dyn_print ("  %s: ", field);
@@ -190,22 +199,31 @@ list_versions (ss_val versions, dpm_package rev)
       {
 	dpm_version ver = ss_ref (versions, i);
 	dyn_print ("%r %r (%r) - %r\n",
-		   ss_ref (ver, 0),
-		   ss_ref (ver, 1),
-		   ss_ref (ver, 2),
-		   dpm_db_version_shortdesc (ver));
+		   dpm_pkg_name (dpm_ver_package (ver)),
+		   dpm_ver_version (ver),
+		   dpm_ver_architecture (ver),
+		   dpm_ver_shortdesc (ver));
 	if (rev)
 	  {
-	    ss_val rels_rec = ss_ref (ver, 3);
-	    show_filtered_relations ("Pre-Depends", ss_ref (rels_rec, 0), rev);
-	    show_filtered_relations ("Depends", ss_ref (rels_rec, 1), rev);
-	    show_filtered_relations ("Conflicts", ss_ref (rels_rec, 2), rev);
-	    show_filtered_relations ("Provides", ss_ref (rels_rec, 3), rev);
-	    show_filtered_relations ("Replaces", ss_ref (rels_rec, 4), rev);
-	    show_filtered_relations ("Breaks", ss_ref (rels_rec, 5), rev);
-	    show_filtered_relations ("Recommends", ss_ref (rels_rec, 6), rev);
-	    show_filtered_relations ("Enhances", ss_ref (rels_rec, 7), rev);
-	    show_filtered_relations ("Suggests", ss_ref (rels_rec, 8), rev);
+	    ss_val rels_rec = dpm_ver_relations (ver);
+	    show_filtered_relations ("Pre-Depends",
+				     dpm_rels_pre_depends (rels_rec), rev);
+	    show_filtered_relations ("Depends",
+				     dpm_rels_depends (rels_rec), rev);
+	    show_filtered_relations ("Conflicts",
+				     dpm_rels_conflicts (rels_rec), rev);
+	    show_filtered_relations ("Provides",
+				     dpm_rels_provides (rels_rec), rev);
+	    show_filtered_relations ("Replaces",
+				     dpm_rels_replaces (rels_rec), rev);
+	    show_filtered_relations ("Breaks",
+				     dpm_rels_breaks (rels_rec), rev);
+	    show_filtered_relations ("Recommends",
+				     dpm_rels_recommends (rels_rec), rev);
+	    show_filtered_relations ("Enhances",
+				     dpm_rels_enhances (rels_rec), rev);
+	    show_filtered_relations ("Suggests",
+				     dpm_rels_suggests (rels_rec), rev);
 	  }
       }
 }
@@ -227,11 +245,138 @@ list_reverse_relations (const char *package)
   if (package)
     {
       dpm_db_open ();
-      ss_val versions = dpm_db_reverse_relations (package);
+      dpm_package pkg = dpm_db_find_package (package);
+      ss_val versions = dpm_db_reverse_relations (pkg);
       if (versions)
-	list_versions (versions, dpm_db_find_package (package));
+	list_versions (versions, pkg);
       dpm_db_done ();
     }
+}
+
+typedef struct {
+  dpm_package package;
+  dpm_version candidate;
+  int install;
+} package_info;
+
+int n_info;
+package_info *info;
+
+int silent;
+
+int install_pkg (dpm_package pkg);
+
+int install_dep (ss_val dep)
+{
+  int old_silent = silent;
+  int success = 0;
+
+  if (ss_len (dep) > 3)
+    silent = 1;
+  for (int i = 0; i < ss_len (dep); i += 3)
+    if (install_pkg (dpm_rel_package (dep, i)))
+      {
+	success = 1;
+	break;
+      }
+
+  silent = old_silent;
+  if (!silent && !success && ss_len (dep) > 3)
+    {
+      dyn_print ("Can't satisfy any of the following alternatives:\n");
+      for (int i = 0; i < ss_len (dep); i += 3)
+	{
+	  dyn_print ("  ");
+	  show_relation_part (dep, i);
+	  dyn_print ("\n");
+	}
+    }
+
+  return success;
+}
+
+int install_deps (ss_val deps)
+{
+  if (deps)
+    for (int i = 0; i < ss_len (deps); i++)
+      if (!install_dep (ss_ref (deps, i)))
+	return 0;
+  return 1;
+}
+
+int install_pkg (dpm_package pkg)
+{
+  int id = dpm_pkg_id (pkg);
+
+  // dyn_print ("Installing %r\n", dpm_pkg_name (pkg));
+
+  if (info[id].package)
+    return info[id].install;
+
+  info[id].package = pkg;
+  info[id].candidate = dpm_db_candidate (pkg);
+
+  dpm_version cand = info[id].candidate;
+  if (cand == NULL)
+    {
+      if (!silent)
+	dyn_print ("No candidate for %r\n", dpm_pkg_name (pkg));
+      info[id].install = 0;
+    }
+  else
+    {
+      info[id].install = 1;
+      int deps_ok =
+	install_deps (dpm_rels_pre_depends (dpm_ver_relations (cand)))
+	&& install_deps (dpm_rels_depends (dpm_ver_relations (cand)));
+      info[id].install = deps_ok;
+    }
+
+  return info[id].install;
+}
+
+void
+fun (char **argv)
+{
+  dpm_db_open ();
+  n_info = dpm_db_package_count();
+  info = calloc (n_info, sizeof(package_info));
+  printf ("%d packages\n", n_info);
+  
+  silent = 0;
+  int success = 1;
+  for (int i = 0; argv[i]; i++)
+    {
+      dpm_package pkg = dpm_db_find_package (argv[i]);
+      if (pkg)
+	{
+	  if (!install_pkg (pkg))
+	    {
+	      dyn_print ("Can't install %r\n", dpm_pkg_name (pkg));
+	      success = 0;
+	    }
+	}
+      else
+	{
+	  dyn_print ("Package %s not found\n", argv[i]);
+	  success = 0;
+	}
+    }
+  
+  if (success)
+    {
+      dyn_print ("Report:\n");
+      for (int i = 0; i < n_info; i++)
+	if (info[i].install)
+	  {
+	    dpm_version c = info[i].candidate;
+	    dyn_print (" %r %r\n",
+		       dpm_pkg_name (info[i].package), 
+		       dpm_ver_version (c));
+	  }
+    }
+  
+  dpm_db_done ();
 }
 
 int
@@ -257,6 +402,8 @@ main (int argc, char **argv)
     query (argv[2]);
   else if (strcmp (argv[1], "reverse") == 0)
     list_reverse_relations (argv[2]);
+  else if (strcmp (argv[1], "fun") == 0)
+    fun (argv+2);
   else
     usage ();
 

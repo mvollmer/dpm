@@ -97,6 +97,8 @@ typedef struct ss_opaque *ss_val;
 ss_val ss_get_root (ss_store ss);
 void ss_set_root (ss_store ss, ss_val root);
 
+int ss_tag_count (ss_store ss, int tag);
+
 #define SS_BLOB_TAG 0x7F
 
 int ss_tag (ss_val v);

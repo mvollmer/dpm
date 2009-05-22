@@ -2044,7 +2044,11 @@ dyn_write_val (dyn_output out, dyn_val val, int quoted)
 static void
 dyn_write_ss_val (dyn_output out, ss_val val, int quoted)
 {
-  if (ss_is_blob (val))
+  if (val == NULL)
+    dyn_write (out, "<null>");
+  else if (ss_is_int (val))
+    dyn_write (out, "%d", ss_to_int (val));
+  else if (ss_is_blob (val))
     {
       if (quoted)
 	dyn_write_quoted (out, (char *)ss_blob_start (val), ss_len (val));

@@ -42,15 +42,47 @@
    Instead, a set of accessor functions is used to maintain it
  */
 
+typedef ss_val dpm_package;
+
+#define dpm_pkg_id(v)           ss_ref_int(v,0)
+#define dpm_pkg_name(v)         ss_ref(v,1)
+
+typedef ss_val dpm_version;
+
+#define dpm_ver_id(v)           ss_ref_int(v,0)
+#define dpm_ver_package(v)      ss_ref(v,1)
+#define dpm_ver_version(v)      ss_ref(v,2)
+#define dpm_ver_architecture(v) ss_ref(v,3)
+#define dpm_ver_relations(v)    ss_ref(v,4)
+#define dpm_ver_tags(v)         ss_ref(v,5)
+#define dpm_ver_shortdesc(v)    ss_ref(v,6)
+#define dpm_ver_fields(v)       ss_ref(v,7)
+
+#define dpm_rels_pre_depends(r) ss_ref(r,0)
+#define dpm_rels_depends(r)     ss_ref(r,1)
+#define dpm_rels_conflicts(r)   ss_ref(r,2)
+#define dpm_rels_provides(r)    ss_ref(r,3)
+#define dpm_rels_replaces(r)    ss_ref(r,4)
+#define dpm_rels_breaks(r)      ss_ref(r,5)
+#define dpm_rels_recommends(r)  ss_ref(r,6)
+#define dpm_rels_enhances(r)    ss_ref(r,7)
+#define dpm_rels_suggests(r)    ss_ref(r,8)
+
+#define dpm_rel_op(r,i)         ss_ref_int((r),(i))
+#define dpm_rel_package(r,i)    ss_ref((r),(i)+1)
+#define dpm_rel_version(r,i)    ss_ref((r),(i)+2)
+
 void dpm_db_open ();
 void dpm_db_checkpoint ();
 void dpm_db_done ();
 
+ss_val dpm_db_intern (const char *string);
+
 void dpm_db_full_update (dyn_val sources, dyn_val dists,
 			 dyn_val comps, dyn_val archs);
 
-typedef ss_val dpm_package;
-typedef ss_val dpm_version;
+int dpm_db_package_count ();
+int dpm_db_version_count ();
 
 void dpm_db_foreach_package (void (*func) (dpm_package pkg, void *data), 
 			     void *data);
@@ -59,12 +91,13 @@ dpm_package dpm_db_find_package (const char *name);
 
 ss_val      dpm_db_available (dpm_package pkg);
 dpm_version dpm_db_installed (dpm_package pkg);
+dpm_version dpm_db_candidate (dpm_package pkg);
 
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
 ss_val dpm_db_query_tag (const char *tag);
-ss_val dpm_db_reverse_relations (const char *package);
+ss_val dpm_db_reverse_relations (dpm_package pkg);
 
 void dpm_db_show_version (dpm_version ver);
 

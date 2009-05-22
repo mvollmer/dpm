@@ -82,6 +82,7 @@
 #define SS_OFFSET(ss,obj)      (((uint32_t)obj)-((uint32_t)((ss)->head)))
 #define SS_FROM_OFFSET(ss,off) ((ss_val)(((uint32_t)((ss)->head))+((uint32_t)off)))
 
+#if 0
 static void
 ss_set_forward_carefully (void *o, uint32_t f)
 {
@@ -89,6 +90,7 @@ ss_set_forward_carefully (void *o, uint32_t f)
     abort ();
   SS_SET_FORWARD2(o,f);
 }
+#endif
 
 #define SS_IS_INT(o)    ((((uint32_t)o)&3)==3)
 #define SS_TO_INT(o)    (((uint32_t)o)>>2)
@@ -110,8 +112,7 @@ struct ss_header {
   uint32_t root;         // offset to start of header
   uint32_t len;          // in words
   uint32_t alloced;      // in words, since last gc
-
-  uint32_t padding[3];
+  uint32_t counts[16];
 };
 
 /* The ss_store type
@@ -140,6 +141,7 @@ struct ss_store_struct {
   uint32_t *next;
   uint32_t *end;
   int alloced_words;
+  uint32_t counts[16];
 };
 
 /* Opening stores.
@@ -189,6 +191,8 @@ ss_sync (ss_store ss, uint32_t root_off)
   ss->head->len = ss->next - ss->start;
   ss->head->alloced = ss->alloced_words;
   ss->head->root = root_off;
+  for (int i = 0; i < 16; i++)
+    ss->head->counts[i] = ss->counts[i];
 
   if (msync (ss->head, sizeof (struct ss_header), MS_ASYNC) < 0)
     dyn_error ("Can't sync %s header: %m", ss->filename);
@@ -276,6 +280,8 @@ ss_open (const char *filename, int mode)
       ss->head->root = 0;
       ss->head->len = 0;
       ss->head->alloced = 0;
+      for (int i = 0; i < 16; i++)
+	ss->head->counts[i] = 0;
     }
   else
     {
@@ -290,6 +296,8 @@ ss_open (const char *filename, int mode)
     }
 
   ss->next = (uint32_t *)(((uint32_t)(ss->start + ss->head->len)+4095) & ~4095);
+  for (int i = 0; i < 16; i++)
+    ss->counts[i] = ss->head->counts[i];
 
   if (mmap (ss->head, (uint32_t)ss->next - (uint32_t)ss->head, PROT_READ, 
 	    MAP_SHARED | MAP_FIXED, ss->fd, 0)
@@ -546,7 +554,12 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
 	  copy = ss_alloc (gc->to_store, len + 1);
 	  copy[0] = SS_HEADER(obj);
 	  for (i = 0; i < len; i++)
-	    ss_set ((ss_val)copy, i, ss_ref (obj, i));
+	    {
+	      ss_val val = ss_ref (obj, i);
+	      if (i == 0 && SS_TAG(obj) >= 64 && SS_TAG(obj) < 80)
+		val = ss_from_int (gc->to_store->counts[SS_TAG(obj)-64]++);
+	      ss_set ((ss_val)copy, i, val);
+	    }
 	}
 
       SS_SET_FORWARD (obj, SS_OFFSET (gc->to_store, copy));
@@ -881,6 +894,15 @@ ss_maybe_gc (ss_store ss)
   return ss;
 }
 
+int
+ss_tag_count (ss_store ss, int tag)
+{
+  if (tag >= 64 && tag < 80)
+    return ss->counts[tag-64];
+  else
+    return 0;
+}
+
 /* Small integers
  */
 
@@ -963,13 +985,16 @@ ss_newv (ss_store ss, int tag, int len, ss_val *vals)
   uint32_t *w = ss_alloc (ss, len + 1);
   int i;
 
+  if (tag >= 64 && tag < 80 && len > 0)
+    vals[0] = ss_from_int (ss->counts[tag-64]++);
+
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
     {
       ss_assert_in_store (ss, vals[i]);
       ss_set ((ss_val )w, i, vals[i]);
     }
-
+    
   return (ss_val )w;
 }
 
@@ -984,7 +1009,9 @@ ss_new (ss_store ss, int tag, int len, ...)
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
     {
-      ss_val val = va_arg (ap, ss_val );
+      ss_val val = va_arg (ap, ss_val);
+      if (i == 0 && tag >= 64 && tag < 80)
+	val = ss_from_int (ss->counts[tag-64]++);
       ss_assert_in_store (ss, val);
       ss_set ((ss_val )w, i, val);
     }
@@ -1002,7 +1029,13 @@ ss_make (ss_store ss, int tag, int len, ss_val init)
   ss_assert_in_store (ss, init);
   SS_SET_HEADER (w, tag, len);
   for (i = 0; i < len; i++)
-    ss_set ((ss_val )w, i, init);
+    {
+      ss_val val = init;
+      if (i == 0 && tag >= 64 && tag < 80)
+	val = ss_from_int (ss->counts[tag-64]++);
+      ss_set ((ss_val )w, i, val);
+    }
+
   return (ss_val )w;
 }
 
@@ -1840,12 +1873,11 @@ ss_dict_set_action (ss_store ss, ss_val node, int hash, void *data)
 static ss_val
 ss_set_add (ss_store ss, ss_val set, ss_val val)
 {
-#if 0
+  // XXX - quadratic complexity warning
   int len = ss_len (set), i;
   for (i = 0; i < len; i++)
     if (ss_ref (set, i) == val)
       return set;
-#endif
   return ss_append (ss, set, val);
 }
 
@@ -2223,6 +2255,10 @@ ss_dump_store (ss_store ss, const char *header)
       printf (" head len:  %d\n", ss->head->len);
       printf (" head allc: %d\n", ss->head->alloced);
     }
+
+  for (int i = 0; i < 16; i++)
+    if (ss->counts[i])
+      printf (" counts[%d]: %d\n", i, ss->counts[i]); 
 }
 
 void
