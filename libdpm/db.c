@@ -17,6 +17,9 @@
 
 #define _GNU_SOURCE
 
+#include <time.h>
+#include <ctype.h>
+
 #include "dyn.h"
 #include "store.h"
 #include "db.h"
@@ -98,15 +101,6 @@ DPM_CONF_DECLARE (keyring, "keyring",
    values are duplicated between different architectures and versions.
 */
 
-enum {
-  DPM_ANY,
-  DPM_EQ,
-  DPM_LESS,
-  DPM_LESSEQ,
-  DPM_GREATER,
-  DPM_GREATEREQ
-};
-
 struct dpm_db_struct {
   ss_store store;
   
@@ -163,7 +157,6 @@ dpm_db_equal (void *a, void *b)
   return 0;
 }
 
-DYN_DECLARE_TYPE (dpm_db);
 DYN_DEFINE_TYPE (dpm_db, "db");
 
 static dyn_val
@@ -183,6 +176,12 @@ dpm_db_make (ss_store store)
 }
 
 static dyn_var cur_db[1];
+
+dpm_db
+dpm_db_current ()
+{
+  return dyn_get (cur_db);
+}
 
 static time_t
 blob_to_time (ss_val val)
@@ -988,6 +987,212 @@ dpm_db_foreach_package (void (*func) (dpm_package pkg, void *data),
   ss_dict_foreach (db->available, foreach_available_package, &d);
 }
 
+/* Version comparison
+ *
+ * Lifted from apt.
+ */
+
+#define order(x) ((x) == '~' ? -1    \
+		: isdigit((x)) ? 0   \
+		: !(x) ? 0           \
+		: isalpha((x)) ? (x) \
+		: (x) + 256)
+
+static int
+compare_fragment (const char *A, const char *AEnd,
+		  const char *B, const char *BEnd)
+{
+  if (A >= AEnd && B >= BEnd)
+    return 0;
+  if (A >= AEnd)
+    {
+      if (*B == '~') return 1;
+      return -1;
+    }
+  if (B >= BEnd)
+    {
+      if (*A == '~') return -1;
+      return 1;
+    }
+
+   /* Iterate over the whole string
+      What this does is to split the whole string into groups of
+      numeric and non numeric portions. For instance:
+         a67bhgs89
+      Has 4 portions 'a', '67', 'bhgs', '89'. A more normal:
+         2.7.2-linux-1
+      Has '2', '.', '7', '.' ,'-linux-','1' 
+   */
+
+   const char *lhs = A;
+   const char *rhs = B;
+   while (lhs != AEnd && rhs != BEnd)
+     {
+       int first_diff = 0;
+
+       while (lhs != AEnd && rhs != BEnd &&
+	      (!isdigit(*lhs) || !isdigit(*rhs)))
+	 {
+	   int vc = order(*lhs);
+	   int rc = order(*rhs);
+	   if (vc != rc)
+	     return vc - rc;
+	   lhs++; rhs++;
+	 }
+
+       while (*lhs == '0')
+	 lhs++;
+       while (*rhs == '0')
+	 rhs++;
+       while (isdigit(*lhs) && isdigit(*rhs))
+	 {
+	   if (!first_diff)
+	     first_diff = *lhs - *rhs;
+	   lhs++;
+	   rhs++;
+	 }
+       
+       if (isdigit(*lhs))
+	 return 1;
+       if (isdigit(*rhs))
+	 return -1;
+       if (first_diff)
+	 return first_diff;
+     }
+
+   // The strings must be equal
+   if (lhs == AEnd && rhs == BEnd)
+     return 0;
+
+   // lhs is shorter
+   if (lhs == AEnd)
+     {
+       if (*rhs == '~') return 1;
+       return -1;
+     }
+
+   // rhs is shorter
+   if (rhs == BEnd)
+     {
+       if (*lhs == '~') return -1;
+       return 1;
+     }
+
+   // Shouldnt happen
+   return 1;
+}
+									/*}}}*/
+int
+dpm_db_compare_versions (ss_val a, ss_val b)
+{
+  const char *A = ss_blob_start (a);
+  const char *AEnd = A + ss_len (a);
+  const char *B = ss_blob_start (b);
+  const char *BEnd = B + ss_len (b);
+
+  // Strip off the epoch and compare it 
+  const char *lhs = A;
+  const char *rhs = B;
+  for (;lhs != AEnd && *lhs != ':'; lhs++);
+  for (;rhs != BEnd && *rhs != ':'; rhs++);
+  if (lhs == AEnd)
+    lhs = A;
+  if (rhs == BEnd)
+    rhs = B;
+  
+  // Special case: a zero epoch is the same as no epoch,
+  // so remove it.
+  if (lhs != A)
+    {
+      for (; *A == '0'; ++A);
+      if (A == lhs)
+	{
+	  ++A;
+	  ++lhs;
+	}
+    }
+  if (rhs != B)
+    {
+      for (; *B == '0'; ++B);
+      if (B == rhs)
+	{
+	  ++B;
+	  ++rhs;
+	}
+    }
+
+  // Compare the epoch
+  int Res = compare_fragment(A,lhs,B,rhs);
+  if (Res != 0)
+    return Res;
+  
+  // Skip the :
+  if (lhs != A)
+    lhs++;
+  if (rhs != B)
+    rhs++;
+  
+  // Find the last - 
+  const char *dlhs = AEnd-1;
+  const char *drhs = BEnd-1;
+  for (;dlhs > lhs && *dlhs != '-'; dlhs--);
+  for (;drhs > rhs && *drhs != '-'; drhs--);
+  
+  if (dlhs == lhs)
+    dlhs = AEnd;
+  if (drhs == rhs)
+    drhs = BEnd;
+  
+  // Compare the main version
+  Res = compare_fragment(lhs,dlhs,rhs,drhs);
+  if (Res != 0)
+    return Res;
+  
+  // Skip the -
+  if (dlhs != lhs)
+    dlhs++;
+  if (drhs != rhs)
+    drhs++;
+  
+  return compare_fragment(dlhs,AEnd,drhs,BEnd);
+}
+
+static const char *relname[] = {
+  [DPM_EQ] = "=",
+  [DPM_LESS] = "<<",
+  [DPM_LESSEQ] = "<=",
+  [DPM_GREATER] = ">>",
+  [DPM_GREATEREQ] = ">="
+};
+
+int
+dpm_db_check_versions (ss_val a, int op, ss_val b)
+{
+  if (op == DPM_ANY)
+    return a != NULL;
+
+  int r = dpm_db_compare_versions (a, b);
+  // dyn_print ("Comparing %r %s %r == %d\n", a, relname[op], b, r);
+
+  switch (op) {
+  case DPM_EQ:
+    return r == 0;
+  case DPM_LESS:
+    return r < 0;
+  case DPM_LESSEQ:
+    return r <= 0;
+  case DPM_GREATER:
+    return r > 0;
+  case DPM_GREATEREQ:
+    return r >= 0;
+  default:
+    abort ();
+  }
+}
+
+/* Accessors
+ */
+
 ss_val
 dpm_db_version_get (dpm_version ver, const char *field)
 {
@@ -1018,14 +1223,6 @@ dpm_db_reverse_relations (dpm_package pkg)
 
   return ss_dict_get (db->reverse_rels, pkg);
 }
-
-const char *relname[] = {
-  [DPM_EQ] = "=",
-  [DPM_LESS] = "<<",
-  [DPM_LESSEQ] = "<=",
-  [DPM_GREATER] = ">>",
-  [DPM_GREATEREQ] = ">="
-};
 
 static void
 show_relation (ss_val rel)

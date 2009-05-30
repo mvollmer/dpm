@@ -102,6 +102,7 @@ void *dyn_malloc (size_t size);
 void *dyn_realloc (void *old, size_t size);
 void *dyn_strdup (const char *str);
 void *dyn_strndup (const char *str, int n);
+void *dyn_memdup (void *mem, int n);
 
 void dyn_begin ();
 void dyn_end ();

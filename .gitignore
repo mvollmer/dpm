@@ -83,3 +83,5 @@
 /libdpm/log
 /libdpm/test-db
 /libdpm/test-db.o
+/libdpm/alg.lo
+/libdpm/alg.o

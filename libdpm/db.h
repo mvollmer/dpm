@@ -42,6 +42,9 @@
    Instead, a set of accessor functions is used to maintain it
  */
 
+DYN_DECLARE_TYPE (dpm_db);
+dpm_db dpm_db_current ();
+
 typedef ss_val dpm_package;
 
 #define dpm_pkg_id(v)           ss_ref_int(v,0)
@@ -58,6 +61,8 @@ typedef ss_val dpm_version;
 #define dpm_ver_shortdesc(v)    ss_ref(v,6)
 #define dpm_ver_fields(v)       ss_ref(v,7)
 
+typedef ss_val dpm_relations;
+
 #define dpm_rels_pre_depends(r) ss_ref(r,0)
 #define dpm_rels_depends(r)     ss_ref(r,1)
 #define dpm_rels_conflicts(r)   ss_ref(r,2)
@@ -68,9 +73,23 @@ typedef ss_val dpm_version;
 #define dpm_rels_enhances(r)    ss_ref(r,7)
 #define dpm_rels_suggests(r)    ss_ref(r,8)
 
+typedef ss_val dpm_relation;
+
 #define dpm_rel_op(r,i)         ss_ref_int((r),(i))
 #define dpm_rel_package(r,i)    ss_ref((r),(i)+1)
 #define dpm_rel_version(r,i)    ss_ref((r),(i)+2)
+
+enum {
+  DPM_ANY,
+  DPM_EQ,
+  DPM_LESS,
+  DPM_LESSEQ,
+  DPM_GREATER,
+  DPM_GREATEREQ
+};
+
+int dpm_db_compare_versions (ss_val a, ss_val b);
+int dpm_db_check_versions (ss_val a, int op, ss_val b);
 
 void dpm_db_open ();
 void dpm_db_checkpoint ();
@@ -80,6 +99,9 @@ ss_val dpm_db_intern (const char *string);
 
 void dpm_db_full_update (dyn_val sources, dyn_val dists,
 			 dyn_val comps, dyn_val archs);
+
+void dpm_db_maybe_full_update (dyn_val sources, dyn_val dists,
+			       dyn_val comps, dyn_val archs);
 
 int dpm_db_package_count ();
 int dpm_db_version_count ();

@@ -15,7 +15,10 @@ libdpm_la_SOURCES = dyn.h     \
 		    acq.h     \
 		    acq.c     \
                     db.h      \
-                    db.c
+                    db.c      \
+		    alg.h     \
+		    alg.c
+
 libdpm_la_LIBADD = -lz -lbz2
 
 pkginclude_HEADERS = dpm.h dyn.h parse.h conf.h

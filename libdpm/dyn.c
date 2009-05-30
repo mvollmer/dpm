@@ -78,6 +78,14 @@ dyn_strdup (const char *str)
 }
 
 void *
+dyn_memdup (void *mem, int n)
+{
+  void *dup = dyn_malloc (n);
+  memcpy (dup, mem, n);
+  return dup;
+}
+
+void *
 dyn_strndup (const char *str, int n)
 {
   char *dup;

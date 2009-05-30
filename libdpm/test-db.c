@@ -1,5 +1,10 @@
+#define _GNU_SOURCE
+
+#include <string.h>
+
 #include "conf.h"
 #include "db.h"
+#include "alg.h"
 #include "acq.h"
 
 DPM_CONF_DECLARE (architectures, "architectures",
@@ -129,15 +134,6 @@ stats ()
   dpm_db_done ();
 }
 
-enum {
-  DPM_ANY,
-  DPM_EQ,
-  DPM_LESS,
-  DPM_LESSEQ,
-  DPM_GREATER,
-  DPM_GREATEREQ
-};
-
 const char *relname[] = {
   [DPM_EQ] = "=",
   [DPM_LESS] = "<<",
@@ -253,130 +249,57 @@ list_reverse_relations (const char *package)
     }
 }
 
-typedef struct {
-  dpm_package package;
-  dpm_version candidate;
-  int install;
-} package_info;
+void install_pkg (dpm_package pkg);
 
-int n_info;
-package_info *info;
-
-int silent;
-
-int install_pkg (dpm_package pkg);
-
-int install_dep (ss_val dep)
+void
+try_fix (int conflict, dpm_relation rel, void *unused)
 {
-  int old_silent = silent;
-  int success = 0;
+  // Ignore conflicts and only install the first of an alternative.
 
-  if (ss_len (dep) > 3)
-    silent = 1;
-  for (int i = 0; i < ss_len (dep); i += 3)
-    if (install_pkg (dpm_rel_package (dep, i)))
-      {
-	success = 1;
-	break;
-      }
+  if (conflict)
+    return;
 
-  silent = old_silent;
-  if (!silent && !success && ss_len (dep) > 3)
-    {
-      dyn_print ("Can't satisfy any of the following alternatives:\n");
-      for (int i = 0; i < ss_len (dep); i += 3)
-	{
-	  dyn_print ("  ");
-	  show_relation_part (dep, i);
-	  dyn_print ("\n");
-	}
-    }
+#if 0
+  dyn_print ("Fixing ");
+  show_relation_part (rel, 0);
+  dyn_print ("\n");
+#endif
 
-  return success;
+  dpm_package target = dpm_rel_package (rel, 0);
+  if (!dpm_ws_is_flagged (target))
+    install_pkg (target);
 }
 
-int install_deps (ss_val deps)
+void
+install_pkg (dpm_package pkg)
 {
-  if (deps)
-    for (int i = 0; i < ss_len (deps); i++)
-      if (!install_dep (ss_ref (deps, i)))
-	return 0;
-  return 1;
-}
-
-int install_pkg (dpm_package pkg)
-{
-  int id = dpm_pkg_id (pkg);
-
-  // dyn_print ("Installing %r\n", dpm_pkg_name (pkg));
-
-  if (info[id].package)
-    return info[id].install;
-
-  info[id].package = pkg;
-  info[id].candidate = dpm_db_candidate (pkg);
-
-  dpm_version cand = info[id].candidate;
-  if (cand == NULL)
-    {
-      if (!silent)
-	dyn_print ("No candidate for %r\n", dpm_pkg_name (pkg));
-      info[id].install = 0;
-    }
-  else
-    {
-      info[id].install = 1;
-      int deps_ok =
-	install_deps (dpm_rels_pre_depends (dpm_ver_relations (cand)))
-	&& install_deps (dpm_rels_depends (dpm_ver_relations (cand)));
-      info[id].install = deps_ok;
-    }
-
-  return info[id].install;
+  dpm_ws_flag (pkg);
+  dpm_ws_set_installed (pkg, dpm_db_candidate (pkg));
+  dpm_ws_do_broken (pkg, try_fix, NULL);
+  dpm_ws_unflag (pkg);
 }
 
 void
 fun (char **argv)
 {
+  dyn_begin ();
+
   dpm_db_open ();
-  n_info = dpm_db_package_count();
-  info = calloc (n_info, sizeof(package_info));
-  printf ("%d packages\n", n_info);
-  
-  silent = 0;
-  int success = 1;
+  dpm_ws_create ();
+
   for (int i = 0; argv[i]; i++)
     {
       dpm_package pkg = dpm_db_find_package (argv[i]);
       if (pkg)
-	{
-	  if (!install_pkg (pkg))
-	    {
-	      dyn_print ("Can't install %r\n", dpm_pkg_name (pkg));
-	      success = 0;
-	    }
-	}
+	install_pkg (pkg);
       else
-	{
-	  dyn_print ("Package %s not found\n", argv[i]);
-	  success = 0;
-	}
+	dyn_print ("Package %s not found\n", argv[i]);
     }
   
-  if (success)
-    {
-      dyn_print ("Report:\n");
-      for (int i = 0; i < n_info; i++)
-	if (info[i].install)
-	  {
-	    dpm_version c = info[i].candidate;
-	    dyn_print (" %r %r\n",
-		       dpm_pkg_name (info[i].package), 
-		       dpm_ver_version (c));
-	  }
-    }
-  
+  dpm_ws_report ();
+
   dpm_db_done ();
+  dyn_end ();
 }
 
 int
