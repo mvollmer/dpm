@@ -35,50 +35,27 @@
    Just as with the database, there is a 'current workspace' that is
    used as an implicit argument for most functions.
 
-   For each interesting package, the workspace tracks the following
-   information:
+   The workspace keeps track of a set of _interesting_ packages.  Each
+   interesting package has a set of _candidates_.  A candidate is
+   either a available version of its package, or the 'null version'.
+   Selecting the null version for a package means that it is not installed.
 
-   - A ordered list of _potential_ installation candidates.  This is a
-     subset of the available versions for the package; it excludes
-     those versions that are not 'interesting'.  It might also
-     explicitly include the 'null version', which--if
-     choosen--signifies the removal of the package.
+   To represent relationships between these candidates, the workspace
+   also stores a set of _conflicts_.  A conflict is a set of
+   candidates, with the meaning that these candidates can not be
+   selected at the same time.
 
-     The list is sorted from best to worst.
+   For example, if candidate A depends on candidate B, this fact is
+   expressed by adding a conflict set to the workspace that contains A
+   and the null version of the package of B.
 
-   - A _selected_ candidate.  If set, this is one of the viable
-     candidates (see below).  Selecting a candidate will update the
-     viable candidates of other packages.  The goal of all algorithms
-     is to select a candidate for all interesting packages.
-
-   - A set of _viable_ candidates.  This is the union of all allowed
-     candidates of the selected candidates of all packages,
-     intersected with the potential candidates of this package.
-
-   For each version, the workspace tracks the following:
-
-   - A set of _allowed_ candidates.  This set includes those potential
-     candidates of any package that can be installed together with
-     this version.  (Conflicts are expressed by only allowing the null
-     version to be installed, for example.)
-
-     Actually, we track the set of _forbidden_ candidates: those that
-     can not be installed alongside with this version.  The set of
-     forbidden candidates is just the set difference of all potential
-     candidates and allowed candidates.  It is usually much smaller
-     and easier to compute from dependencies, etc.
-
-   The potential candidates are choosen in a preparation phase and
-   don't change afterwards.  The viable candidates change as different
-   versions are systematically selected when searching for a solution.
+   After setting all this up, a workspace can be used to find a
+   _solution_.  A solution selects exactly one candidate for each
+   interesting package, while not violating any of the conflict sets.
 
    The only thing you can do with a workspace is to prepare it by
-   defining the sets of potential candidates for each interesting
-   package and the sets of forbidden candidates for each potential
-   candidate, and then letting it search for a set of selected
-   candidates that is the _best_solution_.  A solution has exactly one
-   selected candidate for each interesting packages, and the best
-   solution is XXX.
+   defining the sets of candidates for each interesting package and
+   the conflict sets, and then letting it search for a _solution_.
 
    Different 'algorithms' work by preparing the workspace differently,
    but all the grunt work is done by exhaustive searching.
@@ -86,9 +63,34 @@
    This exhaustive searching is not that bad since usually the
    workspace is prepared such that there are not many possible
    solutions (and the search is smart enough not to waste time with
-   non-solutions), or it is prepared in such a way that the best
-   solution is easy to find because there aren't many constraints to
-   be considered.
+   non-solutions), or it is prepared in such a way that the first
+   solution found is also the best.
+
+
+   The function dpm_ws_add_candidate adds a new candidate to a package
+   and thus makes that package 'interesting'.  Packages that haven't
+   gotten any candidates added to them are ignored in the search.
+
+   The order of the calls to dpm_ws_add_candidate determines which
+   solution will be considered first: earlier candidates are preferred
+   over later candidates for the same package, and packages that
+   became interesting earlier are preferred over other packages.
+
+   For example, after this sequence of calls:
+
+     add_candidate (PA, VA1);
+     add_candidate (PA, VA2);
+     add_candidate (PB, VB1);
+     add_candidate (PB, VB2);
+
+   it is considered better to install VA1 than VA2, and the
+   combination VA1,VB2 is preferred to VA2,VB1 (if VA1,VB1 is not
+   possible).
+
+   These preferences are important when a candidate is the null
+   version: you generally want to avoid selecting the null version,
+   since uninstalling a package is a much bigger change to the users
+   system than upgrading a package.
  */
 
 DYN_DECLARE_TYPE (dpm_ws);
@@ -100,9 +102,15 @@ void dpm_ws_create ();
 
 dpm_ws dpm_ws_current ();
 
-void dpm_ws_add_candidate (dpm_package pkg, dpm_version ver);
+int dpm_ws_add_candidate (dpm_package pkg, dpm_version ver);
 
+void dpm_ws_start_conflict ();
+void dpm_ws_add_conflict (dpm_package pkg, dpm_version ver);
 
-void dpm_ws_report ();
+void dpm_ws_install (dpm_package pkg);
+
+void dpm_ws_search ();
+
+void dpm_ws_report (const char *title);
 
 #endif /* !DPM_ALG_H */

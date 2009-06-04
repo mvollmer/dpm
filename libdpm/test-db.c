@@ -249,36 +249,6 @@ list_reverse_relations (const char *package)
     }
 }
 
-void install_pkg (dpm_package pkg);
-
-void
-try_fix (int conflict, dpm_relation rel, void *unused)
-{
-  // Ignore conflicts and only install the first of an alternative.
-
-  if (conflict)
-    return;
-
-#if 0
-  dyn_print ("Fixing ");
-  show_relation_part (rel, 0);
-  dyn_print ("\n");
-#endif
-
-  dpm_package target = dpm_rel_package (rel, 0);
-  if (!dpm_ws_is_flagged (target))
-    install_pkg (target);
-}
-
-void
-install_pkg (dpm_package pkg)
-{
-  dpm_ws_flag (pkg);
-  dpm_ws_set_installed (pkg, dpm_db_candidate (pkg));
-  dpm_ws_do_broken (pkg, try_fix, NULL);
-  dpm_ws_unflag (pkg);
-}
-
 void
 fun (char **argv)
 {
@@ -291,12 +261,13 @@ fun (char **argv)
     {
       dpm_package pkg = dpm_db_find_package (argv[i]);
       if (pkg)
-	install_pkg (pkg);
+	dpm_ws_install (pkg);
       else
 	dyn_print ("Package %s not found\n", argv[i]);
     }
-  
-  dpm_ws_report ();
+
+  dpm_ws_report ("Setup");
+  dpm_ws_search ();
 
   dpm_db_done ();
   dyn_end ();
