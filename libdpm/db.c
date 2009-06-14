@@ -354,6 +354,14 @@ dpm_db_installed (dpm_package pkg)
   return ss_dict_get (db->installed, pkg);
 }
 
+void
+dpm_db_set_installed (dpm_package pkg, dpm_version ver)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  return ss_dict_set (db->installed, pkg, ver);
+}
+
 static dpm_version
 find_version (dpm_db db, dpm_package pkg, ss_val version, ss_val architecture)
 {

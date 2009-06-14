@@ -103,6 +103,8 @@ void dpm_db_full_update (dyn_val sources, dyn_val dists,
 void dpm_db_maybe_full_update (dyn_val sources, dyn_val dists,
 			       dyn_val comps, dyn_val archs);
 
+void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
+
 int dpm_db_package_count ();
 int dpm_db_version_count ();
 

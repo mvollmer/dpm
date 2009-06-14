@@ -102,15 +102,13 @@ void dpm_ws_create ();
 
 dpm_ws dpm_ws_current ();
 
-int dpm_ws_add_candidate (dpm_package pkg, dpm_version ver);
+void dpm_ws_mark_install (dpm_package pkg);
+void dpm_ws_setup_finish ();
 
-void dpm_ws_start_conflict ();
-void dpm_ws_add_conflict (dpm_package pkg, dpm_version ver);
-
-void dpm_ws_install (dpm_package pkg);
-
-void dpm_ws_search ();
-
+int  dpm_ws_search ();
 void dpm_ws_report (const char *title);
+
+void dpm_ws_import ();
+void dpm_ws_realize ();
 
 #endif /* !DPM_ALG_H */

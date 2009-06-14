@@ -24,8 +24,17 @@
 #include "alg.h"
 #include "db.h"
 #include "dyn.h"
+#include "inst.h"
 
-//#define DEBUG
+/* XXX - Think harder about packages vs versions, especially in
+         connection with virtual packages and alternatives like
+	 
+	   A (= 2) | A (= 3).
+*/
+
+/* #define DEBUG */
+
+static void log_rel (const char *msg, dpm_relation rel);
 
 #define obstack_chunk_alloc dyn_malloc
 #define obstack_chunk_free free
@@ -61,6 +70,7 @@ struct ver_info {
 struct pkg_info {
   dpm_package pkg;
   pkg_info *next;
+  ver_node *providers;
   ver_node *candidates;
   ver_info *selected;
 };
@@ -81,6 +91,7 @@ struct dpm_ws_struct {
 
   pkg_info *head;
   pkg_info **tailp;
+  int n_candidates;
 
   cfl_info *conflict;
 
@@ -119,6 +130,7 @@ dpm_ws_create ()
 
   ws->head = NULL;
   ws->tailp = &(ws->head);
+  ws->n_candidates = 0;
 
   ws->conflict = NULL;
 
@@ -131,16 +143,66 @@ dpm_ws_current ()
   return dyn_get (cur_ws);
 }
 
-static pkg_info *
-get_pkg_info (dpm_ws ws, dpm_package pkg)
+/* Some iterators
+ */
+
+static int
+has_target (ss_val rels, dpm_package pkg)
 {
-  return ws->pkg_info + dpm_pkg_id (pkg);
+  if (rels)
+    {
+      int len = ss_len (rels);
+      for (int i = 0; i < len; i++)
+	{
+	  dpm_relation rel = ss_ref (rels, i);
+	  for (int j = 0; j < ss_len (rel); j += 3)
+	    if (dpm_rel_package (rel, j) == pkg)
+	      return 1;
+	}
+    }
+  return 0;
 }
+
+static void
+do_rels (ss_val rels, void (*proc) (dpm_relation rel))
+{
+  if (rels)
+    for (int i = 0; i < ss_len (rels); i++)
+      proc (ss_ref (rels, i));
+}
+
+static void
+do_providers (dpm_package virt, void (*proc) (dpm_version ver))
+{
+  ss_val reverse = dpm_db_reverse_relations (virt);
+  if (reverse)
+    {
+      for (int i = 0; i < ss_len (reverse); i++)
+	{
+	  dpm_version ver = ss_ref (reverse, i);
+	  dpm_relations rels = dpm_ver_relations (ver);
+	  
+	  if (has_target (dpm_rels_provides (rels), virt))
+	    proc (ver);
+	}
+    }
+}
+
+// Infos
+
+static pkg_info *get_pkg_info (dpm_ws ws, dpm_package pkg);
 
 static ver_info *
 get_ver_info (dpm_ws ws, dpm_version ver)
 {
-  return ws->ver_info + dpm_ver_id (ver);
+  ver_info *v = ws->ver_info + dpm_ver_id (ver);
+  if (v->package == NULL)
+    {
+      pkg_info *p = get_pkg_info (ws, dpm_ver_package (ver));
+      v->package = p;
+      v->ver = ver;
+    }
+  return v;
 }
 
 static void
@@ -150,6 +212,33 @@ add_ver (dpm_ws ws, ver_node **ptr, ver_info *info)
   n->info = info;
   n->next = *ptr;
   *ptr = n;
+}
+
+static pkg_info *
+get_pkg_info (dpm_ws ws, dpm_package pkg)
+{
+  pkg_info *p = ws->pkg_info + dpm_pkg_id (pkg);
+
+  if (p->pkg == NULL)
+    {
+      p->pkg = pkg;
+      p->candidates = NULL;
+      p->next = NULL;
+      p->providers = NULL;
+
+      // Get providers if there is no available real version for this
+      // package.
+      if (dpm_db_candidate (pkg) == NULL)
+	{
+	  void provider (dpm_version prov)
+	  {
+	    add_ver (ws, &(p->providers), get_ver_info (ws, prov));
+	  }
+	  do_providers (pkg, provider);
+	}
+    }
+
+  return p;
 }
 
 static void
@@ -270,7 +359,7 @@ downdate_conflicts (cfl_node *conflicts)
     }
 }
 
-static void report (dpm_ws ws, const char *title);
+static void report (dpm_ws ws, const char *title, int verbose);
 
 static void
 search (dpm_ws ws, pkg_info *first)
@@ -283,6 +372,14 @@ search (dpm_ws ws, pkg_info *first)
   else
     {
       int found_some = 0;
+
+#ifdef DEBUG
+      int n_choices = 0, choice = 0;
+      for (ver_node *n = first->candidates; n; n = n->next)
+	if (n->info->forbidden_count == 0)
+	  n_choices++;
+#endif
+
       for (ver_node *n = first->candidates; n; n = n->next)
 	{
 	  ver_info *v = n->info;
@@ -293,7 +390,8 @@ search (dpm_ws ws, pkg_info *first)
 #ifdef DEBUG
 	      dyn_print ("%r = ", dpm_pkg_name (first->pkg));
 	      show_ver_info (v);
-	      dyn_print ("\n");
+	      dyn_print (" (%d of %d)\n", choice+1, n_choices);
+	      choice++;
 #endif
 
 	      first->selected = v;
@@ -320,58 +418,53 @@ search (dpm_ws ws, pkg_info *first)
     }
 }
 
-int
-dpm_ws_add_candidate (dpm_package pkg, dpm_version ver)
+static ver_info *
+add_candidate (dpm_ws ws, pkg_info *p, dpm_version ver, int append)
 {
-  dpm_ws ws = dyn_get (cur_ws);
-  pkg_info *p = get_pkg_info (ws, pkg);
   ver_info *v;
 
-  if (p->pkg == NULL)
-    {
-      p->pkg = pkg;
-      p->candidates = NULL;
-      p->next = NULL;
-      *(ws->tailp) = p;
-      ws->tailp = &(p->next);
-    }
+  for (ver_node *n = p->candidates; n; n = n->next)
+    if (n->info->ver == ver)
+      return n->info;
 
   if (ver && ver != (void *)-1)
-    {
-      v = get_ver_info (ws, ver);
-      if (v->ver)
-	return 0;
-      v->ver = ver;
-    }
+    v = get_ver_info (ws, ver);
   else
     {
-      for (ver_node *n = p->candidates; n; n = n->next)
-	if (n->info->ver == ver)
-	  return 0;
       v = obstack_alloc (&(ws->mem), sizeof (ver_info));
+      v->package = p;
       v->ver = ver;
     }
 
-  v->package = p;
-  v->conflicts = NULL;
   v->forbidden_count = 0;
+  v->conflicts = NULL;
 
 #ifdef DEBUG
-  dyn_print (" candidate: ");
+  dyn_print ("%r: ", dpm_pkg_name (p->pkg));
   show_ver_info (v);
   dyn_print ("\n");
 #endif
 
-  add_ver (ws, &(p->candidates), v);
+  if (p->candidates == NULL)
+    {
+      *(ws->tailp) = p;
+      ws->tailp = &(p->next);
+    }
 
-  return 1;
+  ver_node **np = &(p->candidates);
+  if (append)
+    while (*np)
+      np = &(*np)->next;
+  add_ver (ws, np, v);
+
+  ws->n_candidates++;
+
+  return v;
 }
 
-void
-dpm_ws_start_conflict ()
+static void
+start_conflict (dpm_ws ws)
 {
-  dpm_ws ws = dyn_get (cur_ws);
-
   cfl_info *c = obstack_alloc (&ws->mem, sizeof (cfl_info));
   c->unselected_count = 0;
   c->versions = NULL;
@@ -383,56 +476,14 @@ dpm_ws_start_conflict ()
 #endif
 }
 
-void
-dpm_ws_add_conflict (dpm_package pkg, dpm_version ver)
+static void
+add_conflict (dpm_ws ws, ver_info *v)
 {
-  dpm_ws ws = dyn_get (cur_ws);
-  ver_info *v = NULL;
-
   cfl_info *c = ws->conflict;
   c->unselected_count += 1;
 
-  if (ver && ver != (void *)-1)
-    {
-      v = get_ver_info (ws, ver);
-      if (v->ver == NULL)
-	{
-	  // This version is not a candidate for any package and thus
-          // this conflict set will never be active.  The
-	  // "unselected_count" has been increased, and we can just
-	  // return here.
-
 #ifdef DEBUG
-	  dyn_print ("%r %r (not)\n",
-		     dpm_pkg_name (dpm_ver_package (ver)),
-		     dpm_ver_version (ver));
-#endif
-	  return;
-	}
-    }
-  else
-    {
-      pkg_info *p = get_pkg_info (ws, pkg);
-      for (ver_node *n = p->candidates; n; n = n->next)
-	if (n->info->ver == ver)
-	  {
-	    v = n->info;
-	    break;
-	  }
-
-      if (v == NULL)
-	{
-#ifdef DEBUG
-	  dyn_print ("%r %s (not)\n",
-		     dpm_pkg_name (pkg),
-		     ver? "<virtual>" : "<null>");
-#endif
-	  return;
-	}
-    }
-
-#ifdef DEBUG
-  dyn_print ("%r ", dpm_pkg_name (pkg));
+  dyn_print ("%r ", dpm_pkg_name (v->package->pkg));
   show_ver_info (v);
   dyn_print ("\n");
 #endif
@@ -441,212 +492,406 @@ dpm_ws_add_conflict (dpm_package pkg, dpm_version ver)
   add_cfl (ws, &(v->conflicts), c);
 }
 
-void
+int
 dpm_ws_search ()
 {
   dpm_ws ws = dyn_get (cur_ws);
+#ifdef DEBUG
   dyn_print ("\nSearch:\n");
+#endif
   if (setjmp (ws->search_done))
     {
-      report (ws, "Solution");
-      return;
+#if DEBUG
+      report (ws, "Solution", 1);
+#endif
+      return 1;
     }
   search (ws, ws->head);
-}
-
-// Simple standard setup.  No attempts at optimizing the set of
-// candidates, only one candidate considered, conflict sets don't look
-// at versions, no thorough handling of virtual packages.
-
-static void add_version_and_related (dpm_package pkg, int optional);
-
-static void
-add_conflicts_for_depends (dpm_package pkg, dpm_version candidate,
-			   ss_val deps, int optional)
-{
-  if (deps == NULL)
-    return;
-
-  int n = ss_len (deps);
-  for (int i = 0; i < n; i++)
-    {
-      dpm_relation rel = ss_ref (deps, i);
-      int m = ss_len (rel);
-      int alternative = (m > 3);
-
-      for (int j = 0; j < m; j += 3)
-	add_version_and_related (dpm_rel_package (rel, j),
-				 optional || alternative);
-
-      dpm_ws_start_conflict ();
-      dpm_ws_add_conflict (pkg, candidate);
-      for (int j = 0; j < m; j += 3)
-	dpm_ws_add_conflict (dpm_rel_package (rel, j), NULL);
-    }
-}
-
-static int
-has_target (ss_val rels, dpm_package pkg)
-{
-  if (rels)
-    {
-      int len = ss_len (rels);
-      for (int i = 0; i < len; i++)
-	{
-	  dpm_relation rel = ss_ref (rels, i);
-	  for (int j = 0; j < ss_len (rel); j += 3)
-	    if (dpm_rel_package (rel, j) == pkg)
-	      return 1;
-	}
-    }
   return 0;
 }
 
-static void show_relation (ss_val rel);
+/* Setup for installing a new package.
+
+ */
+
+// Setup the candidates of PKG.  If OPTIONAL is true, the installed
+// version is also made a candidate.  In that case, PREFERRED
+// determines whether upgrading or new installation is preferred over
+// the status quo.
+//
+static void
+setup_candidates (dpm_ws ws, pkg_info *p, int optional, int preferred)
+{
+  dpm_version candidate = dpm_db_candidate (p->pkg);
+  
+  if (candidate == NULL)
+    {
+      if (p->providers != NULL)
+	candidate = (dpm_version)-1;
+      else
+	return;
+    }
+
+  add_candidate (ws, p, candidate, !preferred);
+  if (optional)
+    add_candidate (ws, p, dpm_db_installed (p->pkg), preferred);
+}
+
+// Add the null-version to the candidates of PKG.  This doesn't add a
+// real candidate.
+//
+static void
+setup_as_optional (dpm_ws ws, dpm_package pkg)
+{
+  pkg_info *p = get_pkg_info (ws, pkg);
+  add_candidate (ws, p, NULL, 1);
+}
+
+// Determine whether V satiesfies the relation REL[i]
+//
+static int
+satisfies (ver_info *v, dpm_relation rel, int i)
+{
+  dpm_version ver = v->ver;
+  return (ver != NULL
+	  && (ver == (dpm_version)-1
+	      || dpm_db_check_versions (dpm_ver_version (ver),
+					dpm_rel_op (rel, i),
+					dpm_rel_version (rel, i))));
+}
+
+// Determines whether all candidates of the target package satisfy the
+// dependency DEP[i].
+//
+static int
+is_always_satisfied (dpm_ws ws, dpm_relation dep, int i)
+{
+  dpm_package pkg = dpm_rel_package (dep, i);
+  pkg_info *p = get_pkg_info (ws, pkg);
+  if (p->candidates == NULL)
+    return 0;
+
+  for (ver_node *n = p->candidates; n; n = n->next)
+    if (!satisfies (n->info, dep, i))
+      return 0;
+  return 1;
+}
+
+static int
+is_always_installed (dpm_ws ws, dpm_package pkg)
+{
+  pkg_info *p = get_pkg_info (ws, pkg);
+  if (p->candidates == NULL)
+    return 0;
+
+  for (ver_node *n = p->candidates; n; n = n->next)
+    {
+      dpm_version ver = n->info->ver;
+      if (ver == NULL)
+	return 0;
+    }
+  return 1;
+}
+
+// Setup candidates that might be needed to satisfy DEP.
+// When OPTIONAL is true, the source of the dependencies might or
+// might not be installed.  When ONLY_FORCED is true, alternatives are
+// not handled.
+//
+static void
+setup_depends_candidates (dpm_ws ws, dpm_relation dep,
+			  int optional, int only_forced)
+{
+  if (ss_len (dep) > 3 && only_forced)
+    {
+#ifdef DEBUG
+      log_rel ("SKIPPING", dep);
+#endif
+      return;
+    }
+
+  for (int i = 0; i < ss_len (dep); i += 3)
+    if (is_always_satisfied (ws, dep, i))
+      {
+#ifdef DEBUG
+	log_rel ("ALWAYS", dep);
+#endif
+	return;
+      }
+
+  if (ss_len (dep) > 3)
+    optional = 1;
+
+  for (int i = 0; i < ss_len (dep); i += 3)
+    setup_candidates (ws, get_pkg_info (ws, dpm_rel_package (dep, i)), optional, i == 0);
+}
+
+// Setup candidates that might be needed to satisfy the conflict CONF.
+//
+static void
+setup_conflict_candidates (dpm_ws ws, dpm_relation conf)
+{
+  if (is_always_satisfied (ws, conf, 0))
+    {
+#ifdef DEBUG
+      log_rel ("CONFLICT", conf);
+#endif
+      setup_as_optional (ws, dpm_rel_package (conf, 0));
+    }
+}
 
 static void
-add_conflicts_for_conflicts (dpm_package pkg, dpm_version candidate,
-			     ss_val confs)
+setup_candidate_relations (dpm_ws ws, ver_info *v,
+			   int optional, int only_forced)
 {
-  if (confs == NULL)
-    return;
-
-  int n = ss_len (confs);
-  for (int i = 0; i < n; i++)
+  if (v->ver == (dpm_version)-1)
     {
-      dpm_relation rel = ss_ref (confs, i);
-      dpm_package target = dpm_rel_package (rel, 0);
-      dpm_version target_candidate = dpm_db_candidate (target);
+      pkg_info *p = v->package;
 
-      if (target_candidate
-	  && dpm_db_check_versions (dpm_ver_version (target_candidate),
-				    dpm_rel_op (rel, 0),
-				    dpm_rel_version (rel, 0)))
-	{
-	  add_version_and_related (target, 1);
-      	  dpm_ws_start_conflict ();
-	  dpm_ws_add_conflict (pkg, candidate);
-	  dpm_ws_add_conflict (target, target_candidate);
-	}
+      if (only_forced && p->providers->next != NULL)
+	return;
+      
+      for (ver_node *n = p->providers; n; n = n->next)
+	if (is_always_installed (ws, n->info->package->pkg))
+	  return;
 
-      // Also conflict with versions that Provide the target, but only
-      // if this Conflicts doesn't specify a version.
+      if (p->providers->next)
+	optional = 1;
 
-      if (dpm_rel_op (rel, 0) == DPM_ANY)
-	{
-	  ss_val reverse = dpm_db_reverse_relations (target);
-	  if (reverse)
+      for (ver_node *n = p->providers; n; n = n->next)
+	setup_candidates (ws, n->info->package, optional, n == p->providers);
+    }
+  else
+    {
+      void depends (dpm_relation dep)
+      {
+	setup_depends_candidates (ws, dep, optional, only_forced);
+      }
+      
+      void conflicts (dpm_relation conf)
+      {
+	setup_conflict_candidates (ws, conf);
+      }
+      
+      dpm_relations rels = dpm_ver_relations (v->ver);
+      do_rels (dpm_rels_pre_depends (rels), depends);
+      do_rels (dpm_rels_depends (rels), depends);
+      if (!only_forced)
+	do_rels (dpm_rels_conflicts (rels), conflicts);
+    }
+}
+
+static void
+setup_all_candidates (dpm_ws ws, int only_forced)
+{
+  int old_n_candidates;
+
+  do {
+    old_n_candidates = ws->n_candidates;
+
+    for (pkg_info *p = ws->head; p; p = p->next)
+      {
+	int optional = 0;
+	for (ver_node *n = p->candidates; n; n = n->next)
+	  if (n->info->ver == NULL)
 	    {
-	      for (int i = 0; i < ss_len (reverse); i++)
+	      optional = 1;
+	      break;
+	    }
+	
+	for (ver_node *n = p->candidates; n; n = n->next)
+	  {
+	    if (n->info->ver)
+	      setup_candidate_relations (ws, n->info, optional, only_forced);
+	  }
+      }
+  } while (ws->n_candidates > old_n_candidates);
+}
+
+// Setup the conflict sets for a dependency of V.
+//
+// We enumerate all possible combinations of all candidates of the
+// targets of DEP, and if that combination does not satisfy DEP, we
+// create a conflict set for it.
+//
+static void
+setup_depends_conflicts (dpm_ws ws, ver_info *v, dpm_relation dep)
+{
+  int n = ss_len (dep) / 3;
+  ver_info *cands[n];
+
+  void do_cands (int i)
+  {
+    if (i < n)
+      {
+	dpm_package target = dpm_rel_package (dep, 3*i);
+	pkg_info *t = get_pkg_info (ws, target);
+	for (ver_node *c = t->candidates; c; c = c->next)
+	  {
+	    if (!satisfies (c->info, dep, 3*i))
+	      {
+		cands[i] = c->info;
+		do_cands (i+1);
+	      }
+	  }
+      }
+    else
+      {
+	start_conflict (ws);
+	add_conflict (ws, v);
+	for (int j = 0; j < n; j++)
+	  add_conflict (ws, cands[j]);
+      }
+  }
+  
+#ifdef DEBUG
+  log_rel ("DEP", dep);
+#endif
+
+  do_cands (0);
+}
+
+// Setup the conflict sets for a conflict of V.
+//
+// We create a conflict set for each candidate of the target that
+// satisfies CONF.
+//
+// When the target is a virtual package, we conflict with each of its
+// providers instead (except ourselves, of course).
+//
+static void
+setup_conflicts_conflicts (dpm_ws ws, ver_info *v, dpm_relation conf)
+{
+  dpm_package target = dpm_rel_package (conf, 0);
+  pkg_info *t = get_pkg_info (ws, target);
+  
+#ifdef DEBUG
+  log_rel ("CONF", conf);
+#endif
+
+  if (t->providers)
+    {
+      if (dpm_rel_op (conf, 0) == DPM_ANY)
+	{
+	  for (ver_node *p = t->providers; p; p = p->next)
+	    {
+	      if (p->info != v)
 		{
-		  dpm_version ver = ss_ref (reverse, i);
-		  dpm_relations rels = dpm_ver_relations (ver);
-		  
-		  if (ver != candidate
-		      && has_target (dpm_rels_provides (rels), target))
-		    {
-		      add_version_and_related (dpm_ver_package (ver), 1);
-		      dpm_ws_start_conflict ();
-		      dpm_ws_add_conflict (pkg, candidate);
-		      dpm_ws_add_conflict (dpm_ver_package (ver), ver);
-		    }
+		  start_conflict (ws);
+		  add_conflict (ws, v);
+		  add_conflict (ws, p->info);
 		}
 	    }
 	}
     }
-}
-
-static void
-add_version_and_related (dpm_package pkg, int optional)
-{
-  dpm_ws ws = dyn_get (cur_ws);
-
-  pkg_info *p = get_pkg_info (ws, pkg);
-  
-  if (p->pkg)
-    return;
-
-  if (optional)
-    dpm_ws_add_candidate (pkg, NULL);
-      
-  // dyn_print ("Adding %r %d\n", dpm_pkg_name (pkg), optional);
-
-  dpm_version candidate = dpm_db_candidate (pkg);
-
-  if (candidate)
-    {
-      if (dpm_ws_add_candidate (pkg, candidate))
-	{
-	  // For each Pre-Depends or Depends, we add a conflict set with our
-	  // candidate and the null candidate of the target of each
-	  // alternative.
-	  
-	  // For each Conflicts, we add a conflict set with our
-	  // candidate and the candidate of the target package.
-	  
-	  dpm_relations rels = dpm_ver_relations (candidate);
-	  add_conflicts_for_depends (pkg, candidate,
-				     dpm_rels_pre_depends (rels),
-				     optional);
-	  add_conflicts_for_depends (pkg, candidate,
-				     dpm_rels_depends (rels),
-				     optional);
-	  add_conflicts_for_conflicts (pkg, candidate,
-				       dpm_rels_conflicts (rels));
-	}
-    }
   else
     {
-      // Probably a virtual package.  Make it depend on the package
-      // versions that provide it, as alternatives.  We also fake a
-      // candidate for us.
-      
-      candidate = (void *)-1;
-
-      int n_providers = 0;
-      dpm_package providers[512];
-      
-      ss_val reverse = dpm_db_reverse_relations (pkg);
-      if (reverse)
+      for (ver_node *c = t->candidates; c; c = c->next)
 	{
-	  for (int i = 0; i < ss_len(reverse); i++)
+	  if (satisfies (c->info, conf, 0))
 	    {
-	      dpm_version ver = ss_ref (reverse, i);
-	      dpm_package p = dpm_ver_package (ver);
-	      dpm_relations rels = dpm_ver_relations (ver);
-	      
-	      if (has_target (dpm_rels_provides (rels), pkg))
-		providers[n_providers++] = p;
+	      start_conflict (ws);
+	      add_conflict (ws, v);
+	      add_conflict (ws, c->info);
 	    }
 	}
+    }
+}
 
-      if (n_providers > 0
-	  && dpm_ws_add_candidate (pkg, candidate))
+// Setup conflict sets for reverse dependencies.
+//
+// This will force packages that are optional to be not-installed if
+// nobody depends on them.  The main purpose for this is to reduce the
+// search space so that we will fail faster when there is no solution.
+//
+static void
+setup_reverse_depends_conflicts (dpm_ws ws, ver_info *v)
+{
+  // XXX - do this, or make the search smarter.
+}
+
+// Setup conflict sets for a candidate
+//
+static void
+setup_candidate_conflicts (dpm_ws ws, ver_info *v)
+{
+  if (v->ver == (dpm_version)-1)
+    {
+      // Virtual package.  Create conflict sets appropriate for a
+      // alternative dependency on all providers.
+
+      // XXX - think harder about this.
+
+#ifdef DEBUG
+      dyn_print ("VIRT %r\n", dpm_pkg_name (v->package->pkg));
+#endif
+
+      start_conflict (ws);
+      add_conflict (ws, v);
+      for (ver_node *p = v->package->providers; p; p = p->next)
 	{
-	  for (int i = 0; i < n_providers; i++)
-	    add_version_and_related (providers[i],
-				     optional || (n_providers > 1));
-	  
-	  dpm_ws_start_conflict ();
-	  dpm_ws_add_conflict (pkg, candidate);
-	  for (int i = 0; i < n_providers; i++)
-	    dpm_ws_add_conflict (providers[i], NULL);
+	  for (ver_node *n = p->info->package->candidates; n; n = n->next)
+	    if (n->info->ver == NULL)
+	      {
+		add_conflict (ws, n->info);
+		break;
+	      }
 	}
     }
+  else if (v->ver)
+    {
+      void depends (dpm_relation dep)
+      {
+	setup_depends_conflicts (ws, v, dep);
+      }
+      
+      void conflicts (dpm_relation conf)
+      {
+	setup_conflicts_conflicts (ws, v, conf);
+      }
+
+      dpm_relations rels = dpm_ver_relations (v->ver);
+      do_rels (dpm_rels_pre_depends (rels), depends);
+      do_rels (dpm_rels_depends (rels), depends);
+      do_rels (dpm_rels_conflicts (rels), conflicts);
+      setup_reverse_depends_conflicts (ws, v);
+    }
+}
+
+// Setup conflicts for all candidates of all packages
+//
+static void
+setup_all_conflicts (dpm_ws ws)
+{
+  for (pkg_info *p = ws->head; p; p = p->next)
+    for (ver_node *n = p->candidates; n; n = n->next)
+      setup_candidate_conflicts (ws, n->info);
 }
 
 void
-dpm_ws_install (dpm_package pkg)
+dpm_ws_mark_install (dpm_package pkg)
 {
-  add_version_and_related (pkg, 0);
+  dpm_ws ws = dyn_get (cur_ws);
+  setup_candidates (ws, get_pkg_info (ws, pkg), 0, 1);
+}
+
+void
+dpm_ws_setup_finish ()
+{
+  dpm_ws ws = dyn_get (cur_ws);
+  setup_all_candidates (ws, 1);
+  setup_all_candidates (ws, 0);
+  setup_all_conflicts (ws);
+  // XXX - create conflicts to force installation of mandatory
+  // candidates (the one added by dpm_ws_install above).
 }
 
 static const char *opname[] = {
   [DPM_ANY] = "any",
   [DPM_EQ] = "=",
-  [DPM_LESS] = "<<",
+  [DPM_LESS] = "<",
   [DPM_LESSEQ] = "<=",
-  [DPM_GREATER] = ">>",
+  [DPM_GREATER] = ">",
   [DPM_GREATEREQ] = ">="
 };
 
@@ -662,6 +907,14 @@ show_relation (ss_val rel)
       if (op != DPM_ANY)
 	dyn_print (" (%s %r)", opname[op], dpm_rel_version (rel, i));
     }
+}
+
+static void
+log_rel (const char *msg, dpm_relation rel)
+{
+  dyn_print ("%s ", msg);
+  show_relation (rel);
+  dyn_print ("\n");
 }
 
 static void
@@ -726,7 +979,7 @@ check_broken (dpm_ws ws, ss_val rels, int conflict)
 }
 
 void
-report (dpm_ws ws, const char *title)
+report (dpm_ws ws, const char *title, int verbose)
 {
   dyn_print ("\n%s:\n", title);
   for (pkg_info *p = ws->head; p; p = p->next)
@@ -749,7 +1002,7 @@ report (dpm_ws ws, const char *title)
 	    } 
 	  else if (ver == (void *)-1)
 	    dyn_print ("%r virtual\n", dpm_pkg_name (p->pkg));
-	  else
+	  else if (verbose)
 	    dyn_print ("%r not installed\n", dpm_pkg_name (p->pkg));
 	}
       else
@@ -770,6 +1023,49 @@ dpm_ws_report (const char *title)
 {
   dpm_ws ws = dyn_get (cur_ws);
 
-  report (ws, title);
+  report (ws, title, 0);
 }
 
+/* Doing it.
+ */
+
+void
+dpm_ws_import ()
+{
+  dpm_ws ws = dyn_get (cur_ws);
+
+  void import (dpm_package pkg, void *unused)
+  {
+    pkg_info *p = get_pkg_info (ws, pkg);
+    dpm_version inst = dpm_db_installed (pkg);
+    if (inst)
+      p->selected = add_candidate (ws, p, inst, 0);
+  }
+
+  dpm_db_foreach_package (import, NULL);
+}
+
+void
+dpm_ws_realize ()
+{
+  dpm_ws ws = dyn_get (cur_ws);
+
+  for (pkg_info *p = ws->head; p; p = p->next)
+    {
+      ver_info *v = p->selected;
+
+      if (v->ver != (dpm_version)-1)
+	{
+	  dpm_version old = dpm_db_installed (p->pkg);
+	  if (v->ver != old)
+	    {
+	      if (v->ver == NULL)
+		dpm_remove (p->pkg);
+	      else
+		dpm_install (v->ver);
+	    }
+	}
+    }
+
+  dpm_db_checkpoint ();
+}
