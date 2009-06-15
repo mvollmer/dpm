@@ -66,6 +66,7 @@ struct pkg_info {
   pkg_info *next;
   ver_node *providers;
   ver_node *candidates;
+  int free_count;
   ver_info *selected;
 };
 
@@ -318,13 +319,14 @@ update_conflict (cfl_info *conflict)
 	  if (v->package->selected != v)
 	    {
 	      v->forbidden_count += 1;
-#ifdef DEBUG
 	      if (v->forbidden_count == 1)
 		{
+		  v->package->free_count -= 1;
+#ifdef DEBUG
 		  dyn_print ("< %r ", dpm_pkg_name (v->package->pkg));
 		  show_ver ("", v);
-		}
 #endif
+		}
 	      break;
 	    }
 	}
@@ -355,13 +357,14 @@ downdate_conflict (cfl_info *conflict)
 	  if (v->package->selected != v)
 	    {
 	      v->forbidden_count -= 1;
-#ifdef DEBUG
 	      if (v->forbidden_count == 0)
 		{
+		  v->package->free_count += 1;
+#ifdef DEBUG
 		  dyn_print ("> %r ", dpm_pkg_name (v->package->pkg));
 		  show_ver ("", v);
-		}
 #endif
+		}
 	      break;
 	    }
 	}
@@ -383,23 +386,18 @@ static void report (dpm_ws ws, const char *title, int verbose);
 static pkg_info *
 find_best_branch_point (dpm_ws ws)
 {
-  int n_candidates;
   pkg_info *best = NULL;
+  int best_free_count;
 
   for (pkg_info *p = ws->head; p; p = p->next)
     {
       if (p->selected == NULL)
 	{
-	  int n = 0;
-	  for (ver_node *c = p->candidates; c; c = c->next)
-	    if (c->info->forbidden_count == 0)
-	      n++;
-	  
-	  if (best == NULL || n < n_candidates)
+	  if (best == NULL || p->free_count < best_free_count)
 	    {
 	      best = p;
-	      n_candidates = n;
-	      if (n_candidates == 0)
+	      best_free_count = p->free_count;
+	      if (best_free_count == 0)
 		break;
 	    }
 	}
@@ -454,8 +452,7 @@ search (dpm_ws ws)
 	{
 	  dyn_print ("No candidate for %r\n",
 		     dpm_pkg_name (p->pkg));
-#ifdef DEBUG
-	  for (ver_node *n = first->candidates; n; n = n->next)
+	  for (ver_node *n = p->candidates; n; n = n->next)
 	    {
 	      show_ver_info (n->info);
 	      dyn_print (" forbidden %d times by\n", n->info->forbidden_count);
@@ -463,8 +460,6 @@ search (dpm_ws ws)
 		if (m->info->unselected_count == 1)
 		  show_conflict (" ", m->info);
 	    }
-	  dyn_print ("===\n");
-#endif
 	}
     }
 }
@@ -507,6 +502,7 @@ add_candidate (dpm_ws ws, pkg_info *p, dpm_version ver, int append)
     while (*np)
       np = &(*np)->next;
   add_ver (ws, np, v);
+  p->free_count += 1;
 
   ws->n_candidates++;
 
@@ -548,11 +544,14 @@ end_conflict (dpm_ws ws)
 {
   if (ws->conflict->unselected_count == 1)
     {
+      ver_info *v = ws->conflict->versions->info;
 #ifdef DEBUG
       dyn_print ("UNICONF %r\n",
 		 dpm_pkg_name (ws->conflict->versions->info->package->pkg));
 #endif
-      ws->conflict->versions->info->forbidden_count += 1;
+      v->forbidden_count += 1;
+      if (v->forbidden_count == 1)
+	v->package->free_count -= 1;
     }
 }
 
