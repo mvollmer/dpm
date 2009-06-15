@@ -1279,7 +1279,6 @@ ss_remove_many (ss_store ss, ss_val obj, int index, int n)
 
   if (ss == NULL && obj_is_unstored)
     {
-      fprintf (stderr, "doing it\n");
       int len = ss_len (obj);
       SS_SET_HEADER (obj, SS_TAG (obj), len - n);
       uint32_t *elts = ((uint32_t *)obj)+1;
