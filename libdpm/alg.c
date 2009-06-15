@@ -361,10 +361,40 @@ downdate_conflicts (cfl_node *conflicts)
 
 static void report (dpm_ws ws, const char *title, int verbose);
 
-static void
-search (dpm_ws ws, pkg_info *first)
+static pkg_info *
+find_best_branch_point (dpm_ws ws)
 {
-  if (first == NULL)
+  int n_candidates;
+  pkg_info *best = NULL;
+
+  for (pkg_info *p = ws->head; p; p = p->next)
+    {
+      if (p->selected == NULL)
+	{
+	  int n = 0;
+	  for (ver_node *c = p->candidates; c; c = c->next)
+	    if (c->info->forbidden_count == 0)
+	      n++;
+	  
+	  if (best == NULL || n < n_candidates)
+	    {
+	      best = p;
+	      n_candidates = n;
+	      if (n_candidates == 0)
+		break;
+	    }
+	}
+    }
+
+  return best;
+}
+
+static void
+search (dpm_ws ws)
+{
+  pkg_info *p = find_best_branch_point (ws);
+
+  if (p == NULL)
     {
       // Found a solution.
       longjmp (ws->search_done, 1);
@@ -375,12 +405,12 @@ search (dpm_ws ws, pkg_info *first)
 
 #ifdef DEBUG
       int n_choices = 0, choice = 0;
-      for (ver_node *n = first->candidates; n; n = n->next)
+      for (ver_node *n = p->candidates; n; n = n->next)
 	if (n->info->forbidden_count == 0)
 	  n_choices++;
 #endif
 
-      for (ver_node *n = first->candidates; n; n = n->next)
+      for (ver_node *n = p->candidates; n; n = n->next)
 	{
 	  ver_info *v = n->info;
 	  if (v->forbidden_count == 0)
@@ -388,32 +418,34 @@ search (dpm_ws ws, pkg_info *first)
 	      found_some = 1;
 
 #ifdef DEBUG
-	      dyn_print ("%r = ", dpm_pkg_name (first->pkg));
+	      dyn_print ("%r = ", dpm_pkg_name (p->pkg));
 	      show_ver_info (v);
 	      dyn_print (" (%d of %d)\n", choice+1, n_choices);
 	      choice++;
 #endif
 
-	      first->selected = v;
+	      p->selected = v;
 	      update_conflicts (v->conflicts);
-	      search (ws, first->next);
+	      search (ws);
 	      downdate_conflicts (v->conflicts);
 	    }
 	}
-      first->selected = NULL;
+      p->selected = NULL;
       if (!found_some)
 	{
-	  dyn_print ("===\nNo candidate for %r\n",
-		     dpm_pkg_name (first->pkg));
+	  dyn_print ("No candidate for %r\n",
+		     dpm_pkg_name (p->pkg));
+#ifdef DEBUG
 	  for (ver_node *n = first->candidates; n; n = n->next)
 	    {
 	      show_ver_info (n->info);
-	      dyn_print (" forbidden by\n");
+	      dyn_print (" forbidden %d times by\n", n->info->forbidden_count);
 	      for (cfl_node *m = n->info->conflicts; m; m = m->next)
 		if (m->info->unselected_count == 1)
 		  show_conflict (" ", m->info);
 	    }
 	  dyn_print ("===\n");
+#endif
 	}
     }
 }
@@ -513,7 +545,7 @@ dpm_ws_search ()
 #endif
       return 1;
     }
-  search (ws, ws->head);
+  search (ws);
   return 0;
 }
 
