@@ -328,7 +328,7 @@ downdate_conflict (cfl_info *conflict)
   // show_conflict ("- ", conflict);
 
   conflict->unselected_count += 1;
-  if (conflict->unselected_count > 1)
+  if (conflict->unselected_count == 2)
     {
       for (ver_node *n = conflict->versions; n; n = n->next)
 	{
