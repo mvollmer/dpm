@@ -626,6 +626,10 @@ satisfies (ver_info *v, int op, ss_val version)
 static void
 setup_target_candidates (dpm_ws ws, dpm_relation dep, int for_conflict)
 {
+  // XXX - We should do this in reverse, so that the first alternative
+  //       comes last, which means that it is the least desirable to
+  //       not install.  (You may want to read that again.)
+
   void target (pkg_info *p, int op, ss_val version)
   {
     setup_candidates (ws, p);
