@@ -32,7 +32,7 @@
 	   A (= 2) | A (= 3).
 */
 
-/* #define DEBUG */
+//#define DEBUG
 
 static void log_rel (const char *msg, dpm_relation rel);
 
@@ -492,6 +492,13 @@ add_conflict (dpm_ws ws, ver_info *v)
   add_cfl (ws, &(v->conflicts), c);
 }
 
+static void
+end_conflict (dpm_ws ws)
+{
+  if (ws->conflict->unselected_count == 1)
+    ws->conflict->versions->info->forbidden_count += 1;
+}
+
 int
 dpm_ws_search ()
 {
@@ -501,7 +508,7 @@ dpm_ws_search ()
 #endif
   if (setjmp (ws->search_done))
     {
-#if DEBUG
+#ifdef DEBUG
       report (ws, "Solution", 1);
 #endif
       return 1;
@@ -514,14 +521,33 @@ dpm_ws_search ()
 
  */
 
-// Setup the candidates of PKG.  If OPTIONAL is true, the installed
-// version is also made a candidate.  In that case, PREFERRED
-// determines whether upgrading or new installation is preferred over
-// the status quo.
+// Setup the candidates of PKG.  There will be upto three candidates:
+// the highest version that is available, the version that is
+// currently installed, and the null version.
+//
+// The candidates are ordered from best to worst, as required by the
+// search algorithm.  This order is determined by a global policy
+// settings together with some information about the package, such as
+// whether the package has been selected manually.
+//
+// A typical policy would be to treat removal as the best option,
+// except for manually selected packages.  For those, another global
+// policy setting would determine whether upgrading is better than the
+// status quo.
+//
+// In any case, the candidate order is not determined by the
+// relationships that the package appears in.
+//
+// For now, we use the simple policy that the status quo is best, and
+// that upgrading is better than removal.
 //
 static void
-setup_candidates (dpm_ws ws, pkg_info *p, int optional, int preferred)
+setup_candidates (dpm_ws ws, pkg_info *p)
 {
+  if (p->candidates)
+    return;
+
+  dpm_version installed = dpm_db_installed (p->pkg);
   dpm_version candidate = dpm_db_candidate (p->pkg);
   
   if (candidate == NULL)
@@ -532,18 +558,9 @@ setup_candidates (dpm_ws ws, pkg_info *p, int optional, int preferred)
 	return;
     }
 
-  add_candidate (ws, p, candidate, !preferred);
-  if (optional)
-    add_candidate (ws, p, dpm_db_installed (p->pkg), preferred);
-}
-
-// Add the null-version to the candidates of PKG.  This doesn't add a
-// real candidate.
-//
-static void
-setup_as_optional (dpm_ws ws, dpm_package pkg)
-{
-  pkg_info *p = get_pkg_info (ws, pkg);
+  add_candidate (ws, p, installed, 0);
+  if (candidate)
+    add_candidate (ws, p, candidate, 1);
   add_candidate (ws, p, NULL, 1);
 }
 
@@ -599,17 +616,8 @@ is_always_installed (dpm_ws ws, dpm_package pkg)
 // not handled.
 //
 static void
-setup_depends_candidates (dpm_ws ws, dpm_relation dep,
-			  int optional, int only_forced)
+setup_depends_candidates (dpm_ws ws, dpm_relation dep)
 {
-  if (ss_len (dep) > 3 && only_forced)
-    {
-#ifdef DEBUG
-      log_rel ("SKIPPING", dep);
-#endif
-      return;
-    }
-
   for (int i = 0; i < ss_len (dep); i += 3)
     if (is_always_satisfied (ws, dep, i))
       {
@@ -619,11 +627,8 @@ setup_depends_candidates (dpm_ws ws, dpm_relation dep,
 	return;
       }
 
-  if (ss_len (dep) > 3)
-    optional = 1;
-
   for (int i = 0; i < ss_len (dep); i += 3)
-    setup_candidates (ws, get_pkg_info (ws, dpm_rel_package (dep, i)), optional, i == 0);
+    setup_candidates (ws, get_pkg_info (ws, dpm_rel_package (dep, i)));
 }
 
 // Setup candidates that might be needed to satisfy the conflict CONF.
@@ -631,41 +636,43 @@ setup_depends_candidates (dpm_ws ws, dpm_relation dep,
 static void
 setup_conflict_candidates (dpm_ws ws, dpm_relation conf)
 {
-  if (is_always_satisfied (ws, conf, 0))
-    {
 #ifdef DEBUG
-      log_rel ("CONFLICT", conf);
+  log_rel ("CONFLICT", conf);
 #endif
-      setup_as_optional (ws, dpm_rel_package (conf, 0));
+
+  dpm_package target = dpm_rel_package (conf, 0);
+  pkg_info *t = get_pkg_info (ws, target);
+
+  if (t->providers)
+    {
+      if (dpm_rel_op (conf, 0) == DPM_ANY)
+	for (ver_node *n = t->providers; n; n = n->next)
+	  setup_candidates (ws, n->info->package);
     }
+  else if (t->candidates == NULL
+	   || is_always_satisfied (ws, conf, 0))
+    setup_candidates (ws, t);
 }
 
 static void
-setup_candidate_relations (dpm_ws ws, ver_info *v,
-			   int optional, int only_forced)
+setup_candidate_relations (dpm_ws ws, ver_info *v)
 {
   if (v->ver == (dpm_version)-1)
     {
       pkg_info *p = v->package;
 
-      if (only_forced && p->providers->next != NULL)
-	return;
-      
       for (ver_node *n = p->providers; n; n = n->next)
 	if (is_always_installed (ws, n->info->package->pkg))
 	  return;
 
-      if (p->providers->next)
-	optional = 1;
-
       for (ver_node *n = p->providers; n; n = n->next)
-	setup_candidates (ws, n->info->package, optional, n == p->providers);
+	setup_candidates (ws, n->info->package);
     }
   else
     {
       void depends (dpm_relation dep)
       {
-	setup_depends_candidates (ws, dep, optional, only_forced);
+	setup_depends_candidates (ws, dep);
       }
       
       void conflicts (dpm_relation conf)
@@ -676,13 +683,12 @@ setup_candidate_relations (dpm_ws ws, ver_info *v,
       dpm_relations rels = dpm_ver_relations (v->ver);
       do_rels (dpm_rels_pre_depends (rels), depends);
       do_rels (dpm_rels_depends (rels), depends);
-      if (!only_forced)
-	do_rels (dpm_rels_conflicts (rels), conflicts);
+      do_rels (dpm_rels_conflicts (rels), conflicts);
     }
 }
 
 static void
-setup_all_candidates (dpm_ws ws, int only_forced)
+setup_all_candidates (dpm_ws ws)
 {
   int old_n_candidates;
 
@@ -691,18 +697,10 @@ setup_all_candidates (dpm_ws ws, int only_forced)
 
     for (pkg_info *p = ws->head; p; p = p->next)
       {
-	int optional = 0;
-	for (ver_node *n = p->candidates; n; n = n->next)
-	  if (n->info->ver == NULL)
-	    {
-	      optional = 1;
-	      break;
-	    }
-	
 	for (ver_node *n = p->candidates; n; n = n->next)
 	  {
 	    if (n->info->ver)
-	      setup_candidate_relations (ws, n->info, optional, only_forced);
+	      setup_candidate_relations (ws, n->info);
 	  }
       }
   } while (ws->n_candidates > old_n_candidates);
@@ -741,6 +739,7 @@ setup_depends_conflicts (dpm_ws ws, ver_info *v, dpm_relation dep)
 	add_conflict (ws, v);
 	for (int j = 0; j < n; j++)
 	  add_conflict (ws, cands[j]);
+	end_conflict (ws);
       }
   }
   
@@ -780,6 +779,7 @@ setup_conflicts_conflicts (dpm_ws ws, ver_info *v, dpm_relation conf)
 		  start_conflict (ws);
 		  add_conflict (ws, v);
 		  add_conflict (ws, p->info);
+		  end_conflict (ws);
 		}
 	    }
 	}
@@ -793,21 +793,10 @@ setup_conflicts_conflicts (dpm_ws ws, ver_info *v, dpm_relation conf)
 	      start_conflict (ws);
 	      add_conflict (ws, v);
 	      add_conflict (ws, c->info);
+	      end_conflict (ws);
 	    }
 	}
     }
-}
-
-// Setup conflict sets for reverse dependencies.
-//
-// This will force packages that are optional to be not-installed if
-// nobody depends on them.  The main purpose for this is to reduce the
-// search space so that we will fail faster when there is no solution.
-//
-static void
-setup_reverse_depends_conflicts (dpm_ws ws, ver_info *v)
-{
-  // XXX - do this, or make the search smarter.
 }
 
 // Setup conflict sets for a candidate
@@ -837,6 +826,7 @@ setup_candidate_conflicts (dpm_ws ws, ver_info *v)
 		break;
 	      }
 	}
+      end_conflict (ws);
     }
   else if (v->ver)
     {
@@ -854,7 +844,6 @@ setup_candidate_conflicts (dpm_ws ws, ver_info *v)
       do_rels (dpm_rels_pre_depends (rels), depends);
       do_rels (dpm_rels_depends (rels), depends);
       do_rels (dpm_rels_conflicts (rels), conflicts);
-      setup_reverse_depends_conflicts (ws, v);
     }
 }
 
@@ -872,18 +861,25 @@ void
 dpm_ws_mark_install (dpm_package pkg)
 {
   dpm_ws ws = dyn_get (cur_ws);
-  setup_candidates (ws, get_pkg_info (ws, pkg), 0, 1);
+  pkg_info *p = get_pkg_info (ws, pkg);
+  setup_candidates (ws, p);
+  
+  ver_info *n = add_candidate (ws, p, NULL, 1);
+  start_conflict (ws);
+  add_conflict (ws, n);
+  end_conflict (ws);
 }
 
 void
 dpm_ws_setup_finish ()
 {
   dpm_ws ws = dyn_get (cur_ws);
-  setup_all_candidates (ws, 1);
-  setup_all_candidates (ws, 0);
+  setup_all_candidates (ws);
   setup_all_conflicts (ws);
-  // XXX - create conflicts to force installation of mandatory
-  // candidates (the one added by dpm_ws_install above).
+
+#ifdef DEBUG
+  report (ws, "Setup", 1);
+#endif
 }
 
 static const char *opname[] = {
