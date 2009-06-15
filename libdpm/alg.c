@@ -1046,7 +1046,7 @@ dpm_ws_import ()
 }
 
 void
-dpm_ws_realize ()
+dpm_ws_realize (int simulate)
 {
   dpm_ws ws = dyn_get (cur_ws);
 
@@ -1066,6 +1066,7 @@ dpm_ws_realize ()
 	    }
 	}
     }
-
-  dpm_db_checkpoint ();
+  
+  if (!simulate)
+    dpm_db_checkpoint ();
 }

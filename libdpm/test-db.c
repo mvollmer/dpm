@@ -288,7 +288,7 @@ list_reverse_relations (const char *package)
 }
 
 void
-fun (char **argv)
+fun (char **argv, int simulate)
 {
   dyn_begin ();
 
@@ -307,7 +307,7 @@ fun (char **argv)
   dpm_ws_setup_finish ();
   // dpm_ws_report ("Setup");
   if (dpm_ws_search ())
-    dpm_ws_realize ();
+    dpm_ws_realize (simulate);
 
   dpm_db_done ();
   dyn_end ();
@@ -400,7 +400,7 @@ fix ()
   dpm_ws_import ();
   dpm_ws_setup_finish ();
   if (dpm_ws_search ())
-    dpm_ws_realize ();
+    dpm_ws_realize (0);
 
   dpm_db_done ();
   dyn_end ();  
@@ -432,7 +432,9 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "reverse") == 0)
     list_reverse_relations (argv[2]);
   else if (strcmp (argv[1], "fun") == 0)
-    fun (argv+2);
+    fun (argv+2, 1);
+  else if (strcmp (argv[1], "real-fun") == 0)
+    fun (argv+2, 0);
   else if (strcmp (argv[1], "raw-install") == 0)
     raw_install (argv+2);
   else if (strcmp (argv[1], "raw-remove") == 0)

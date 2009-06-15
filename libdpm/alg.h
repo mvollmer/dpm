@@ -109,6 +109,6 @@ int  dpm_ws_search ();
 void dpm_ws_report (const char *title);
 
 void dpm_ws_import ();
-void dpm_ws_realize ();
+void dpm_ws_realize (int simulate);
 
 #endif /* !DPM_ALG_H */
