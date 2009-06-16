@@ -119,47 +119,46 @@ info (const char *package)
     }
 }
 
-static void
-search_package (dpm_package pkg, void *data)
-{
-  const char *pattern = data;
-  int pattern_len = strlen (pattern);
-
-  ss_val versions = dpm_db_available (pkg);
-
-  if (memmem (ss_blob_start (pkg), ss_len (pkg), pattern, pattern_len))
-    goto found;
-
-  if (versions)
-    for (int i = 0; i < ss_len (versions); i++)
-      {
-	dpm_version ver = ss_ref (versions, i);
-	ss_val desc = dpm_db_version_get (ver, "Description");
-	if (desc &&
-	    memmem (ss_blob_start (desc), ss_len (desc),
-		    pattern, pattern_len))
-	  goto found;
-      }
-  
-  return;
-
- found:
-  {
-    ss_val desc = NULL;
-    if (versions && ss_len (versions) > 0)
-      desc = dpm_ver_shortdesc (ss_ref (versions, 0));
-    
-    dyn_print ("%r - %r\n", dpm_pkg_name (pkg), desc);
-  }
-}
 
 void
 search (const char *pattern)
 {
+  int pattern_len = strlen (pattern);
+
+  void package (dpm_package pkg)
+  {
+    ss_val versions = dpm_db_available (pkg);
+
+    if (memmem (ss_blob_start (pkg), ss_len (pkg), pattern, pattern_len))
+      goto found;
+
+    if (versions)
+      for (int i = 0; i < ss_len (versions); i++)
+	{
+	  dpm_version ver = ss_ref (versions, i);
+	  ss_val desc = dpm_db_version_get (ver, "Description");
+	  if (desc &&
+	      memmem (ss_blob_start (desc), ss_len (desc),
+		      pattern, pattern_len))
+	    goto found;
+	}
+    
+    return;
+    
+  found:
+    {
+      ss_val desc = NULL;
+      if (versions && ss_len (versions) > 0)
+	desc = dpm_ver_shortdesc (ss_ref (versions, 0));
+      
+      dyn_print ("%r - %r\n", dpm_pkg_name (pkg), desc);
+    }
+  }
+
   if (pattern)
     {
       dpm_db_open ();
-      dpm_db_foreach_package (search_package, (void *)pattern);
+      dpm_db_foreach_package (package);
       dpm_db_done ();
     }
 }
@@ -364,12 +363,12 @@ remove_all ()
   dyn_begin ();
   dpm_db_open ();
 
-  void remove (dpm_package pkg, void *unused)
+  void remove (dpm_package pkg)
   {
     if (dpm_db_installed (pkg))
       dpm_remove (pkg);
   }
-  dpm_db_foreach_package (remove, NULL);
+  dpm_db_foreach_package (remove);
 
   dpm_db_checkpoint ();  
   dpm_db_done ();
@@ -404,6 +403,34 @@ fix ()
 
   dpm_db_done ();
   dyn_end ();  
+}
+
+static void
+install_base ()
+{
+  dyn_begin ();
+  dpm_db_open ();
+  dpm_ws_create ();
+
+  void package (dpm_package pkg)
+  {
+    dpm_version ver = dpm_db_candidate (pkg);
+    if (ver)
+      {
+	if (ss_streq (dpm_db_version_get (ver, "Priority"), "required")
+	    || ss_streq (dpm_db_version_get (ver, "Priority"), "important"))
+	  dpm_ws_mark_install (pkg);
+      }
+  }
+
+  dpm_db_foreach_package (package);
+
+  dpm_ws_setup_finish ();
+  if (dpm_ws_search ())
+    dpm_ws_realize (0);
+
+  dpm_db_done ();
+  dyn_end ();    
 }
 
 int
@@ -445,6 +472,8 @@ main (int argc, char **argv)
     check ();
   else if (strcmp (argv[1], "fix") == 0)
     fix ();
+  else if (strcmp (argv[1], "install-base") == 0)
+    install_base ();
   else
     usage ();
 

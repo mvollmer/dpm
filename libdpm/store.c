@@ -2228,10 +2228,11 @@ ss_ref_safely (ss_val obj, int i)
 int
 ss_streq (ss_val obj, const char *str)
 {
+  int len = strlen (str);
   return (obj
 	  && ss_is_blob (obj)
-	  && ss_len (obj) == strlen (str)
-	  && strcmp (ss_blob_start (obj), str) == 0);
+	  && ss_len (obj) == len
+	  && memcmp (ss_blob_start (obj), str, len) == 0);
 }
 
 /* Debugging

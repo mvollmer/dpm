@@ -970,8 +970,7 @@ dpm_db_maybe_full_update (dyn_val srcs, dyn_val dists,
  */
 
 typedef struct {
-  void (*func) (dpm_package pkg, void *data);
-  void *data;
+  void (*func) (dpm_package pkg);
 } foreach_package_data;
 
 static void
@@ -980,18 +979,16 @@ foreach_available_package (ss_val key, ss_val val, void *data)
   foreach_package_data *d = data;
 
   if (val)
-    d->func (key, d->data);
+    d->func (key);
 }
 
 void
-dpm_db_foreach_package (void (*func) (dpm_package pkg, void *data),
-			void *data)
+dpm_db_foreach_package (void (*func) (dpm_package pkg))
 {
   dpm_db db = dyn_get (cur_db);
   foreach_package_data d;
 
   d.func = func;
-  d.data = data;
   ss_dict_foreach (db->available, foreach_available_package, &d);
 }
 

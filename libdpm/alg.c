@@ -189,7 +189,12 @@ static void
 do_targets (dpm_ws ws, dpm_relation rel, int for_conflict,
 	    void (*func) (pkg_info *p, int op, ss_val version))
 {
-  for (int i = 0; i < ss_len (rel); i += 3)
+  // XXX - We do this in reverse, so that the first alternative
+  //       comes last, which means that it is the least desirable to
+  //       not install.  (You may want to read that again.)  THis is 
+  //       too obscure.
+
+  for (int i = ss_len (rel) - 3; i >= 0; i -= 3)
     {
       dpm_package target = dpm_rel_package (rel, i);
       pkg_info *t = get_pkg_info (ws, target);
@@ -527,7 +532,10 @@ static void
 add_conflict (dpm_ws ws, ver_info *v)
 {
   cfl_info *c = ws->conflict;
-  c->unselected_count += 1;
+
+  for (ver_node *n = c->versions; n; n = n->next)
+    if (n->info == v)
+      return;
 
 #ifdef DEBUG
   dyn_print ("%r ", dpm_pkg_name (v->package->pkg));
@@ -535,6 +543,7 @@ add_conflict (dpm_ws ws, ver_info *v)
   dyn_print ("\n");
 #endif
 
+  c->unselected_count += 1;
   add_ver (ws, &(c->versions), v);
   add_cfl (ws, &(v->conflicts), c);
 }
@@ -626,10 +635,6 @@ satisfies (ver_info *v, int op, ss_val version)
 static void
 setup_target_candidates (dpm_ws ws, dpm_relation dep, int for_conflict)
 {
-  // XXX - We should do this in reverse, so that the first alternative
-  //       comes last, which means that it is the least desirable to
-  //       not install.  (You may want to read that again.)
-
   void target (pkg_info *p, int op, ss_val version)
   {
     setup_candidates (ws, p);
@@ -810,6 +815,9 @@ dpm_ws_setup_finish ()
   setup_all_candidates (ws);
   setup_all_conflicts (ws);
 
+  for (pkg_info *p = ws->head; p; p = p->next)
+    p->selected = NULL;
+
 #ifdef DEBUG
   report (ws, "Setup", 1);
 #endif
@@ -863,48 +871,20 @@ show_relations (const char *field, ss_val rels)
 }
 
 static int
-is_broken (dpm_ws ws, dpm_relation rel, int conflict)
+is_broken (dpm_ws ws, ver_info *v, dpm_relation rel, int conflict)
 {
-  for (int i = 0; i < ss_len(rel); i += 3)
-    {
-      dpm_package target = dpm_rel_package (rel, i);
-      pkg_info *p = get_pkg_info (ws, target);
-      if (p->selected)
-	{
-	  dpm_version ver = p->selected->ver;
-	  if (ver == (void *)-1)
-	    return conflict;
-	  else if (ver
-		   && dpm_db_check_versions (dpm_ver_version (ver),
-					     dpm_rel_op (rel, i),
-					     dpm_rel_version (rel, i)))
-	    return conflict;
-	}
-    }
-  
-  return !conflict;
-}
+  int is_satisfied = 0;
 
-static void
-check_broken (dpm_ws ws, ss_val rels, int conflict)
-{
-  // show_relations ("Checking", rels);
+  void target (pkg_info *p, int op, ss_val version)
+  {
+    if (p->selected
+	&& (p->selected->ver != v->ver || !conflict)
+	&& satisfies (p->selected, op, version))
+      is_satisfied = 1;
+  }
+  do_targets (ws, rel, conflict, target);
 
-  if (rels)
-    {
-      int len = ss_len (rels);
-      for (int i = 0; i < len; i++)
-	{
-	  dpm_relation rel = ss_ref (rels, i);
-	  if (is_broken (ws, rel, conflict))
-	    {
-	      dyn_print (" %s ",
-			 (conflict? "conflicts with" : "needs"));
-	      show_relation (rel);
-	      dyn_print ("\n");
-	    }
-	}
-    }
+  return conflict? is_satisfied : !is_satisfied;
 }
 
 void
@@ -917,20 +897,48 @@ report (dpm_ws ws, const char *title, int verbose)
 	{
 	  ver_info *v = p->selected;
 	  dpm_version ver = v->ver;
+	  int announced = 0;
 
-	  if (ver && ver != (void *)-1)
+	  void check_broken (ss_val rels, int conflict)
+	  {
+	    if (rels)
+	      {
+		int len = ss_len (rels);
+		for (int i = 0; i < len; i++)
+		  {
+		    dpm_relation rel = ss_ref (rels, i);
+		    if (is_broken (ws, v, rel, conflict))
+		      {
+			if (!announced)
+			  {
+			    dyn_print ("%r %r\n",
+				       dpm_pkg_name (dpm_ver_package (ver)),
+				       dpm_ver_version (ver));
+			    announced = 1;
+			  }
+			dyn_print (" %s ",
+				   (conflict? "conflicts with" : "needs"));
+			show_relation (rel);
+			dyn_print ("\n");
+		      }
+		  }
+	      }
+	  }
+
+	  if (ver)
 	    {
-	      dyn_print ("%r %r\n",
-			 dpm_pkg_name (dpm_ver_package (ver)),
-			 dpm_ver_version (ver));
-
+	      if (verbose)
+		{
+		  dyn_print ("%r %r\n",
+			     dpm_pkg_name (dpm_ver_package (ver)),
+			     dpm_ver_version (ver));
+		  announced = 1;
+		}
 	      dpm_relations rels = dpm_ver_relations (ver);
-	      check_broken (ws, dpm_rels_pre_depends (rels), 0);
-	      check_broken (ws, dpm_rels_depends (rels), 0);
-	      check_broken (ws, dpm_rels_conflicts (rels), 1);
-	    } 
-	  else if (ver == (void *)-1)
-	    dyn_print ("%r virtual\n", dpm_pkg_name (p->pkg));
+	      check_broken (dpm_rels_pre_depends (rels), 0);
+	      check_broken (dpm_rels_depends (rels), 0);
+	      check_broken (dpm_rels_conflicts (rels), 1);
+	    }
 	  else if (verbose)
 	    dyn_print ("%r not installed\n", dpm_pkg_name (p->pkg));
 	}
@@ -963,15 +971,18 @@ dpm_ws_import ()
 {
   dpm_ws ws = dyn_get (cur_ws);
 
-  void import (dpm_package pkg, void *unused)
+  void import (dpm_package pkg)
   {
-    pkg_info *p = get_pkg_info (ws, pkg);
     dpm_version inst = dpm_db_installed (pkg);
     if (inst)
-      p->selected = add_candidate (ws, p, inst, 0);
+      {
+	pkg_info *p = get_pkg_info (ws, pkg);
+	setup_candidates (ws, p);
+	p->selected = add_candidate (ws, p, inst, 0);
+      }
   }
 
-  dpm_db_foreach_package (import, NULL);
+  dpm_db_foreach_package (import);
 }
 
 void
