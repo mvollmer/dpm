@@ -24,6 +24,8 @@ DPM_CONF_DECLARE (sources, "sources",
 		  "(seq string ...)", "(foo)",
 		  "The sources.")
 
+const char *target_dist;
+
 void
 usage ()
 {
@@ -109,6 +111,14 @@ info (const char *package)
 		  }
 		else
 		  dyn_print (" %r", dpm_ver_version (ver));
+
+		void index (dpm_package_index idx)
+		{
+		  dpm_release_index release = dpm_pkgidx_release (idx);
+		  if (release)
+		    dyn_print (" (%r)", dpm_relidx_dist (release));
+		}
+		dpm_db_version_foreach_pkgindex (ver, index);
 	      }
 	  if (!installed_shown && installed)
 	    dyn_print (" [%r]", dpm_ver_version (installed));
@@ -293,6 +303,7 @@ fun (char **argv, int simulate)
 
   dpm_db_open ();
   dpm_ws_create ();
+  dpm_ws_target_dist (target_dist);
 
   for (int i = 0; argv[i]; i++)
     {
@@ -304,7 +315,32 @@ fun (char **argv, int simulate)
     }
 
   dpm_ws_setup_finish ();
-  // dpm_ws_report ("Setup");
+  if (dpm_ws_search ())
+    dpm_ws_realize (simulate);
+
+  dpm_db_done ();
+  dyn_end ();
+}
+
+void
+nuf (char **argv, int simulate)
+{
+  dyn_begin ();
+
+  dpm_db_open ();
+  dpm_ws_create ();
+  dpm_ws_target_dist (target_dist);
+
+  for (int i = 0; argv[i]; i++)
+    {
+      dpm_package pkg = dpm_db_find_package (argv[i]);
+      if (pkg)
+	dpm_ws_mark_remove (pkg);
+      else
+	dyn_print ("Package %s not found\n", argv[i]);
+    }
+
+  dpm_ws_setup_finish ();
   if (dpm_ws_search ())
     dpm_ws_realize (simulate);
 
@@ -381,6 +417,7 @@ check ()
   dyn_begin ();
   dpm_db_open ();
   dpm_ws_create ();
+  dpm_ws_target_dist (target_dist);
 
   dpm_ws_import ();
   dpm_ws_report ("Check");
@@ -395,6 +432,7 @@ fix ()
   dyn_begin ();
   dpm_db_open ();
   dpm_ws_create ();
+  dpm_ws_target_dist (target_dist);
 
   dpm_ws_import ();
   dpm_ws_setup_finish ();
@@ -411,6 +449,7 @@ install_base ()
   dyn_begin ();
   dpm_db_open ();
   dpm_ws_create ();
+  dpm_ws_target_dist (target_dist);
 
   void package (dpm_package pkg)
   {
@@ -442,6 +481,17 @@ main (int argc, char **argv)
   if (dyn_file_exists ("test-db.conf"))
     dpm_conf_parse ("test-db.conf");
 
+  while (1)
+    {
+      if (strcmp (argv[1], "-t") == 0)
+	{
+	  target_dist = argv[2];
+	  argv += 2;
+	}
+      else
+	break;
+    }
+
   if (strcmp (argv[1], "update") == 0)
     update (0);
   else if (strcmp (argv[1], "force-update") == 0)
@@ -462,6 +512,10 @@ main (int argc, char **argv)
     fun (argv+2, 1);
   else if (strcmp (argv[1], "real-fun") == 0)
     fun (argv+2, 0);
+  else if (strcmp (argv[1], "nuf") == 0)
+    nuf (argv+2, 1);
+  else if (strcmp (argv[1], "real-nuf") == 0)
+    nuf (argv+2, 0);
   else if (strcmp (argv[1], "raw-install") == 0)
     raw_install (argv+2);
   else if (strcmp (argv[1], "raw-remove") == 0)

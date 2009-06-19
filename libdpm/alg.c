@@ -26,7 +26,7 @@
 #include "dyn.h"
 #include "inst.h"
 
-// #define DEBUG
+#define DEBUG
 
 static void log_rel (const char *msg, dpm_relation rel);
 
@@ -63,6 +63,8 @@ struct ver_info {
 
 struct pkg_info {
   dpm_package pkg;
+  dpm_version available_candidate;
+
   pkg_info *next;
   ver_node *providers;
   ver_node *candidates;
@@ -77,7 +79,9 @@ struct cfl_info {
 
 struct dpm_ws_struct {
   struct obstack mem;
-  
+
+  const char *target_dist;
+
   int n_packages;
   pkg_info *pkg_info;
 
@@ -117,6 +121,8 @@ dpm_ws_create ()
 
   obstack_init (&ws->mem);
 
+  ws->target_dist = NULL;
+
   ws->n_packages = dpm_db_package_count ();
   ws->pkg_info = calloc (ws->n_packages, sizeof(pkg_info));
 
@@ -138,8 +144,55 @@ dpm_ws_current ()
   return dyn_get (cur_ws);
 }
 
+void
+dpm_ws_target_dist (const char *dist)
+{
+  dpm_ws ws = dpm_ws_current ();
+  ws->target_dist = dist;
+}
+
 /* Some iterators
  */
+
+static int
+is_in_dist (dpm_version ver, const char *dist)
+{
+  int found = 0;
+
+  void index (dpm_package_index idx)
+  {
+    dpm_release_index release = dpm_pkgidx_release (idx);
+    if (release && ss_streq (dpm_relidx_dist (release), dist))
+      found = 1;
+  }
+  dpm_db_version_foreach_pkgindex (ver, index);
+
+  return found;
+}
+
+static dpm_version
+get_candidate (dpm_ws ws, dpm_package pkg)
+{
+  dpm_version cand = NULL;
+  ss_val available = dpm_db_available (pkg);
+
+  if (available)
+    {
+      for (int i = 0; i < ss_len (available); i++)
+	{
+	  dpm_version ver = ss_ref (available, i);
+	  if (ws->target_dist && !is_in_dist (ver, ws->target_dist))
+	    continue;
+	  
+	  if (cand == NULL
+	      || dpm_db_compare_versions (dpm_ver_version (ver),
+					  dpm_ver_version (cand)) > 0)
+	    cand = ver;
+	}
+    }
+
+  return cand;
+}
 
 static int
 has_target (ss_val rels, dpm_package pkg)
@@ -251,9 +304,8 @@ get_pkg_info (dpm_ws ws, dpm_package pkg)
       p->next = NULL;
       p->providers = NULL;
 
-      // Get providers if there is no available real version for this
-      // package.
-      if (dpm_db_candidate (pkg) == NULL)
+      p->available_candidate = get_candidate (ws, pkg);
+      if (p->available_candidate == NULL)
 	{
 	  void provider (dpm_version prov)
 	  {
@@ -613,7 +665,7 @@ setup_candidates (dpm_ws ws, pkg_info *p)
     return;
 
   dpm_version installed = dpm_db_installed (p->pkg);
-  dpm_version candidate = dpm_db_candidate (p->pkg);
+  dpm_version candidate = p->available_candidate;
   
   add_candidate (ws, p, installed, 0);
   if (candidate)
@@ -630,6 +682,27 @@ satisfies (ver_info *v, int op, ss_val version)
 	  && dpm_db_check_versions (dpm_ver_version (v->ver),
 				    op,
 				    version));
+}
+
+static int
+satisfies_relation (dpm_ws ws, ver_info *v, dpm_relation rel)
+{
+  for (int i = 0; i < ss_len (rel); i += 3)
+    {
+      dpm_package target = dpm_rel_package (rel, i);
+      pkg_info *t = get_pkg_info (ws, target);
+      int op = dpm_rel_op (rel, i);
+
+      if (v->package == t
+	  && satisfies (v, op, dpm_rel_version (rel, i)))
+	return 1;
+
+      for (ver_node *p = t->providers; p; p = p->next)
+	if (p->info == v)
+	  return 1;
+    }
+
+  return 0;
 }
 
 static void
@@ -677,6 +750,15 @@ setup_all_candidates (dpm_ws ws)
   } while (ws->n_candidates > old_n_candidates);
 }
 
+static const char *opname[] = {
+  [DPM_ANY] = "any",
+  [DPM_EQ] = "=",
+  [DPM_LESS] = "<",
+  [DPM_LESSEQ] = "<=",
+  [DPM_GREATER] = ">",
+  [DPM_GREATEREQ] = ">="
+};
+
 // Setup the conflict sets for a dependency of V.
 //
 // We enumerate all possible combinations of all candidates of the
@@ -687,20 +769,15 @@ static void
 setup_depends_conflicts (dpm_ws ws, ver_info *v, dpm_relation dep)
 {
   int n_targets = 0;
-  struct {
-    pkg_info *p;
-    int op;
-    ss_val version;
-  } targets[200];
+  pkg_info *targets[200];
 
   void collect_target (pkg_info *p, int op, ss_val version)
   {
-    int i = n_targets++;
-    targets[i].p = p;
-    targets[i].op = op;
-    targets[i].version = version;
+    for (int i = 0; i < n_targets; i++)
+      if (targets[i] == p)
+	return;
+    targets[n_targets++] = p;
   }
-
   do_targets (ws, dep, 0, collect_target);
 
   ver_info *candidates[n_targets];
@@ -709,9 +786,9 @@ setup_depends_conflicts (dpm_ws ws, ver_info *v, dpm_relation dep)
   {
     if (i < n_targets)
       {
-	for (ver_node *c = targets[i].p->candidates; c; c = c->next)
+	for (ver_node *c = targets[i]->candidates; c; c = c->next)
 	  {
-	    if (!satisfies (c->info, targets[i].op, targets[i].version))
+	    if (!satisfies_relation (ws, c->info, dep))
 	      {
 		candidates[i] = c->info;
 		do_candidates (i+1);
@@ -809,6 +886,24 @@ dpm_ws_mark_install (dpm_package pkg)
 }
 
 void
+dpm_ws_mark_remove (dpm_package pkg)
+{
+  dpm_ws ws = dyn_get (cur_ws);
+  pkg_info *p = get_pkg_info (ws, pkg);
+  setup_candidates (ws, p);
+  
+  for (ver_node *n = p->candidates; n; n = n->next)
+    {
+      if (n->info->ver)
+	{
+	  start_conflict (ws);
+	  add_conflict (ws, n->info);
+	  end_conflict (ws);
+	}
+    }
+}
+
+void
 dpm_ws_setup_finish ()
 {
   dpm_ws ws = dyn_get (cur_ws);
@@ -822,15 +917,6 @@ dpm_ws_setup_finish ()
   report (ws, "Setup", 1);
 #endif
 }
-
-static const char *opname[] = {
-  [DPM_ANY] = "any",
-  [DPM_EQ] = "=",
-  [DPM_LESS] = "<",
-  [DPM_LESSEQ] = "<=",
-  [DPM_GREATER] = ">",
-  [DPM_GREATEREQ] = ">="
-};
 
 static void
 show_relation (ss_val rel)

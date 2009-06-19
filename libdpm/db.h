@@ -88,6 +88,18 @@ enum {
   DPM_GREATEREQ
 };
 
+typedef ss_val dpm_release_index;
+
+#define dpm_relidx_path(r)  ss_ref((r),0)
+#define dpm_relidx_dist(r)  ss_ref((r),1)
+#define dpm_relidx_keys(r)  ss_ref((r),2)
+
+typedef ss_val dpm_package_index;
+
+#define dpm_pkgidx_path(i)      ss_ref((i),0)
+#define dpm_pkgidx_release(i)   ss_ref((i),1)
+#define dpm_pkgidx_versions(i)  ss_ref((i),2)
+
 int dpm_db_compare_versions (ss_val a, ss_val b);
 int dpm_db_check_versions (ss_val a, int op, ss_val b);
 
@@ -118,6 +130,9 @@ dpm_version dpm_db_candidate (dpm_package pkg);
 
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
+
+void dpm_db_version_foreach_pkgindex (dpm_version ver,
+				      void (*func)(dpm_package_index idx));
 
 ss_val dpm_db_query_tag (const char *tag);
 ss_val dpm_db_reverse_relations (dpm_package pkg);

@@ -419,9 +419,6 @@ dpm_db_find_version (const char *package, const char *version,
    just yet, but they should eventually be the norm.
  */
 
-typedef ss_val dpm_release_index;
-typedef ss_val dpm_package_index;
-
 // XXX - remove limits
 
 typedef struct {
@@ -859,7 +856,7 @@ add_release (update_data *ud,
   dpm_release_index release  = ss_new (ud->db->store, 0, 3,
 				       store_string (ud->db,
 						     dyn_to_string (path)),
-				       intern (ud->db, dyn_to_string (path)),
+				       intern (ud->db, dyn_to_string (dist)),
 				       NULL);
 
   ud->index_prefix_len = strlen (dyn_to_string (path)) - strlen ("Release");
@@ -1227,6 +1224,22 @@ dpm_db_reverse_relations (dpm_package pkg)
   dpm_db db = dyn_get (cur_db);
 
   return ss_dict_get (db->reverse_rels, pkg);
+}
+
+void
+dpm_db_version_foreach_pkgindex (dpm_version ver,
+				 void (*func)(dpm_package_index idx))
+{
+  dpm_db db = dyn_get (cur_db);
+
+  void index (ss_val path, dpm_package_index idx, void *unused)
+  {
+    ss_val versions = dpm_pkgidx_versions (idx);
+    for (int i = 0; i < ss_len(versions); i++)
+      if (ss_ref (versions, i) == ver)
+	func (idx);
+  }
+  ss_dict_foreach (db->indices, index, NULL);
 }
 
 static void

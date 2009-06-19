@@ -100,9 +100,12 @@ DYN_DECLARE_TYPE (dpm_ws);
 //
 void dpm_ws_create ();
 
+void dpm_ws_target_dist (const char *dist);
+
 dpm_ws dpm_ws_current ();
 
 void dpm_ws_mark_install (dpm_package pkg);
+void dpm_ws_mark_remove (dpm_package pkg);
 void dpm_ws_setup_finish ();
 
 int  dpm_ws_search ();
