@@ -64,6 +64,7 @@ struct ver_info {
 struct pkg_info {
   dpm_package pkg;
   dpm_version available_candidate;
+  int rank;
 
   pkg_info *next;
   ver_node *providers;
@@ -219,17 +220,37 @@ do_rels (ss_val rels, void (*proc) (dpm_relation rel))
 }
 
 static pkg_info *get_pkg_info (dpm_ws ws, dpm_package pkg);
+static void show_relation (ss_val rel);
 
 static void
 do_targets (dpm_ws ws, dpm_relation rel, int for_conflict,
 	    void (*func) (pkg_info *p, int op, ss_val version))
 {
-  // XXX - We do this in reverse, so that the first alternative
-  //       comes last, which means that it is the least desirable to
-  //       not install.  (You may want to read that again.)  THis is 
-  //       too obscure.
-
-  for (int i = ss_len (rel) - 3; i >= 0; i -= 3)
+  {
+    dpm_package target = dpm_rel_package (rel, 0);
+    pkg_info *t = get_pkg_info (ws, target);
+    if (t->available_candidate == NULL
+	&& ss_len (rel) > 3)
+      {
+	dpm_package pkg = NULL;
+	for (ver_node *pv = t->providers; pv; pv = pv->next)
+	  if (pkg && pkg != dpm_ver_package (pv->info->ver))
+	    {
+	      dyn_print ("warning - first alternative is a virtual package: ");
+	      show_relation (rel);
+	      dyn_print ("\n");
+	      for (ver_node *pv = t->providers; pv; pv = pv->next)
+		dyn_print (" %r %r\n",
+			   dpm_pkg_name (dpm_ver_package (pv->info->ver)),
+			   dpm_ver_version (pv->info->ver));
+	      break;
+	    }
+	  else
+	    pkg = dpm_ver_package (pv->info->ver);
+      }
+  }
+    
+  for (int i = 0; i < ss_len (rel); i += 3)
     {
       dpm_package target = dpm_rel_package (rel, i);
       pkg_info *t = get_pkg_info (ws, target);
@@ -387,16 +408,6 @@ setup_available_candidates (dpm_ws ws)
   ws->available_candidates_initialized = 1;
 }
 
-static void
-setup_candidate_providers (dpm_ws ws, pkg_info *p)
-{
-  void provider (dpm_version prov)
-  {
-    add_ver (ws, &(p->providers), get_ver_info (ws, prov));
-  }
-  do_providers (p->pkg, provider);
-}
-
 // Search
 
 static void
@@ -484,21 +495,28 @@ static pkg_info *
 find_best_branch_point (dpm_ws ws)
 {
   pkg_info *best = NULL;
-  int best_free_count;
 
   for (pkg_info *p = ws->head; p; p = p->next)
     {
       if (p->selected == NULL)
 	{
-	  if (best == NULL || p->free_count < best_free_count)
+	  if (best == NULL
+	      || p->free_count < best->free_count
+	      || (p->free_count == best->free_count
+		  && p->rank < best->rank))
 	    {
 	      best = p;
-	      best_free_count = p->free_count;
-	      if (best_free_count == 0)
+	      if (best->rank == 0
+		  && best->free_count == 0)
 		break;
 	    }
 	}
     }
+
+#ifdef DEBUG
+  if (best)
+    dyn_print ("Best: %d (%d)\n", best->free_count, best->rank);
+#endif
 
   return best;
 }
@@ -675,6 +693,7 @@ dpm_ws_search ()
       return 1;
     }
   search (ws);
+  dyn_print ("Failed.\n");
   return 0;
 }
 
@@ -699,8 +718,6 @@ setup_candidates (dpm_ws ws, pkg_info *p)
   if (!ws->available_candidates_initialized)
     setup_available_candidates (ws);
 
-  setup_candidate_providers (ws, p);
-
   dpm_version installed = dpm_db_installed (p->pkg);
   dpm_version candidate = p->available_candidate;
 
@@ -717,6 +734,37 @@ setup_candidates (dpm_ws ws, pkg_info *p)
       if (candidate)
 	add_candidate (ws, p, candidate, 1);
     }
+}
+
+static void
+setup_candidate_providers (dpm_ws ws, pkg_info *p)
+{
+  void provider (dpm_version prov)
+  {
+    ver_info *v = get_ver_info (ws, prov);
+    setup_candidates (ws, v->package);
+
+    for (ver_node *pv = p->providers; pv; pv = pv->next)
+      if (pv->info == v)
+	return;
+
+    ver_node *n;
+    for (n = v->package->candidates; n; n = n->next)
+      {
+	if (n->info == v)
+	  {
+#ifdef DEBUG
+	    dyn_print ("Accepted %r %r for %r\n", 
+		       dpm_pkg_name (dpm_ver_package (prov)),
+		       dpm_ver_version (prov),
+		       dpm_pkg_name (p->pkg));
+#endif
+	    add_ver (ws, &(p->providers), v);
+	    break;
+	  }
+      }
+  }
+  do_providers (p->pkg, provider);
 }
 
 // Determine whether V satiesfies the relation (OP VERSION)
@@ -754,11 +802,20 @@ satisfies_relation (dpm_ws ws, ver_info *v, dpm_relation rel)
 static void
 setup_target_candidates (dpm_ws ws, dpm_relation dep, int for_conflict)
 {
+  int n = 0;
+  pkg_info *first = NULL;
+
   void target (pkg_info *p, int op, ss_val version)
   {
+    if (first == NULL)
+      first = p;
+    n++;
     setup_candidates (ws, p);
   }
   do_targets (ws, dep, for_conflict, target);
+
+  if (n > 1)
+    first->rank = 1;
 }
 
 static void
@@ -789,10 +846,13 @@ setup_all_candidates (dpm_ws ws)
     old_n_candidates = ws->n_candidates;
 
     for (pkg_info *p = ws->head; p; p = p->next)
-      for (ver_node *n = p->candidates; n; n = n->next)
-	if (n->info->ver)
-	  setup_relations_candidates (ws, n->info);
-
+      {
+	for (ver_node *n = p->candidates; n; n = n->next)
+	  if (n->info->ver)
+	    setup_relations_candidates (ws, n->info);
+	setup_candidate_providers (ws, p);
+      }
+	
   } while (ws->n_candidates > old_n_candidates);
 }
 
@@ -963,6 +1023,9 @@ dpm_ws_setup_finish ()
   setup_all_candidates (ws);
   dpm_db_foreach_installed (installed);
   setup_all_candidates (ws);
+
+  for (pkg_info *p = ws->head; p; p = p->next)
+    setup_candidate_providers (ws, p);
 
   setup_all_conflicts (ws);
 
@@ -1154,6 +1217,7 @@ void
 dpm_ws_realize (int simulate)
 {
   dpm_ws ws = dyn_get (cur_ws);
+  int done_something = 0;
 
   for (pkg_info *p = ws->head; p; p = p->next)
     {
@@ -1168,10 +1232,14 @@ dpm_ws_realize (int simulate)
 		dpm_remove (p->pkg);
 	      else
 		dpm_install (v->ver);
+	      done_something = 1;
 	    }
 	}
     }
   
-  if (!simulate)
+  if (!done_something)
+    dyn_print ("Nohing to do.\n");
+
+  if (!simulate && done_something)
     dpm_db_checkpoint ();
 }

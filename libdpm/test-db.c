@@ -212,7 +212,8 @@ show_relation (ss_val rel)
 }
 
 static void
-show_filtered_relations (const char *field, ss_val rels, dpm_package pkg)
+show_filtered_relations (const char *field,
+			 ss_val rels, dpm_package pkg)
 {
   if (rels)
     {
@@ -294,6 +295,45 @@ list_reverse_relations (const char *package)
       ss_val versions = dpm_db_reverse_relations (pkg);
       if (versions)
 	list_versions (versions, pkg);
+      dpm_db_done ();
+    }
+}
+
+static int
+has_target (ss_val rels, dpm_package pkg)
+{
+  if (rels)
+    {
+      int len = ss_len (rels);
+      for (int i = 0; i < len; i++)
+	{
+	  dpm_relation rel = ss_ref (rels, i);
+	  for (int j = 0; j < ss_len (rel); j += 3)
+	    if (dpm_rel_package (rel, j) == pkg)
+	      return 1;
+	}
+    }
+  return 0;
+}
+
+static void
+list_provides (const char *package)
+{
+  if (package)
+    {
+      dpm_db_open ();
+      dpm_package pkg = dpm_db_find_package (package);
+      ss_val versions = dpm_db_reverse_relations (pkg);
+      if (versions)
+	for (int i = 0; i < ss_len (versions); i++)
+	  {
+	    dpm_version ver = ss_ref (versions, i);
+	    dpm_relations rels = dpm_ver_relations (ver);
+	    if (has_target (dpm_rels_provides (rels), pkg))
+	      dyn_print ("%r %r\n",
+			 dpm_pkg_name (dpm_ver_package (ver)),
+			 dpm_ver_version (ver));
+	  }
       dpm_db_done ();
     }
 }
@@ -525,6 +565,8 @@ main (int argc, char **argv)
     query (argv[2]);
   else if (strcmp (argv[1], "reverse") == 0)
     list_reverse_relations (argv[2]);
+  else if (strcmp (argv[1], "provides") == 0)
+    list_provides (argv[2]);
   else if (strcmp (argv[1], "fun") == 0)
     fun (argv+2, 1);
   else if (strcmp (argv[1], "real-fun") == 0)
