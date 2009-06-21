@@ -25,6 +25,8 @@ DPM_CONF_DECLARE (sources, "sources",
 		  "The sources.")
 
 const char *target_dist;
+int prefer_remove = 0;
+int prefer_upgrade = 0;
 
 void
 usage ()
@@ -303,7 +305,9 @@ fun (char **argv, int simulate)
 
   dpm_db_open ();
   dpm_ws_create ();
-  dpm_ws_target_dist (target_dist);
+  dpm_ws_policy_set_distribution_pin (target_dist);
+  dpm_ws_policy_set_prefer_remove (prefer_remove);
+  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
 
   for (int i = 0; argv[i]; i++)
     {
@@ -329,7 +333,9 @@ nuf (char **argv, int simulate)
 
   dpm_db_open ();
   dpm_ws_create ();
-  dpm_ws_target_dist (target_dist);
+  dpm_ws_policy_set_distribution_pin (target_dist);
+  dpm_ws_policy_set_prefer_remove (prefer_remove);
+  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
 
   for (int i = 0; argv[i]; i++)
     {
@@ -417,9 +423,12 @@ check ()
   dyn_begin ();
   dpm_db_open ();
   dpm_ws_create ();
-  dpm_ws_target_dist (target_dist);
+  dpm_ws_policy_set_distribution_pin (target_dist);
+  dpm_ws_policy_set_prefer_remove (prefer_remove);
+  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
 
   dpm_ws_import ();
+  dpm_ws_select_installed ();
   dpm_ws_report ("Check");
 
   dpm_db_done ();
@@ -432,9 +441,10 @@ fix ()
   dyn_begin ();
   dpm_db_open ();
   dpm_ws_create ();
-  dpm_ws_target_dist (target_dist);
+  dpm_ws_policy_set_distribution_pin (target_dist);
+  dpm_ws_policy_set_prefer_remove (prefer_remove);
+  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
 
-  dpm_ws_import ();
   dpm_ws_setup_finish ();
   if (dpm_ws_search ())
     dpm_ws_realize (0);
@@ -449,11 +459,13 @@ install_base ()
   dyn_begin ();
   dpm_db_open ();
   dpm_ws_create ();
-  dpm_ws_target_dist (target_dist);
+  dpm_ws_policy_set_distribution_pin (target_dist);
+  dpm_ws_policy_set_prefer_remove (prefer_remove);
+  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
 
   void package (dpm_package pkg)
   {
-    dpm_version ver = dpm_db_candidate (pkg);
+    dpm_version ver = dpm_ws_candidate (pkg);
     if (ver)
       {
 	if (ss_streq (dpm_db_version_get (ver, "Priority"), "required")
@@ -487,6 +499,16 @@ main (int argc, char **argv)
 	{
 	  target_dist = argv[2];
 	  argv += 2;
+	}
+      else if (strcmp (argv[1], "-R") == 0)
+	{
+	  prefer_remove = 1;
+	  argv += 1;
+	}
+      else if (strcmp (argv[1], "-U") == 0)
+	{
+	  prefer_upgrade = 1;
+	  argv += 1;
 	}
       else
 	break;

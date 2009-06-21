@@ -121,6 +121,7 @@ int dpm_db_package_count ();
 int dpm_db_version_count ();
 
 void dpm_db_foreach_package (void (*func) (dpm_package pkg));
+void dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_package ver));
 
 dpm_package dpm_db_find_package (const char *name);
 

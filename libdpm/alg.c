@@ -26,7 +26,7 @@
 #include "dyn.h"
 #include "inst.h"
 
-#define DEBUG
+// #define DEBUG
 
 static void log_rel (const char *msg, dpm_relation rel);
 
@@ -81,6 +81,8 @@ struct dpm_ws_struct {
   struct obstack mem;
 
   const char *target_dist;
+  int prefer_remove;
+  int prefer_upgrade;
 
   int n_packages;
   pkg_info *pkg_info;
@@ -122,6 +124,8 @@ dpm_ws_create ()
   obstack_init (&ws->mem);
 
   ws->target_dist = NULL;
+  ws->prefer_remove = 0;
+  ws->prefer_upgrade = 0;
 
   ws->n_packages = dpm_db_package_count ();
   ws->pkg_info = calloc (ws->n_packages, sizeof(pkg_info));
@@ -145,10 +149,24 @@ dpm_ws_current ()
 }
 
 void
-dpm_ws_target_dist (const char *dist)
+dpm_ws_policy_set_distribution_pin (const char *dist)
 {
   dpm_ws ws = dpm_ws_current ();
   ws->target_dist = dist;
+}
+
+void
+dpm_ws_policy_set_prefer_remove (int prefer_remove)
+{
+  dpm_ws ws = dpm_ws_current ();
+  ws->prefer_remove = prefer_remove;
+}
+
+void
+dpm_ws_policy_set_prefer_upgrade (int prefer_upgrade)
+{
+  dpm_ws ws = dpm_ws_current ();
+  ws->prefer_upgrade = prefer_upgrade;
 }
 
 /* Some iterators
@@ -620,6 +638,10 @@ int
 dpm_ws_search ()
 {
   dpm_ws ws = dyn_get (cur_ws);
+
+  for (pkg_info *p = ws->head; p; p = p->next)
+    p->selected = NULL;
+
 #ifdef DEBUG
   dyn_print ("\nSearch:\n");
 #endif
@@ -643,20 +665,8 @@ dpm_ws_search ()
 // currently installed, and the null version.
 //
 // The candidates are ordered from best to worst, as required by the
-// search algorithm.  This order is determined by a global policy
-// settings together with some information about the package, such as
-// whether the package has been selected manually.
-//
-// A typical policy would be to treat removal as the best option,
-// except for manually selected packages.  For those, another global
-// policy setting would determine whether upgrading is better than the
-// status quo.
-//
-// In any case, the candidate order is not determined by the
-// relationships that the package appears in.
-//
-// For now, we use the simple policy that the status quo is best, and
-// that upgrading is better than removal.
+// search algorithm.  This order is determined by the two policy
+// settings 'prefer_remove' and 'prefer_upgrade'.
 //
 static void
 setup_candidates (dpm_ws ws, pkg_info *p)
@@ -666,11 +676,20 @@ setup_candidates (dpm_ws ws, pkg_info *p)
 
   dpm_version installed = dpm_db_installed (p->pkg);
   dpm_version candidate = p->available_candidate;
-  
-  add_candidate (ws, p, installed, 0);
-  if (candidate)
-    add_candidate (ws, p, candidate, 1);
-  add_candidate (ws, p, NULL, 1);
+
+  if (installed)
+    {
+      add_candidate (ws, p, installed, 0);
+      if (candidate)
+	add_candidate (ws, p, candidate, !ws->prefer_upgrade);
+      add_candidate (ws, p, NULL, !ws->prefer_remove);
+    }
+  else
+    {
+      add_candidate (ws, p, NULL, 0);
+      if (candidate)
+	add_candidate (ws, p, candidate, 1);
+    }
 }
 
 // Determine whether V satiesfies the relation (OP VERSION)
@@ -907,11 +926,18 @@ void
 dpm_ws_setup_finish ()
 {
   dpm_ws ws = dyn_get (cur_ws);
-  setup_all_candidates (ws);
-  setup_all_conflicts (ws);
 
-  for (pkg_info *p = ws->head; p; p = p->next)
-    p->selected = NULL;
+  void installed (dpm_package pkg, dpm_version ver)
+  {
+    pkg_info *p = get_pkg_info (ws, pkg);
+    setup_candidates (ws, p);
+  }
+
+  setup_all_candidates (ws);
+  dpm_db_foreach_installed (installed);
+  setup_all_candidates (ws);
+
+  setup_all_conflicts (ws);
 
 #ifdef DEBUG
   report (ws, "Setup", 1);
@@ -1052,6 +1078,14 @@ dpm_ws_report (const char *title)
 /* Doing it.
  */
 
+dpm_version
+dpm_ws_candidate (dpm_package pkg)
+{
+  dpm_ws ws = dpm_ws_current ();
+  pkg_info *p = get_pkg_info (ws, pkg);
+  return p->available_candidate;
+}
+
 void
 dpm_ws_import ()
 {
@@ -1064,6 +1098,23 @@ dpm_ws_import ()
       {
 	pkg_info *p = get_pkg_info (ws, pkg);
 	setup_candidates (ws, p);
+      }
+  }
+
+  dpm_db_foreach_package (import);
+}
+
+void
+dpm_ws_select_installed ()
+{
+  dpm_ws ws = dyn_get (cur_ws);
+
+  void import (dpm_package pkg)
+  {
+    dpm_version inst = dpm_db_installed (pkg);
+    if (inst)
+      {
+	pkg_info *p = get_pkg_info (ws, pkg);
 	p->selected = add_candidate (ws, p, inst, 0);
       }
   }

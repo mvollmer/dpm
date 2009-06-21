@@ -100,9 +100,13 @@ DYN_DECLARE_TYPE (dpm_ws);
 //
 void dpm_ws_create ();
 
-void dpm_ws_target_dist (const char *dist);
+void dpm_ws_policy_set_distribution_pin (const char *dist);
+void dpm_ws_policy_set_prefer_remove (int prefer_upgrade);
+void dpm_ws_policy_set_prefer_upgrade (int prefer_upgrade);
 
 dpm_ws dpm_ws_current ();
+
+dpm_version dpm_ws_candidate (dpm_package pkg);
 
 void dpm_ws_mark_install (dpm_package pkg);
 void dpm_ws_mark_remove (dpm_package pkg);
@@ -112,6 +116,7 @@ int  dpm_ws_search ();
 void dpm_ws_report (const char *title);
 
 void dpm_ws_import ();
+void dpm_ws_select_installed ();
 void dpm_ws_realize (int simulate);
 
 #endif /* !DPM_ALG_H */

@@ -989,6 +989,18 @@ dpm_db_foreach_package (void (*func) (dpm_package pkg))
   ss_dict_foreach (db->available, foreach_available_package, &d);
 }
 
+void
+dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_version ver))
+{
+  dpm_db db = dyn_get (cur_db);
+  
+  void installed (ss_val key, ss_val val, void *unused)
+  {
+    func (key, val);
+  }
+  ss_dict_foreach (db->installed, installed, NULL);
+}
+
 /* Version comparison
  *
  * Lifted from apt.
