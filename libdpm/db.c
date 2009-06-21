@@ -337,16 +337,6 @@ dpm_db_available (dpm_package pkg)
 }
 
 dpm_version
-dpm_db_candidate (dpm_package pkg)
-{
-  ss_val avail = dpm_db_available (pkg);
-  if (avail && ss_len (avail) > 0)
-    return ss_ref (avail, 0);
-  else
-    return NULL;
-}
-
-dpm_version
 dpm_db_installed (dpm_package pkg)
 {
   dpm_db db = dyn_get (cur_db);
@@ -966,27 +956,16 @@ dpm_db_maybe_full_update (dyn_val srcs, dyn_val dists,
 /* Iterating
  */
 
-typedef struct {
-  void (*func) (dpm_package pkg);
-} foreach_package_data;
-
-static void
-foreach_available_package (ss_val key, ss_val val, void *data)
-{
-  foreach_package_data *d = data;
-
-  if (val)
-    d->func (key);
-}
-
 void
 dpm_db_foreach_package (void (*func) (dpm_package pkg))
 {
   dpm_db db = dyn_get (cur_db);
-  foreach_package_data d;
 
-  d.func = func;
-  ss_dict_foreach (db->available, foreach_available_package, &d);
+  void package (ss_val key, ss_val val, void *unused)
+  {
+    func (val);
+  }
+  ss_dict_foreach (db->packages, package, NULL);
 }
 
 void
@@ -999,6 +978,18 @@ dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_version ver))
     func (key, val);
   }
   ss_dict_foreach (db->installed, installed, NULL);
+}
+
+void
+dpm_db_foreach_package_index (void (*func) (dpm_package_index idx))
+{
+  dpm_db db = dyn_get (cur_db);
+  
+  void index (ss_val key, ss_val val, void *unused)
+  {
+    func (val);
+  }
+  ss_dict_foreach (db->indices, index, NULL);
 }
 
 /* Version comparison

@@ -100,6 +100,11 @@ typedef ss_val dpm_package_index;
 #define dpm_pkgidx_release(i)   ss_ref((i),1)
 #define dpm_pkgidx_versions(i)  ss_ref((i),2)
 
+typedef ss_val dpm_status;
+
+#define dpm_stat_installed(s)   ss_ref((s),0)
+#define dpm_stat_isroot(s)      ss_ref((s),1)
+
 int dpm_db_compare_versions (ss_val a, ss_val b);
 int dpm_db_check_versions (ss_val a, int op, ss_val b);
 
@@ -122,12 +127,12 @@ int dpm_db_version_count ();
 
 void dpm_db_foreach_package (void (*func) (dpm_package pkg));
 void dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_package ver));
+void dpm_db_foreach_package_index (void (*func) (dpm_package_index idx));
 
 dpm_package dpm_db_find_package (const char *name);
 
 ss_val      dpm_db_available (dpm_package pkg);
 dpm_version dpm_db_installed (dpm_package pkg);
-dpm_version dpm_db_candidate (dpm_package pkg);
 
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);

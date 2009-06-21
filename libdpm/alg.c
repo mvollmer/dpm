@@ -83,6 +83,7 @@ struct dpm_ws_struct {
   const char *target_dist;
   int prefer_remove;
   int prefer_upgrade;
+  int available_candidates_initialized;
 
   int n_packages;
   pkg_info *pkg_info;
@@ -116,6 +117,8 @@ DYN_DEFINE_TYPE (dpm_ws, "workspace");
 
 static dyn_var cur_ws[1];
 
+static void setup_available_candidates (dpm_ws ws);
+
 void
 dpm_ws_create ()
 {
@@ -126,6 +129,7 @@ dpm_ws_create ()
   ws->target_dist = NULL;
   ws->prefer_remove = 0;
   ws->prefer_upgrade = 0;
+  ws->available_candidates_initialized = 0;
 
   ws->n_packages = dpm_db_package_count ();
   ws->pkg_info = calloc (ws->n_packages, sizeof(pkg_info));
@@ -171,46 +175,6 @@ dpm_ws_policy_set_prefer_upgrade (int prefer_upgrade)
 
 /* Some iterators
  */
-
-static int
-is_in_dist (dpm_version ver, const char *dist)
-{
-  int found = 0;
-
-  void index (dpm_package_index idx)
-  {
-    dpm_release_index release = dpm_pkgidx_release (idx);
-    if (release && ss_streq (dpm_relidx_dist (release), dist))
-      found = 1;
-  }
-  dpm_db_version_foreach_pkgindex (ver, index);
-
-  return found;
-}
-
-static dpm_version
-get_candidate (dpm_ws ws, dpm_package pkg)
-{
-  dpm_version cand = NULL;
-  ss_val available = dpm_db_available (pkg);
-
-  if (available)
-    {
-      for (int i = 0; i < ss_len (available); i++)
-	{
-	  dpm_version ver = ss_ref (available, i);
-	  if (ws->target_dist && !is_in_dist (ver, ws->target_dist))
-	    continue;
-	  
-	  if (cand == NULL
-	      || dpm_db_compare_versions (dpm_ver_version (ver),
-					  dpm_ver_version (cand)) > 0)
-	    cand = ver;
-	}
-    }
-
-  return cand;
-}
 
 static int
 has_target (ss_val rels, dpm_package pkg)
@@ -321,16 +285,6 @@ get_pkg_info (dpm_ws ws, dpm_package pkg)
       p->candidates = NULL;
       p->next = NULL;
       p->providers = NULL;
-
-      p->available_candidate = get_candidate (ws, pkg);
-      if (p->available_candidate == NULL)
-	{
-	  void provider (dpm_version prov)
-	  {
-	    add_ver (ws, &(p->providers), get_ver_info (ws, prov));
-	  }
-	  do_providers (pkg, provider);
-	}
     }
 
   return p;
@@ -376,6 +330,74 @@ show_conflict (const char *pfx, cfl_info *conflict)
     }
   dyn_print ("%d\n", conflict->unselected_count);
 }
+
+// Available candidates
+
+static void
+setup_available_candidates (dpm_ws ws)
+{
+  if (ws->target_dist)
+    {
+      dpm_package_index target_idx = NULL;
+
+      void index (dpm_package_index idx)
+      {
+	dpm_release_index release = dpm_pkgidx_release (idx);
+	if (release && ss_streq (dpm_relidx_dist (release), ws->target_dist))
+	  target_idx = idx;
+      }
+      dpm_db_foreach_package_index (index);
+
+      if (target_idx == NULL)
+	dyn_error ("No such distribution: %s", ws->target_dist);
+
+      ss_val versions = dpm_pkgidx_versions (target_idx);
+      for (int i = 0; i < ss_len (versions); i++)
+	{
+	  dpm_version ver = ss_ref (versions, i);
+	  pkg_info *p = get_pkg_info (ws, dpm_ver_package (ver));
+	  
+	  if (p->available_candidate == NULL
+	      || dpm_db_compare_versions (dpm_ver_version (ver),
+					  dpm_ver_version (p->available_candidate)) > 0)
+	    p->available_candidate = ver;
+	}
+    }
+  else
+    {
+      void package (dpm_package pkg)
+      {
+	pkg_info *p = get_pkg_info (ws, pkg);
+	ss_val versions = dpm_db_available (pkg);
+	if (versions)
+	  {
+	    for (int i = 0; i < ss_len (versions); i++)
+	      {
+		dpm_version ver = ss_ref (versions, i);
+		if (p->available_candidate == NULL
+		    || dpm_db_compare_versions (dpm_ver_version (ver),
+						dpm_ver_version (p->available_candidate)) > 0)
+		  p->available_candidate = ver;
+	      }
+	  }
+      }
+      dpm_db_foreach_package (package);
+    }
+
+  ws->available_candidates_initialized = 1;
+}
+
+static void
+setup_candidate_providers (dpm_ws ws, pkg_info *p)
+{
+  void provider (dpm_version prov)
+  {
+    add_ver (ws, &(p->providers), get_ver_info (ws, prov));
+  }
+  do_providers (p->pkg, provider);
+}
+
+// Search
 
 static void
 update_conflict (cfl_info *conflict)
@@ -673,6 +695,11 @@ setup_candidates (dpm_ws ws, pkg_info *p)
 {
   if (p->candidates)
     return;
+
+  if (!ws->available_candidates_initialized)
+    setup_available_candidates (ws);
+
+  setup_candidate_providers (ws, p);
 
   dpm_version installed = dpm_db_installed (p->pkg);
   dpm_version candidate = p->available_candidate;
@@ -1054,7 +1081,7 @@ report (dpm_ws ws, const char *title, int verbose)
 	  else if (verbose)
 	    dyn_print ("%r not installed\n", dpm_pkg_name (p->pkg));
 	}
-      else
+      else if (verbose)
 	{
 	  dyn_print ("%r candidates\n",  dpm_pkg_name (p->pkg));
 	  for (ver_node *n = p->candidates; n; n = n->next)
@@ -1100,8 +1127,9 @@ dpm_ws_import ()
 	setup_candidates (ws, p);
       }
   }
-
   dpm_db_foreach_package (import);
+
+  setup_all_candidates (ws);
 }
 
 void

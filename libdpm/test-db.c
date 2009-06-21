@@ -298,6 +298,22 @@ list_reverse_relations (const char *package)
     }
 }
 
+static void
+base_mark_install ()
+{
+  void package (dpm_package pkg)
+  {
+    dpm_version ver = dpm_ws_candidate (pkg);
+    if (ver)
+      {
+	if (ss_streq (dpm_db_version_get (ver, "Priority"), "required")
+	    || ss_streq (dpm_db_version_get (ver, "Priority"), "important"))
+	  dpm_ws_mark_install (pkg);
+      }
+  }
+  dpm_db_foreach_package (package);
+}
+
 void
 fun (char **argv, int simulate)
 {
@@ -311,11 +327,16 @@ fun (char **argv, int simulate)
 
   for (int i = 0; argv[i]; i++)
     {
-      dpm_package pkg = dpm_db_find_package (argv[i]);
-      if (pkg)
-	dpm_ws_mark_install (pkg);
+      if (strcmp (argv[i], "base") == 0)
+	base_mark_install ();
       else
-	dyn_print ("Package %s not found\n", argv[i]);
+	{
+	  dpm_package pkg = dpm_db_find_package (argv[i]);
+	  if (pkg)
+	    dpm_ws_mark_install (pkg);
+	  else
+	    dyn_print ("Package %s not found\n", argv[i]);
+	}
     }
 
   dpm_ws_setup_finish ();
@@ -360,10 +381,15 @@ raw_install (char **argv)
   dyn_begin ();
   dpm_db_open ();
 
+  dpm_ws_create ();
+  dpm_ws_policy_set_distribution_pin (target_dist);
+  dpm_ws_policy_set_prefer_remove (prefer_remove);
+  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
+
   for (int i = 0; argv[i]; i++)
     {
       dpm_package pkg = dpm_db_find_package (argv[i]);
-      dpm_version ver = pkg? dpm_db_candidate (pkg) : NULL;
+      dpm_version ver = pkg? dpm_ws_candidate (pkg) : NULL;
 
       if (ver)
 	dpm_install (ver);
@@ -453,37 +479,6 @@ fix ()
   dyn_end ();  
 }
 
-static void
-install_base ()
-{
-  dyn_begin ();
-  dpm_db_open ();
-  dpm_ws_create ();
-  dpm_ws_policy_set_distribution_pin (target_dist);
-  dpm_ws_policy_set_prefer_remove (prefer_remove);
-  dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
-
-  void package (dpm_package pkg)
-  {
-    dpm_version ver = dpm_ws_candidate (pkg);
-    if (ver)
-      {
-	if (ss_streq (dpm_db_version_get (ver, "Priority"), "required")
-	    || ss_streq (dpm_db_version_get (ver, "Priority"), "important"))
-	  dpm_ws_mark_install (pkg);
-      }
-  }
-
-  dpm_db_foreach_package (package);
-
-  dpm_ws_setup_finish ();
-  if (dpm_ws_search ())
-    dpm_ws_realize (0);
-
-  dpm_db_done ();
-  dyn_end ();    
-}
-
 int
 main (int argc, char **argv)
 {
@@ -548,8 +543,6 @@ main (int argc, char **argv)
     check ();
   else if (strcmp (argv[1], "fix") == 0)
     fix ();
-  else if (strcmp (argv[1], "install-base") == 0)
-    install_base ();
   else
     usage ();
 
