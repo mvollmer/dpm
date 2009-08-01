@@ -511,6 +511,7 @@ fix ()
   dpm_ws_policy_set_prefer_remove (prefer_remove);
   dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
 
+  dpm_ws_import ();
   dpm_ws_setup_finish ();
   if (dpm_ws_search ())
     dpm_ws_realize (0);
