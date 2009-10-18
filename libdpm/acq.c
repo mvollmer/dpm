@@ -33,6 +33,10 @@ dpm_acq_local_name (const char *filename)
       && strlen (filename) > 7
       && strncmp (filename, "http://", 7) == 0)
     return dyn_format ("%s/%s", dpm_conf_string (cachedir), filename + 7);
+  else if (filename
+      && strlen (filename) > 8
+      && strncmp (filename, "https://", 8) == 0)
+    return dyn_format ("%s/%s", dpm_conf_string (cachedir), filename + 8);
   else
     return NULL;
 }
@@ -73,7 +77,7 @@ dpm_acquire (const char *file)
   if (dpm_system ("mkdir -p '%s'", dir) != 0)
     dyn_error ("Can't create cache directory %s", dir);
 
-  if (dpm_system ("cd '%s' && wget -nv -m '%s'", dir, file) != 0)
+  if (dpm_system ("cd '%s' && wget --no-check-certificate -nv -m '%s'", dir, file) != 0)
     return DPM_ACQ_NOT_FOUND; // XXX - could be other errors, of course.
 
   time_t mtime_after = dpm_acq_modification_time (file);
