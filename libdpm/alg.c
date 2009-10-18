@@ -392,30 +392,31 @@ setup_package_available_and_installed (dpm_ws ws)
 
   if (ws->target_dist)
     {
-      dpm_package_index target_idx = NULL;
+      bool found_any = false;
 
       void index (dpm_package_index idx)
       {
 	dpm_release_index release = dpm_pkgidx_release (idx);
 	if (release && ss_streq (dpm_relidx_dist (release), ws->target_dist))
-	  target_idx = idx;
+          {
+            ss_val versions = dpm_pkgidx_versions (idx);
+            found_any = true;
+            for (int i = 0; i < ss_len (versions); i++)
+              {
+                dpm_version ver = ss_ref (versions, i);
+                pkg_info *p = get_pkg_info (ws, dpm_ver_package (ver));
+                
+                if (p->available_version == NULL
+                    || dpm_db_compare_versions (dpm_ver_version (ver),
+                                                dpm_ver_version (p->available_version)) > 0)
+                  p->available_version = ver;
+              }
+          }
       }
       dpm_db_foreach_package_index (index);
 
-      if (target_idx == NULL)
+      if (!found_any)
 	dyn_error ("No such distribution: %s", ws->target_dist);
-
-      ss_val versions = dpm_pkgidx_versions (target_idx);
-      for (int i = 0; i < ss_len (versions); i++)
-	{
-	  dpm_version ver = ss_ref (versions, i);
-	  pkg_info *p = get_pkg_info (ws, dpm_ver_package (ver));
-	  
-	  if (p->available_version == NULL
-	      || dpm_db_compare_versions (dpm_ver_version (ver),
-					  dpm_ver_version (p->available_version)) > 0)
-	    p->available_version = ver;
-	}
     }
   else
     {
@@ -1303,6 +1304,7 @@ dpm_version
 dpm_ws_candidate (dpm_package pkg)
 {
   dpm_ws ws = dpm_ws_current ();
+  setup_package_available_and_installed (ws);
   pkg_info *p = get_pkg_info (ws, pkg);
   return p->available_version;
 }
