@@ -1385,7 +1385,7 @@ ss_equal (ss_val a, ss_val b)
   }
 }
 
-static int
+int
 ss_equal_blob (ss_val b, int len, void *blob)
 {
   if (b && !ss_is_int (b) && ss_is_blob (b)

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include <string.h>
+#include <stdbool.h>
 
 #include "conf.h"
 #include "db.h"
@@ -52,7 +53,7 @@ update (int force)
 }
 
 void
-show (const char *package)
+show (const char *package, const char *version)
 {
   if (package)
     {
@@ -74,7 +75,12 @@ show (const char *package)
 			   dpm_ver_architecture (ver),
 			   dpm_ver_id (ver));
 		if (!ver_to_show)
-		  ver_to_show = ver;
+                  {
+                    if (version == NULL
+                        || ss_equal_blob (dpm_ver_version (ver),
+                                          strlen (version), version))
+                      ver_to_show = ver;
+                  }
 	      }
 	  dyn_print ("\n");
 	}
@@ -238,12 +244,21 @@ show_filtered_relations (const char *field,
 }
 
 static void
-list_versions (ss_val versions, dpm_package rev)
+list_versions (ss_val versions, dpm_package rev, bool only_candidates)
 {
   if (versions)
     for (int i = 0; i < ss_len (versions); i++)
       {
 	dpm_version ver = ss_ref (versions, i);
+
+        if (only_candidates)
+          {
+            dpm_version cand = dpm_ws_candidate (dpm_ver_package (ver));
+
+            if (ver != cand)
+              continue;
+          }
+
 	dyn_print ("%r %r (%r) - %r\n",
 		   dpm_pkg_name (dpm_ver_package (ver)),
 		   dpm_ver_version (ver),
@@ -280,7 +295,7 @@ query (const char *exp)
   if (exp)
     {
       dpm_db_open ();
-      list_versions (dpm_db_query_tag (exp), NULL);
+      list_versions (dpm_db_query_tag (exp), NULL, 0);
       dpm_db_done ();
     }
 }
@@ -291,10 +306,15 @@ list_reverse_relations (const char *package)
   if (package)
     {
       dpm_db_open ();
+      dpm_ws_create ();
+      dpm_ws_policy_set_distribution_pin (target_dist);
+      dpm_ws_policy_set_prefer_remove (prefer_remove);
+      dpm_ws_policy_set_prefer_upgrade (prefer_upgrade);
+
       dpm_package pkg = dpm_db_find_package (package);
       ss_val versions = dpm_db_reverse_relations (pkg);
       if (versions)
-	list_versions (versions, pkg);
+	list_versions (versions, pkg, true);
       dpm_db_done ();
     }
 }
@@ -555,7 +575,7 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "force-update") == 0)
     update (1);
   else if (strcmp (argv[1], "show") == 0)
-    show (argv[2]);
+    show (argv[2], argv[3]);
   else if (strcmp (argv[1], "info") == 0)
     info (argv[2]);
   else if (strcmp (argv[1], "stats") == 0)
