@@ -130,15 +130,14 @@ struct ss_tab;
 typedef struct ss_tab ss_tab;
 
 ss_tab *ss_tab_init (ss_store ss, ss_val tab);
-ss_val ss_tab_finish (ss_tab *ot);
-void ss_tab_abort (ss_tab *ot);
-ss_val ss_tab_store (ss_tab *ot);
-ss_val ss_tab_intern (ss_tab *ot, ss_val v);
+ss_val ss_tab_finish (ss_tab *tab);
+void ss_tab_abort (ss_tab *tab);
+ss_val ss_tab_store (ss_tab *tab);
+ss_val ss_tab_intern (ss_tab *tab, ss_val v);
 ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
 ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
 
-void ss_tab_foreach (ss_tab *ot,
-		     void (*func) (ss_val , void *data), void *data);
+void ss_tab_foreach (void (*func) (ss_val val), ss_tab *tab);
 
 struct ss_dict;
 typedef struct ss_dict ss_dict;
@@ -155,12 +154,10 @@ void ss_dict_set (ss_dict *d, ss_val key, ss_val val);
 ss_val ss_dict_get (ss_dict *d, ss_val key);
 void ss_dict_add (ss_dict *d, ss_val key, ss_val val);
 void ss_dict_del (ss_dict *d, ss_val key, ss_val val);
-void ss_dict_foreach (ss_dict *d,
-		      void (*func) (ss_val key, ss_val val, void *data),
-		      void *data);
-void ss_dict_foreach_member (ss_dict *d, 
-			     void (*func) (ss_val key, ss_val val, void *data),
-			     void *data);
+void ss_dict_foreach (void (*func) (ss_val key, ss_val val),
+		      ss_dict *d);
+void ss_dict_foreach_member (void (*func) (ss_val key, ss_val val),
+			     ss_dict *d);
 void ss_dict_update (ss_dict *d,
 		     ss_val (*func) (ss_val key, ss_val val, void *data),
 		     void *data);

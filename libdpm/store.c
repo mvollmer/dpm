@@ -567,54 +567,9 @@ ss_gc_copy (ss_gc_data *gc, ss_val obj)
     }
 }
 
-typedef struct {
-  ss_gc_data *gc;
-  ss_dict *d;
-  int weak;
-} ss_gc_dict_data;
-
-static void ss_dict_node_foreach (int dispatch_tag,
-				  ss_val node,
-				  void (*func) (ss_val key, ss_val val,
-						void *data),
-				  void *data);
-
-static void
-ss_dict_gc_set (ss_val key, ss_val val, void *data)
-{
-  ss_gc_dict_data *dd = (ss_gc_dict_data *)data;
-  if (dd->weak == SS_DICT_STRONG)
-    {
-      ss_dict_set (dd->d, ss_gc_copy (dd->gc, key), ss_gc_copy (dd->gc, val));
-    }
-  else if (dd->weak == SS_DICT_WEAK_KEYS)
-    {
-      if (ss_gc_alive_p (dd->gc, key))
-	  ss_dict_set (dd->d,
-		       ss_gc_copy (dd->gc, key), ss_gc_copy (dd->gc, val));
-    }
-  else if (dd->weak == SS_DICT_WEAK_SETS)
-    {
-      if (val)
-	{
-	  int len = ss_len (val), n = 0;
-	  ss_val new_elts[len];
-	  for (int i = 0; i < len; i++)
-	    {
-	      ss_val elt = ss_ref (val, i);
-	      if (elt && ss_gc_alive_p (dd->gc, elt))
-		new_elts[n++] = ss_gc_copy (dd->gc, elt);
-	    }
-	  if (n > 0)
-	    ss_dict_set (dd->d,
-			 ss_gc_copy (dd->gc, key), ss_newv (dd->gc->to_store,
-							    ss_tag (val), n,
-							    new_elts));
-	}
-    }
-  else
-    abort ();
-}
+static void ss_dict_node_foreach (void (*func) (ss_val key, ss_val val),
+				  int dispatch_tag,
+				  ss_val node);
 
 static int
 ss_dict_weak_kind (ss_val node)
@@ -652,14 +607,45 @@ static ss_val
 ss_dict_gc_copy (ss_gc_data *gc, ss_val node)
 {
   ss_val copy;
-  ss_gc_dict_data dd;
-  dd.gc = gc;
-  dd.weak = ss_dict_weak_kind (node);
-  dd.d = ss_dict_init (gc->to_store, NULL, dd.weak);
-  ss_dict_node_foreach (ss_dict_dispatch_tag (dd.weak),
-			node, ss_dict_gc_set, &dd);
+  int weak = ss_dict_weak_kind (node);
+  ss_dict *d = ss_dict_init (gc->to_store, NULL, weak);
 
-  copy = ss_dict_finish (dd.d);
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_node_foreach, ss_dict_dispatch_tag (weak), node)
+    {
+      if (weak == SS_DICT_STRONG)
+	{
+	  ss_dict_set (d, ss_gc_copy (gc, key), ss_gc_copy (gc, val));
+	}
+      else if (weak == SS_DICT_WEAK_KEYS)
+	{
+	  if (ss_gc_alive_p (gc, key))
+	    ss_dict_set (d, ss_gc_copy (gc, key), ss_gc_copy (gc, val));
+	}
+      else if (weak == SS_DICT_WEAK_SETS)
+	{
+	  if (val)
+	    {
+	      int len = ss_len (val), n = 0;
+	      ss_val new_elts[len];
+	      for (int i = 0; i < len; i++)
+		{
+		  ss_val elt = ss_ref (val, i);
+		  if (elt && ss_gc_alive_p (gc, elt))
+		    new_elts[n++] = ss_gc_copy (gc, elt);
+		}
+	      if (n > 0)
+		ss_dict_set (d, ss_gc_copy (gc, key),
+			     ss_newv (gc->to_store,
+				      ss_tag (val), n,
+				      new_elts));
+	    }
+	}
+      else
+	abort ();
+    }
+
+  copy = ss_dict_finish (d);
   if (node)
     {
       if (copy)
@@ -772,45 +758,6 @@ ss_gc_copy_root (ss_gc_data *gc)
 }
 
 static void
-ss_gc_dict_ripple_key_entry (ss_val key, ss_val val, void *data)
-{
-  ss_gc_data *gc = (ss_gc_data *)data;
-
-  /* If the key is alive, we make sure that the value is alive, too.
-     Since the value might be used in another dict, we need to scan
-     again.
-   */
-  if (ss_gc_alive_p (gc, key)
-      && !ss_gc_alive_p (gc, val))
-    {
-      ss_gc_copy (gc, val);
-      gc->again = 1;
-    }
-}
-
-static void
-ss_gc_dict_ripple_set_entry (ss_val key, ss_val val, void *data)
-{
-  ss_gc_data *gc = (ss_gc_data *)data;
-
-  /* If any of the values are alive, we make sure that the key is
-     alive, too.  Since the key might be used in another dict, we need
-     to scan again.
-   */
-  if (val && !ss_gc_alive_p (gc, key))
-    {
-      int len = ss_len (val);
-      for (int i = 0; i < len; i++)
-	if (ss_gc_alive_p (gc, ss_ref (val, i)))
-	  {
-	    ss_gc_copy (gc, key);
-	    gc->again = 1;
-	    break;
-	  }
-    }
-}
-
-static void
 ss_gc_ripple_dicts (ss_gc_data *gc)
 {
   int i;
@@ -823,12 +770,45 @@ ss_gc_ripple_dicts (ss_gc_data *gc)
 	ss_val d = gc->delayed[i];
 	if (ss_is (d, WEAK_DICT_DISPATCH_TAG)
 	    || ss_is (d, WEAK_DICT_SEARCH_TAG))
-	  ss_dict_node_foreach (WEAK_DICT_DISPATCH_TAG,
-				d, ss_gc_dict_ripple_key_entry, gc);
+	  {
+	    dyn_foreach_x ((ss_val key, ss_val val),
+			   ss_dict_node_foreach, WEAK_DICT_DISPATCH_TAG, d)
+	      {
+		/* If the key is alive, we make sure that the value is alive, too.
+		   Since the value might be used in another dict, we need to scan
+		   again.
+		*/
+		if (ss_gc_alive_p (gc, key)
+		    && !ss_gc_alive_p (gc, val))
+		  {
+		    ss_gc_copy (gc, val);
+		    gc->again = 1;
+		  }
+	      }
+	  }
 	else if (ss_is (d, WEAK_SETS_DISPATCH_TAG)
 		 || ss_is (d, WEAK_SETS_SEARCH_TAG))
-	  ss_dict_node_foreach (WEAK_SETS_DISPATCH_TAG,
-				d, ss_gc_dict_ripple_set_entry, gc);
+	  {
+	    dyn_foreach_x ((ss_val key, ss_val val),
+			   ss_dict_node_foreach, WEAK_SETS_DISPATCH_TAG, d)
+	      {
+		/* If any of the values are alive, we make sure that the key is
+		   alive, too.  Since the key might be used in another dict, we need
+		   to scan again.
+		*/
+		if (val && !ss_gc_alive_p (gc, key))
+		  {
+		    int len = ss_len (val);
+		    for (int i = 0; i < len; i++)
+		      if (ss_gc_alive_p (gc, ss_ref (val, i)))
+			{
+			  ss_gc_copy (gc, key);
+			  gc->again = 1;
+			  break;
+			}
+		  }
+	      }
+	  }
       }
   } while (gc->again);
 }
@@ -1698,9 +1678,8 @@ ss_tab_intern_soft (ss_tab *ot, int len, void *blob)
   return d.obj;
 }
 
-void
-ss_tab_node_foreach (ss_val node,
-			void (*func) (ss_val , void *data), void *data)
+static void
+ss_tab_node_foreach (void (*func) (ss_val val), ss_val node)
 {
   if (node == NULL)
     ;
@@ -1708,21 +1687,20 @@ ss_tab_node_foreach (ss_val node,
     {
       int len = ss_len(node), i;
       for (i = 1; i < len; i++)
-	func (ss_ref (node, i), data);
+	func (ss_ref (node, i));
     }
   else
     {
       int len = ss_len(node), i;
       for (i = 1; i < len; i++)
-	ss_tab_node_foreach (ss_ref (node, i), func, data);
+	ss_tab_node_foreach (func, ss_ref (node, i));
     }
 }
 
 void
-ss_tab_foreach (ss_tab *ot,
-		   void (*func) (ss_val , void *data), void *data)
+ss_tab_foreach (void (*func) (ss_val val), ss_tab *ot)
 {
-  ss_tab_node_foreach (ot->root, func, data);
+  ss_tab_node_foreach (func, ot->root);
 }
 
 typedef struct {
@@ -2048,10 +2026,9 @@ ss_dict_del (ss_dict *d, ss_val key, ss_val val)
 }
 
 static void
-ss_dict_node_foreach (int dispatch_tag, 
-		      ss_val node,
-		      void (*func) (ss_val key, ss_val val, void *data),
-		      void *data)
+ss_dict_node_foreach (void (*func) (ss_val key, ss_val val),
+		      int dispatch_tag, 
+		      ss_val node)
 {
   if (node == NULL)
     ;
@@ -2059,21 +2036,21 @@ ss_dict_node_foreach (int dispatch_tag,
     {
       int len = ss_len(node), i;
       for (i = 1; i < len; i += 2)
-	func (ss_ref (node, i), ss_ref (node, i+1), data);
+	func (ss_ref (node, i), ss_ref (node, i+1));
     }
   else
     {
       int len = ss_len(node), i;
       for (i = 1; i < len; i++)
-	ss_dict_node_foreach (dispatch_tag, ss_ref (node, i), func, data);
+	ss_dict_node_foreach (func, dispatch_tag, ss_ref (node, i));
     }
 }
 
 void
-ss_dict_foreach (ss_dict *d,
-		 void (*func) (ss_val key, ss_val val, void *data), void *data)
+ss_dict_foreach (void (*func) (ss_val key, ss_val val),
+		  ss_dict *d)
 {
-  ss_dict_node_foreach (d->dispatch_tag, d->root, func, data);
+  ss_dict_node_foreach (func, d->dispatch_tag, d->root);
 }
 
 static ss_val
@@ -2132,37 +2109,24 @@ ss_dict_update (ss_dict *d,
 				 func, data);
 }
 
-struct foreach_member_data {
-  void (*func) (ss_val key, ss_val val, void *data);
-  void *data;
-};
-
-static void
-foreach_member (ss_val key, ss_val val, void *data)
+void
+ss_dict_foreach_member (void (*func) (ss_val key, ss_val val),
+			ss_dict *d)
 {
-  struct foreach_member_data *fmd = data;
-
-  if (val)
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_foreach, d)
     {
-      int len = ss_len (val);
-      for (int i = 0; i < len; i++)
+      if (val)
 	{
-	  ss_val member = ss_ref (val, i);
-	  if (member)
-	    fmd->func (key, member, fmd->data);
+	  int len = ss_len (val);
+	  for (int i = 0; i < len; i++)
+	    {
+	      ss_val member = ss_ref (val, i);
+	      if (member)
+		func (key, member);
+	    }
 	}
     }
-}
-
-void
-ss_dict_foreach_member (ss_dict *d, 
-			void (*func) (ss_val key, ss_val val, void *data),
-			void *data)
-{
-  struct foreach_member_data fmd;
-  fmd.func = func;
-  fmd.data = data;
-  ss_dict_foreach (d, foreach_member, &fmd);
 }
 
 struct update_members_data {

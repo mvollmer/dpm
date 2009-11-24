@@ -87,3 +87,5 @@
 /libdpm/alg.o
 /libdpm/inst.lo
 /libdpm/inst.o
+/libdpm/test-parse
+/libdpm/test-parse.o

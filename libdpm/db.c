@@ -961,11 +961,11 @@ dpm_db_foreach_package (void (*func) (dpm_package pkg))
 {
   dpm_db db = dyn_get (cur_db);
 
-  void package (ss_val key, ss_val val, void *unused)
-  {
-    func (val);
-  }
-  ss_dict_foreach (db->packages, package, NULL);
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_foreach, db->packages)
+    {
+      func (val);
+    }
 }
 
 void
@@ -973,11 +973,23 @@ dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_version ver))
 {
   dpm_db db = dyn_get (cur_db);
   
-  void installed (ss_val key, ss_val val, void *unused)
-  {
-    func (key, val);
-  }
-  ss_dict_foreach (db->installed, installed, NULL);
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_foreach, db->installed)
+    {
+      func (key, val);
+    }
+}
+
+void
+dpm_db_foreach_installed_package (void (*func) (dpm_package pkg))
+{
+  dpm_db db = dyn_get (cur_db);
+  
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_foreach, db->installed)
+    {
+      func (key);
+    }
 }
 
 void
@@ -985,11 +997,11 @@ dpm_db_foreach_package_index (void (*func) (dpm_package_index idx))
 {
   dpm_db db = dyn_get (cur_db);
   
-  void index (ss_val key, ss_val val, void *unused)
-  {
-    func (val);
-  }
-  ss_dict_foreach (db->indices, index, NULL);
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_foreach, db->indices)
+    {
+      func (val);
+    }
 }
 
 /* Version comparison
@@ -1230,19 +1242,19 @@ dpm_db_reverse_relations (dpm_package pkg)
 }
 
 void
-dpm_db_version_foreach_pkgindex (dpm_version ver,
-				 void (*func)(dpm_package_index idx))
+dpm_db_version_foreach_pkgindex (void (*func)(dpm_package_index idx),
+				 dpm_version ver)
 {
   dpm_db db = dyn_get (cur_db);
 
-  void index (ss_val path, dpm_package_index idx, void *unused)
-  {
-    ss_val versions = dpm_pkgidx_versions (idx);
-    for (int i = 0; i < ss_len(versions); i++)
-      if (ss_ref (versions, i) == ver)
-	func (idx);
-  }
-  ss_dict_foreach (db->indices, index, NULL);
+  dyn_foreach_x ((ss_val path, dpm_package_index idx),
+		 ss_dict_foreach, db->indices)
+    {
+      ss_val versions = dpm_pkgidx_versions (idx);
+      for (int i = 0; i < ss_len(versions); i++)
+	if (ss_ref (versions, i) == ver)
+	  func (idx);
+    }
 }
 
 static void
@@ -1312,33 +1324,23 @@ dpm_db_show_version (dpm_version ver)
 /* Stats
  */
 
-typedef struct {
-  int n_packages;
-  int n_versions;
-} stats;
-
-static void
-collect_stats (ss_val key, ss_val val, void *data)
-{
-  stats *s = data;
-  
-  s->n_packages += 1;
-  if (val)
-    s->n_versions += ss_len (val);
-}
-
 void
 dpm_db_stats ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  stats s;
-  s.n_packages = 0;
-  s.n_versions = 0;
+  int n_packages = 0;
+  int n_versions = 0;
 
-  ss_dict_foreach (db->available, collect_stats, &s);
+  dyn_foreach_x ((ss_val key, ss_val val),
+		 ss_dict_foreach, db->available)
+    {
+      n_packages += 1;
+      if (val)
+	n_versions += ss_len (val);
+    }
 
   fprintf (stderr, "%d packages, %d versions\n",
-	   s.n_packages, s.n_versions);
+	   n_packages, n_versions);
 }
 

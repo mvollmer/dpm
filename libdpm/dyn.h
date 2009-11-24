@@ -104,6 +104,20 @@ void *dyn_strdup (const char *str);
 void *dyn_strndup (const char *str, int n);
 void *dyn_memdup (void *mem, int n);
 
+#define dyn_paste(a,b) dyn_paste2(a,b)
+#define dyn_paste2(a,b) a##b
+
+#define dyn_foreach__impl(BODY,BODY_ARGS,ITER,ITER_ARGS...)	\
+    auto void BODY BODY_ARGS;  \
+    ITER (BODY, ## ITER_ARGS);      \
+    void BODY BODY_ARGS
+
+#define dyn_foreach_x(DECL,ITER,ARGS...) \
+  dyn_foreach__impl (dyn_paste(__body__, __LINE__), DECL, ITER, ## ARGS)
+
+#define dyn_foreach(DECL,ITER,ARGS...) \
+  dyn_foreach__impl (dyn_paste(__body__, __LINE__), (DECL), ITER, ## ARGS)
+
 void dyn_begin ();
 void dyn_end ();
 

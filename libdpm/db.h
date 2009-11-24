@@ -127,6 +127,7 @@ int dpm_db_version_count ();
 
 void dpm_db_foreach_package (void (*func) (dpm_package pkg));
 void dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_package ver));
+void dpm_db_foreach_installed_package (void (*func) (dpm_package pkg));
 void dpm_db_foreach_package_index (void (*func) (dpm_package_index idx));
 
 dpm_package dpm_db_find_package (const char *name);
@@ -137,8 +138,8 @@ dpm_version dpm_db_installed (dpm_package pkg);
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
-void dpm_db_version_foreach_pkgindex (dpm_version ver,
-				      void (*func)(dpm_package_index idx));
+void dpm_db_version_foreach_pkgindex (void (*func)(dpm_package_index idx),
+				      dpm_version ver);
 
 ss_val dpm_db_query_tag (const char *tag);
 ss_val dpm_db_reverse_relations (dpm_package pkg);

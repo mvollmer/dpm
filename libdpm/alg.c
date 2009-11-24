@@ -394,57 +394,57 @@ setup_package_available_and_installed (dpm_ws ws)
     {
       bool found_any = false;
 
-      void index (dpm_package_index idx)
-      {
-	dpm_release_index release = dpm_pkgidx_release (idx);
-	if (release && ss_streq (dpm_relidx_dist (release), ws->target_dist))
-          {
-            ss_val versions = dpm_pkgidx_versions (idx);
-            found_any = true;
-            for (int i = 0; i < ss_len (versions); i++)
-              {
-                dpm_version ver = ss_ref (versions, i);
-                pkg_info *p = get_pkg_info (ws, dpm_ver_package (ver));
-                
-                if (p->available_version == NULL
-                    || dpm_db_compare_versions (dpm_ver_version (ver),
-                                                dpm_ver_version (p->available_version)) > 0)
-                  p->available_version = ver;
-              }
-          }
-      }
-      dpm_db_foreach_package_index (index);
+      dyn_foreach (dpm_package_index idx,
+		   dpm_db_foreach_package_index)
+	{
+	  dpm_release_index release = dpm_pkgidx_release (idx);
+	  if (release && ss_streq (dpm_relidx_dist (release), ws->target_dist))
+	    {
+	      ss_val versions = dpm_pkgidx_versions (idx);
+	      found_any = true;
+	      for (int i = 0; i < ss_len (versions); i++)
+		{
+		  dpm_version ver = ss_ref (versions, i);
+		  pkg_info *p = get_pkg_info (ws, dpm_ver_package (ver));
+		  
+		  if (p->available_version == NULL
+		      || dpm_db_compare_versions (dpm_ver_version (ver),
+						  dpm_ver_version (p->available_version)) > 0)
+		    p->available_version = ver;
+		}
+	    }
+	}
 
       if (!found_any)
 	dyn_error ("No such distribution: %s", ws->target_dist);
     }
   else
     {
-      void package (dpm_package pkg)
-      {
-	pkg_info *p = get_pkg_info (ws, pkg);
-	ss_val versions = dpm_db_available (pkg);
-	if (versions)
-	  {
-	    for (int i = 0; i < ss_len (versions); i++)
-	      {
-		dpm_version ver = ss_ref (versions, i);
-		if (p->available_version == NULL
-		    || dpm_db_compare_versions (dpm_ver_version (ver),
-						dpm_ver_version (p->available_version)) > 0)
-		  p->available_version = ver;
-	      }
-	  }
-      }
-      dpm_db_foreach_package (package);
+      dyn_foreach (dpm_package pkg,
+		   dpm_db_foreach_package)
+	{
+	  pkg_info *p = get_pkg_info (ws, pkg);
+	  ss_val versions = dpm_db_available (pkg);
+	  if (versions)
+	    {
+	      for (int i = 0; i < ss_len (versions); i++)
+		{
+		  dpm_version ver = ss_ref (versions, i);
+		  if (p->available_version == NULL
+		      || dpm_db_compare_versions (dpm_ver_version (ver),
+						  dpm_ver_version (p->available_version)) > 0)
+		    p->available_version = ver;
+		}
+	    }
+	}
     }
 
-  void installed (dpm_package pkg, dpm_version ver)
-  {
-    pkg_info *p = get_pkg_info (ws, pkg);
-    p->installed_version = ver;
-  }
-  dpm_db_foreach_installed (installed);
+  dyn_foreach_x ((dpm_package pkg, dpm_version ver),
+		 dpm_db_foreach_installed)
+    {
+      pkg_info *p = get_pkg_info (ws, pkg);
+      p->installed_version = ver;
+    }
 
   ws->available_versions_initialized = 1;
 }
@@ -1314,12 +1314,12 @@ dpm_ws_import ()
 {
   dpm_ws ws = dyn_get (cur_ws);
 
-  void import (dpm_package pkg, dpm_version ver)
-  {
-    pkg_info *p = get_pkg_info (ws, pkg);
-    setup_package (ws, p);
-  }
-  dpm_db_foreach_installed (import);
+  dyn_foreach (dpm_package pkg,
+	       dpm_db_foreach_installed_package)
+    {
+      pkg_info *p = get_pkg_info (ws, pkg);
+      setup_package (ws, p);
+    }
 }
 
 void
@@ -1327,15 +1327,14 @@ dpm_ws_select_installed ()
 {
   dpm_ws ws = dyn_get (cur_ws);
 
-  void import (dpm_package pkg, dpm_version ver)
-  {
-    pkg_info *p = get_pkg_info (ws, pkg);
-    setup_package (ws, p);
-    if (p->installed_version)
-      p->selected = add_candidate (ws, p, p->installed_version, 0);
-  }
-
-  dpm_db_foreach_installed (import);
+  dyn_foreach (dpm_package pkg,
+	       dpm_db_foreach_installed_package)
+    {
+      pkg_info *p = get_pkg_info (ws, pkg);
+      setup_package (ws, p);
+      if (p->installed_version)
+	p->selected = add_candidate (ws, p, p->installed_version, 0);
+    }
 }
 
 void

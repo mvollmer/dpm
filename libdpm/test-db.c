@@ -120,13 +120,13 @@ info (const char *package)
 		else
 		  dyn_print (" %r", dpm_ver_version (ver));
 
-		void index (dpm_package_index idx)
-		{
-		  dpm_release_index release = dpm_pkgidx_release (idx);
-		  if (release)
-		    dyn_print (" (%r)", dpm_relidx_dist (release));
-		}
-		dpm_db_version_foreach_pkgindex (ver, index);
+		dyn_foreach (dpm_package_index idx,
+			     dpm_db_version_foreach_pkgindex, ver)
+		  {
+		    dpm_release_index release = dpm_pkgidx_release (idx);
+		    if (release)
+		      dyn_print (" (%r)", dpm_relidx_dist (release));
+		  }
 	      }
 	  if (!installed_shown && installed)
 	    dyn_print (" [%r]", dpm_ver_version (installed));

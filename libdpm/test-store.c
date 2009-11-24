@@ -34,7 +34,7 @@ usage ()
 
 int found = 0;
 
-ss_store *store;
+ss_store store;
 ss_tab *table;
 ss_dict *package_files_dict;
 ss_dict *file_packages_dict;
@@ -223,7 +223,7 @@ grep_blob (ss_val val, void *data)
 }
 
 void
-dump_package (ss_val key, ss_val val, void *data)
+dump_package (ss_val key, ss_val val)
 {
   dyn_print ("%r: %d files\n", key, ss_len (val));
 }
@@ -254,7 +254,7 @@ dump_package_info (ss_val pkg, const char *field)
 }
 
 void
-dump_file (ss_val key, ss_val val, void *data)
+dump_file (ss_val key, ss_val val)
 {
   dyn_print ("%r\n", key);
 }
@@ -397,8 +397,14 @@ main (int argc, char **argv)
 	  ss_val file = intern_soft (argv[3]);
 	  if (file && ss_dict_get (file_packages_dict, file))
 	    dump_packages (file);
-	  else
-	    ss_tab_foreach (table, grep_blob, argv[3]);
+	  else 
+	    {
+	      dyn_foreach (ss_val blob,
+			   ss_tab_foreach, table)
+		{
+		  grep_blob (blob, argv[3]);
+		}
+	    }
 	}
 
       finish (SS_READ);
@@ -422,7 +428,7 @@ main (int argc, char **argv)
     {
       init (argv[2], SS_READ);
 
-      ss_dict_foreach (package_files_dict, dump_package, NULL);
+      ss_dict_foreach (dump_package, package_files_dict);
 
       finish (SS_READ);
     }
@@ -430,7 +436,7 @@ main (int argc, char **argv)
     {
       init (argv[2], SS_READ);
 
-      ss_dict_foreach (file_packages_dict, dump_file, NULL);
+      ss_dict_foreach (dump_file, file_packages_dict);
 
       finish (SS_READ);
     }
