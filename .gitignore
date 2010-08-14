@@ -96,3 +96,15 @@
 /libdpm/test-coverage
 /libdpm/dpm
 /libdpm/cache/
+/libdpm/coverage
+/libdpm/dpm.o
+/libdpm/test-coverage.trace
+/libdpm/test_coverage-acq.o
+/libdpm/test_coverage-alg.o
+/libdpm/test_coverage-conf.o
+/libdpm/test_coverage-db.o
+/libdpm/test_coverage-dyn.o
+/libdpm/test_coverage-inst.o
+/libdpm/test_coverage-parse.o
+/libdpm/test_coverage-store.o
+/libdpm/test_coverage-test.o

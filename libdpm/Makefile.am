@@ -54,7 +54,7 @@ coverage: test-coverage
 	genhtml -o coverage test-coverage.trace
 
 coverage-clean:
-	rm -rf *.gcno *.gcda test-coverage.trace coverage test_coverage-*.o
+	rm -rf *.gcno *.gcda test-coverage.trace coverage test_coverage-*.o test-coverage
 
 .PHONY: coverage
 
