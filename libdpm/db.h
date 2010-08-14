@@ -130,6 +130,11 @@ void dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_package ver));
 void dpm_db_foreach_installed_package (void (*func) (dpm_package pkg));
 void dpm_db_foreach_package_index (void (*func) (dpm_package_index idx));
 
+DYN_DECLARE_STRUCT_ITER (dpm_package_index, dpm_db_package_indices)
+{
+  ss_dict_entries entries_iter;
+};
+
 dpm_package dpm_db_find_package (const char *name);
 
 ss_val      dpm_db_available (dpm_package pkg);

@@ -2790,6 +2790,6 @@ void dyn_ensure_init ()
       dyn_top_def (dyn_from_string ("lambda"),
 		   dyn_make_interp_spec (dyn_spec_lambda));
 
-      atexit (dyn_report);
+      // atexit (dyn_report);
     }
 }

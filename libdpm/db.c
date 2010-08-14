@@ -1004,6 +1004,37 @@ dpm_db_foreach_package_index (void (*func) (dpm_package_index idx))
     }
 }
 
+void
+dpm_db_package_indices_init (dpm_db_package_indices *iter)
+{
+  dpm_db db = dyn_get (cur_db);
+  ss_dict_entries_init (&iter->entries_iter, db->indices);
+}
+
+void
+dpm_db_package_indices_fini (dpm_db_package_indices *iter)
+{
+  ss_dict_entries_fini (&iter->entries_iter);
+}
+
+void
+dpm_db_package_indices_step (dpm_db_package_indices *iter)
+{
+  ss_dict_entries_step (&iter->entries_iter);
+}
+
+bool
+dpm_db_package_indices_done (dpm_db_package_indices *iter)
+{
+  return ss_dict_entries_done (&iter->entries_iter);
+}
+
+dpm_package_index
+dpm_db_package_indices_elt (dpm_db_package_indices *iter)
+{
+  return iter->entries_iter.val;
+}
+
 /* Version comparison
  *
  * Lifted from apt.

@@ -166,6 +166,16 @@ void ss_dict_update_members (ss_dict *d,
 					     void *data),
 			     void *data);
 
+DYN_DECLARE_STRUCT_ITER (ss_val, ss_dict_entries, ss_dict *d)
+{
+  ss_dict *dict;
+  ss_val key, val;
+
+  int level;
+  ss_val node[10];
+  int index[10];
+};
+
 ss_val ss_ref_safely (ss_val obj, int i);
 int ss_streq (ss_val obj, const char *str);
 

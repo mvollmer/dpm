@@ -1115,7 +1115,7 @@ ss_realloc_unstored (ss_val obj, size_t words)
       uint32_t *elts = ((uint32_t *)new_obj) + 1;
       for (int i = 0; i < len; i++)
 	{
-	  if (elts[i] && !ss_is_int (elts[i]))
+	  if (elts[i] && !ss_is_int ((ss_val)elts[i]))
 	    elts[i] -= off;
 	}
     }
@@ -2051,6 +2051,77 @@ ss_dict_foreach (void (*func) (ss_val key, ss_val val),
 		  ss_dict *d)
 {
   ss_dict_node_foreach (func, d->dispatch_tag, d->root);
+}
+
+/* Dict entries iterator.
+
+   Manually inversing control flow is a bitch.
+ */
+
+static void
+ss_dict_entries_push (ss_dict_entries *iter, ss_val node)
+{
+  do {
+    iter->level += 1;
+    iter->node[iter->level] = node;
+    iter->index[iter->level] = 1;
+    node = ss_ref (node, 1);
+  } while (ss_is (node, iter->dict->dispatch_tag));
+}
+
+void
+ss_dict_entries_init (ss_dict_entries *iter, ss_dict *d)
+{
+  iter->dict = dyn_ref (d);
+  iter->level = -1;
+  if (d->root)
+    ss_dict_entries_push (iter, d->root);
+}
+
+void
+ss_dict_entries_fini (ss_dict_entries *iter)
+{
+  dyn_unref (iter->dict);
+}
+
+void
+ss_dict_entries_step (ss_dict_entries *iter)
+{
+  // Pop all exhausted nodes
+  
+  while (iter->level >= 0 
+	 && iter->index[iter->level] > ss_len (iter->node[iter->level]))
+    iter->level -= 1;
+
+  if (iter->level < 0)
+    return;
+
+  // Push to search node
+
+  if (ss_is (iter->node[iter->level], iter->dict->dispatch_tag))
+    {
+      ss_val n = ss_ref (iter->node[iter->level], iter->index[iter->level]);
+      iter->index[iter->level] += 1;
+      ss_dict_entries_push (iter, n);
+    }
+
+  // Get current element
+
+  iter->key = ss_ref (iter->node[iter->level], iter->index[iter->level]);
+  iter->val = ss_ref (iter->node[iter->level], iter->index[iter->level] + 1);
+  iter->index[iter->level] += 2;
+}
+
+bool
+ss_dict_entries_done (ss_dict_entries *iter)
+{
+  return iter->level > 0;
+}
+
+ss_val
+ss_dict_entries_elt (ss_dict_entries *iter)
+{
+  return iter->key;
 }
 
 static ss_val

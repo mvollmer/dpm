@@ -89,3 +89,10 @@
 /libdpm/inst.o
 /libdpm/test-parse
 /libdpm/test-parse.o
+/libdpm/*.gcda
+/libdpm/*.gcno
+/libdpm/dpm.db
+/libdpm/*.gcov
+/libdpm/test-coverage
+/libdpm/dpm
+/libdpm/cache/

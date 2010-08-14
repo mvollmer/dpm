@@ -77,4 +77,19 @@ void dpm_ws_realize (int simulate);
 // - select a candidate
 // - tell whether a candidate would violate constraints if selected
 
+#if 0
+void dpm_ws_foreach_candidate (void (*func) (dpm_candidate cand),
+			       dpm_package pkg);
+
+void dpm_ws_foreach_dependency (void (*func) (dpm_dependency dep),
+				dpm_candidate cand);
+void dpm_ws_foreach_alternative (void (*func) (dpm_candidate alt),
+				 dpm_dependency dep);
+void dpm_ws_foreach_conflict (void (*func) (dpm_candidate cand),
+			      dpm_candidate cand);
+
+bool dpm_ws_select (dpm_candidate cand);
+bool dpm_ws_selectable (dpm_candidate cand);
+#endif
+
 #endif /* !DPM_ALG_H */

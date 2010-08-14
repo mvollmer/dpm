@@ -1,0 +1,7 @@
+#! /bin/sh
+
+if [ -z "$TESTPROG" ]; then
+  TESTPROG=test
+fi
+
+./$TESTPROG $(basename $1 | sed s/-/_/g)
