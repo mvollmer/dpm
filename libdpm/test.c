@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <dlfcn.h>
 
-#include <libdpm/dyn.h>
+#include "dpm.h"
 
 #define DEFTEST(x) void x ()
 
@@ -33,8 +33,13 @@ DEFTEST (dyn_frames)
 int
 main (int argc, char **argv)
 {
-  void *handle = dlopen (NULL, 0);
-  void (*func)() = dlsym (handle, argv[1]);
+  if (argc != 2)
+    {
+      fprintf (stderr, "Usage: test TEST\n");
+      exit (1);
+    }
+
+  void (*func)() = dlsym (NULL, argv[1]);
 
   if (func)
     {
