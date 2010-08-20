@@ -119,13 +119,14 @@ void *dyn_memdup (void *mem, int n);
 #define dyn_foreach(DECL,ITER,ARGS...) \
   dyn_foreach__impl (dyn_paste(__body__, __LINE__), (DECL), ITER, ## ARGS)
 
-#define dyn_foreach_iter(NAME, ITER, ARGS...) \
-  for (ITER NAME __attribute__ ((cleanup (ITER##_fini))) = ITER##_init (&NAME, ARGS), NAME;  \
-       !ITER##_done (&NAME); \
+#define dyn_foreach_iter(NAME, ITER, ARGS...)				\
+  for (ITER NAME __attribute__ ((cleanup (ITER##_fini)))		\
+	 = (ITER##_init (&NAME, ARGS), NAME);				\
+       !ITER##_done (&NAME);						\
        ITER##_step (&NAME))
 
 #define dyn_foreach_(VAR, ITER, ARGS...)				\
-  for (bool __c = true; __c;)						\
+   for (bool __c = true; __c;)						\
     for (ITER##_type VAR; __c; __c = false)				\
       for (ITER __i __attribute__ ((cleanup (ITER##_fini)))		\
 	     = (ITER##_init (&__i, ARGS), VAR = ITER##_elt (&__i), __i); \
