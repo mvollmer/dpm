@@ -309,8 +309,16 @@ dyn_seqvec_unref (dyn_type *type, void *object)
 static int
 dyn_seqvec_equal (void *a, void *b)
 {
-  // XXX - code this
-  abort ();
+  dyn_seqvec_struct *as = a, *bs = b;
+ 
+  if (as->len != bs->len)
+    return 0;
+
+  for (int i = 0; i < as->len; i++)
+    if (!dyn_equal (as->elts[i], bs->elts[i]))
+      return 0;
+
+  return 1;
 }
 
 DYN_DEFINE_TYPE (dyn_seqvec, "seq");

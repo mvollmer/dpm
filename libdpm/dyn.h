@@ -208,7 +208,6 @@ dyn_val dyn_pair (dyn_val first, dyn_val rest);
 int dyn_is_seq (dyn_val val);
 int dyn_len (dyn_val seq);
 dyn_val dyn_elt (dyn_val seq, int index);
-dyn_val dyn_lookup (dyn_val dict, dyn_val key);
 
 #define DYN_EOS ((dyn_val)-1)
 
@@ -231,9 +230,9 @@ dyn_val dyn_assoc (dyn_val key, dyn_val val, dyn_val seq);
 dyn_val dyn_lookup (dyn_val key, dyn_val seq);
 
 int dyn_is_func (dyn_val val);
-dyn_val dyn_func (void (*func) (), void *data, void (*free) (void *data));
-void (*dyn_func_func (dyn_val val))();
-void *dyn_func_data (dyn_val val);
+dyn_val dyn_func (void (*code) (), void *env, void (*free) (void *env));
+void (*dyn_func_code (dyn_val val))();
+void *dyn_func_env (dyn_val val);
 
 int dyn_equal (dyn_val a, dyn_val b);
 int dyn_eq (dyn_val a, const char *b);

@@ -157,6 +157,226 @@ DEFTEST (dyn_iter)
   EXPECT (sum == 0+1+2+3+4+5+6+7+8+9);
 }
 
+void
+unwind (int for_throw, void *data)
+{
+  *(int *)data = 1;
+}
+
+DEFTEST (dyn_unwind)
+{
+  int i = 0;
+
+  dyn_begin ();
+  dyn_on_unwind (unwind, &i);
+  dyn_end ();
+
+  EXPECT (i == 1);
+}
+
+DEFTEST (dyn_block)
+{
+  int i = 0;
+
+  dyn_block
+    {
+      dyn_on_unwind (unwind, &i);
+    }
+
+  EXPECT (i == 1);
+
+  dyn_block
+    {
+      i = 0;
+      break;
+      dyn_on_unwind (unwind, &i);
+    }
+
+  EXPECT (i == 0);
+}
+
+DYN_DECLARE_TYPE (container);
+
+struct container_struct {
+  int i;
+  double d;
+};
+
+int containers_alive = 0;
+
+void
+container_unref (dyn_type *t, void *c)
+{
+  containers_alive -= 1;
+}
+
+int
+container_equal (void *a, void *b)
+{
+  container ac = a, bc = b;
+  return ac->i == bc->i && ac->d == bc->d;
+}
+
+DYN_DEFINE_TYPE (container, "container");
+
+DEFTEST (dyn_type)
+{
+  dyn_block
+    {
+      container c = dyn_new (container);
+      EXPECT (dyn_is (c, container_type));
+      containers_alive = 1;
+
+      EXPECT (strcmp (dyn_type_name (c), "container") == 0);
+
+      dyn_val cc = dyn_ref (c);
+      EXPECT (cc == c);
+
+      dyn_unref (c);
+      EXPECT (containers_alive == 1);
+    }
+  EXPECT (containers_alive == 0);
+
+  dyn_block
+    {
+      {
+	dyn_begin ();
+	container c = dyn_new (container);
+	EXPECT (dyn_is (c, container_type));
+	containers_alive = 1;
+	c = dyn_end_with (c);
+      }
+      EXPECT (containers_alive == 1);    
+    }
+  EXPECT (containers_alive == 0);
+}
+
+DEFTEST (dyn_string)
+{
+  dyn_block
+    {
+      dyn_val s = dyn_from_string ("hi");
+      EXPECT (dyn_is_string (s));
+      EXPECT (strcmp (dyn_to_string (s), "hi") == 0);
+      EXPECT (dyn_eq (s, "hi"));
+
+      dyn_val n = dyn_from_stringn ("hi1234", 2);
+      EXPECT (dyn_is_string (n));
+      EXPECT (strcmp (dyn_to_string (n), "hi") == 0);
+      EXPECT (dyn_eq (n, "hi"));
+    }
+}
+
+DEFTEST (dyn_pair)
+{
+  dyn_block
+    {
+      dyn_val p = dyn_pair (dyn_from_string ("1st"),
+			    dyn_from_string ("2nd"));
+      EXPECT (dyn_is_pair (p));
+      EXPECT (dyn_eq (dyn_first (p), "1st"));
+      EXPECT (dyn_eq (dyn_second (p), "2nd"));
+    }
+}
+
+DEFTEST (dyn_seq)
+{
+  dyn_block
+    {
+      dyn_seq_builder b1;
+      dyn_seq_start (b1);
+      dyn_seq_append (b1, dyn_from_string ("pre"));
+      dyn_val pre = dyn_seq_finish (b1);
+
+      dyn_seq_builder b3;
+      dyn_seq_start (b3);
+      dyn_seq_append (b3, dyn_from_string ("post"));
+      dyn_val post = dyn_seq_finish (b3);
+
+      dyn_seq_builder b2;
+      dyn_seq_start (b2);
+      dyn_seq_append (b2, dyn_from_string ("two"));
+      dyn_seq_append (b2, dyn_from_string ("three"));
+      dyn_seq_prepend (b2, dyn_from_string ("one"));
+      dyn_seq_concat_front (b2, pre);
+      dyn_seq_concat_back (b2, post);
+      dyn_val s = dyn_seq_finish (b2);
+
+      EXPECT (dyn_is_seq (s));
+      EXPECT (dyn_len (s) == 5);
+      EXPECT (dyn_eq (dyn_elt (s, 0), "pre"));
+      EXPECT (dyn_eq (dyn_elt (s, 1), "one"));
+      EXPECT (dyn_eq (dyn_elt (s, 2), "two"));
+      EXPECT (dyn_eq (dyn_elt (s, 3), "three"));
+      EXPECT (dyn_eq (dyn_elt (s, 4), "post"));
+    }
+}
+
+DEFTEST (dyn_assoc)
+{
+  dyn_block
+    {
+      dyn_val a = NULL;
+
+      a = dyn_assoc (dyn_from_string ("key"), dyn_from_string ("value-1"), a);
+      a = dyn_assoc (dyn_from_string ("key"), dyn_from_string ("value-2"), a);
+      a = dyn_assoc (dyn_from_string ("key-2"), dyn_from_string ("value"), a);
+
+      EXPECT (dyn_eq (dyn_lookup (dyn_from_string ("key"), a), "value-2"));
+      EXPECT (dyn_eq (dyn_lookup (dyn_from_string ("key-2"), a), "value"));
+      EXPECT (dyn_lookup (dyn_from_string ("key-3"), a) == NULL);
+    }
+}
+
+void
+func ()
+{
+}
+
+void
+func_free (void *data)
+{
+  *(int *)data = 1;
+}
+
+DEFTEST (dyn_func)
+{
+  int flag = 0;
+  dyn_block
+    {
+      dyn_val f = dyn_func (func, &flag, func_free);
+      EXPECT (dyn_is_func (f));
+      EXPECT (dyn_func_code (f) == func);
+      EXPECT (dyn_func_env (f) == &flag);
+    }
+  EXPECT (flag == 1);
+}
+
+DEFTEST (dyn_equal)
+{
+  dyn_block
+    {
+      dyn_val a = dyn_from_string ("foo");
+
+      dyn_seq_builder b1;
+      dyn_seq_start (b1);
+      dyn_seq_append (b1, dyn_from_string ("foo"));
+      dyn_seq_append (b1, dyn_from_string ("bar"));
+      dyn_seq_append (b1, dyn_from_string ("baz"));
+      dyn_val b = dyn_seq_finish (b1);
+
+      dyn_seq_builder b2;
+      dyn_seq_start (b2);
+      dyn_seq_append (b2, dyn_from_string ("foo"));
+      dyn_seq_append (b2, dyn_from_string ("bar"));
+      dyn_seq_append (b2, dyn_from_string ("baz"));
+      dyn_val c = dyn_seq_finish (b2);
+      
+      EXPECT (!dyn_equal (a, b));
+      EXPECT (dyn_equal (b, c));
+    }
+}
+
 int
 main (int argc, char **argv)
 {
