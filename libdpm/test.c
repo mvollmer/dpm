@@ -25,11 +25,17 @@
 
 // Utilities
 
+#define S(x) dyn_from_string(x)
+#define Q(x) dyn_read_string(#x)
+
 #define DEFTEST(x) void test_##x ()
 #define EXPECT(expr) expect((expr), #expr, __FILE__, __LINE__)
-#define EXPECT_ABORT				\
-  if(expect_abort(__FILE__, __LINE__))		\
+#define EXPECT_STATUS(check)			\
+  if(expect_status (check, __FILE__, __LINE__))	\
     for (; true; exit(0))
+
+#define EXPECT_ABORT EXPECT_STATUS (check_status_abort)
+#define EXPECT_EXIT  EXPECT_STATUS (check_status_exit)
 
 void
 expect (int b, char *msg, char *file, int line)
@@ -42,7 +48,8 @@ expect (int b, char *msg, char *file, int line)
 }
 
 bool
-expect_abort (char *file, int line)
+expect_status (void (*check) (int status, char *file, int line),
+	       char *file, int line)
 {
   pid_t p = fork ();
   if (p < 0)
@@ -61,13 +68,29 @@ expect_abort (char *file, int line)
       exit (1);
     }
 
+  check (status, file, line);
+
+  return 0;
+}
+
+void
+check_status_abort (int status, char *file, int line)
+{
   if (!WIFSIGNALED (status) || WTERMSIG (status) != SIGABRT)
     {
       fprintf (stderr, "%s:%d: Expected abort\n", file, line);
       exit (1);
     }
+}
 
-  return 0;
+void
+check_status_exit (int status, char *file, int line)
+{
+  if (!WIFEXITED (status) || WEXITSTATUS (status) != 1)
+    {
+      fprintf (stderr, "%s:%d: Expected exit(1)\n", file, line);
+      exit (1);
+    }
 }
 
 // Tests
@@ -271,8 +294,7 @@ DEFTEST (dyn_pair)
 {
   dyn_block
     {
-      dyn_val p = dyn_pair (dyn_from_string ("1st"),
-			    dyn_from_string ("2nd"));
+      dyn_val p = dyn_pair (S("1st"), S("2nd"));
       EXPECT (dyn_is_pair (p));
       EXPECT (dyn_eq (dyn_first (p), "1st"));
       EXPECT (dyn_eq (dyn_second (p), "2nd"));
@@ -285,19 +307,19 @@ DEFTEST (dyn_seq)
     {
       dyn_seq_builder b1;
       dyn_seq_start (b1);
-      dyn_seq_append (b1, dyn_from_string ("pre"));
+      dyn_seq_append (b1, S("pre"));
       dyn_val pre = dyn_seq_finish (b1);
 
       dyn_seq_builder b3;
       dyn_seq_start (b3);
-      dyn_seq_append (b3, dyn_from_string ("post"));
+      dyn_seq_append (b3, S("post"));
       dyn_val post = dyn_seq_finish (b3);
 
       dyn_seq_builder b2;
       dyn_seq_start (b2);
-      dyn_seq_append (b2, dyn_from_string ("two"));
-      dyn_seq_append (b2, dyn_from_string ("three"));
-      dyn_seq_prepend (b2, dyn_from_string ("one"));
+      dyn_seq_append (b2, S("two"));
+      dyn_seq_append (b2, S("three"));
+      dyn_seq_prepend (b2, S("one"));
       dyn_seq_concat_front (b2, pre);
       dyn_seq_concat_back (b2, post);
       dyn_val s = dyn_seq_finish (b2);
@@ -318,13 +340,13 @@ DEFTEST (dyn_assoc)
     {
       dyn_val a = NULL;
 
-      a = dyn_assoc (dyn_from_string ("key"), dyn_from_string ("value-1"), a);
-      a = dyn_assoc (dyn_from_string ("key"), dyn_from_string ("value-2"), a);
-      a = dyn_assoc (dyn_from_string ("key-2"), dyn_from_string ("value"), a);
+      a = dyn_assoc (S("key"), S("value-1"), a);
+      a = dyn_assoc (S("key"), S("value-2"), a);
+      a = dyn_assoc (S("key-2"), S("value"), a);
 
-      EXPECT (dyn_eq (dyn_lookup (dyn_from_string ("key"), a), "value-2"));
-      EXPECT (dyn_eq (dyn_lookup (dyn_from_string ("key-2"), a), "value"));
-      EXPECT (dyn_lookup (dyn_from_string ("key-3"), a) == NULL);
+      EXPECT (dyn_eq (dyn_lookup (S("key"), a), "value-2"));
+      EXPECT (dyn_eq (dyn_lookup (S("key-2"), a), "value"));
+      EXPECT (dyn_lookup (S("key-3"), a) == NULL);
     }
 }
 
@@ -356,24 +378,60 @@ DEFTEST (dyn_equal)
 {
   dyn_block
     {
-      dyn_val a = dyn_from_string ("foo");
+      dyn_val a = S("foo");
 
       dyn_seq_builder b1;
       dyn_seq_start (b1);
-      dyn_seq_append (b1, dyn_from_string ("foo"));
-      dyn_seq_append (b1, dyn_from_string ("bar"));
-      dyn_seq_append (b1, dyn_from_string ("baz"));
+      dyn_seq_append (b1, S("foo"));
+      dyn_seq_append (b1, S("bar"));
+      dyn_seq_append (b1, S("baz"));
       dyn_val b = dyn_seq_finish (b1);
 
       dyn_seq_builder b2;
       dyn_seq_start (b2);
-      dyn_seq_append (b2, dyn_from_string ("foo"));
-      dyn_seq_append (b2, dyn_from_string ("bar"));
-      dyn_seq_append (b2, dyn_from_string ("baz"));
+      dyn_seq_append (b2, S("foo"));
+      dyn_seq_append (b2, S("bar"));
+      dyn_seq_append (b2, S("baz"));
       dyn_val c = dyn_seq_finish (b2);
       
       EXPECT (!dyn_equal (a, b));
       EXPECT (dyn_equal (b, c));
+    }
+}
+
+DYN_DEFINE_SCHEMA (maybe_string, (or string null));
+
+DEFTEST (dyn_schema)
+{
+  dyn_block
+    {
+      dyn_val a = dyn_apply_schema (S("foo"),
+				    Q(maybe_string));
+      EXPECT (dyn_eq (a, "foo"));
+
+      dyn_val b = dyn_apply_schema (NULL,
+				    Q(maybe_string));
+      EXPECT (b == NULL);
+
+      dyn_val c = dyn_apply_schema (NULL,
+				    Q((defaulted string foo)));
+      EXPECT (dyn_eq (c, "foo"));
+
+      dyn_val d = dyn_apply_schema (Q((foo bar)),
+				    Q(any));
+      EXPECT (dyn_equal (d, Q((foo bar))));
+
+      dyn_val e = dyn_apply_schema (Q((foo bar)),
+				    Q(seq));
+      EXPECT (dyn_equal (e, Q((foo bar))));
+
+      EXPECT_EXIT
+	{
+	  dyn_apply_schema (Q((foo bar)),
+			    Q(pair));
+	}
+
+      
     }
 }
 
