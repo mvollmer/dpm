@@ -334,6 +334,36 @@ void dyn_register_schema (const char *name, dyn_val schema);
 
 dyn_val dyn_apply_schema (dyn_val val, dyn_val schema);
 
+/* Input Streams
+
+   A input stream is used to read bytes from some source, such as a
+   file.  The bytes are exposed to you in a memory buffer: You can get
+   a pointer to the bytes at the current position in the stream with
+   dyn_input_pos, and you can request the buffer to be of a certain
+   size with the dyn_input_grow function.  The dyn_input_len function
+   tells you have large the buffer actually is, and if it is shorter
+   than what you have asked for, you have reached the end of the
+   stream.
+
+   You can set a new current position anywhere in the buffer with
+   dyn_input_set_pos.
+
+   There are a number of convenience functions to examine the context
+   around the current position.  They manage make sure that the buffer
+   is large enough.  For example, the function dyn_input_looking_at
+   takes a string argument and checks whether the bytes at the current
+   stream position match that string.  The function dyn_input_find
+   advances the current position until it is at one of the given
+   delimiter characters.
+
+   You can also manage a secondary position in the stream, the 'mark'.
+   The buffer is always includes the mark.  Thus, once you have found
+   the beginning of something in the stream, you can set the mark to
+   it and continue to find the end.  After this, the mark is still in
+   the buffer and thus all bytes from mark to the current position are
+   available to you in memory.
+*/
+
 DYN_DECLARE_TYPE (dyn_input);
 DYN_DECLARE_TYPE (dyn_output);
 
@@ -365,6 +395,23 @@ int dyn_input_find_after (dyn_input in, const char *delims);
 void dyn_input_skip (dyn_input in, const char *chars);
 int dyn_input_looking_at (dyn_input in, const char *str);
 
+/* Output streams
+
+   Like input streams, output streams manage a memory buffer.  You
+   write into that buffer by first calling dyn_output_grow to make the
+   buffer large enough, writing the bytes at the address returned by
+   dyn_output_pos, and then advancing the current position with
+   dyn_output_advance.
+
+   Writing to a file output stream will send all bytes to a temporary
+   file first.  Only when you call dyn_output_commit will the file
+   appear with its final name (or replace the old file with that
+   name).
+
+   When you call dyn_output_abort, the temporary file will be deleted
+   and nothing permanent will happen to the filesystem.
+ */
+
 dyn_output dyn_create_file (const char *filename);
 dyn_output dyn_create_output_fd (int fd);
 dyn_output dyn_create_output_string ();
@@ -379,6 +426,45 @@ int dyn_output_grow (dyn_output out, int min);
 char *dyn_output_pos (dyn_output out);
 void dyn_output_advance (dyn_output out, int n);
 
+/* Read/write syntax for dynamic values.
+
+   Strings, pairs, and sequences can be written to output streams and
+   read from input streams with dyn_write and dyn_read, respectively.
+
+   The dyn_write function takes a formatting template much like
+   printf, with the following formatting codes:
+
+   %s - prints a '\0' terminated string, character by character.
+
+   %S - prints a '\0' terminated string surrounded by quotes and with
+        escape sequences inside so that it can be parsed correctly by
+        dyn_read as a string.
+
+   %v - prints a dyn_val according to its type; strings are printed as
+        with %s.
+
+   %V - prints a dyn_val according to its type; strings are printed as
+        with %S.
+
+   %m - prints errno as a string.
+
+   %d - prints a int as a decimal number.
+
+   %x - prints a int as a hexadeximal number.
+
+   %f - prints a double as with printf %g.
+
+   %I - prints all bytes between the mark and position of a input
+        stream.
+
+   %B - takes a pointer and int as address and length and prints those bytes.
+   
+   %% - prints a single %.
+ 
+   The function dyn_print is the same as dyn_write to stdout, and
+   dyn_format returns the printing result as a string.
+ */
+
 dyn_val dyn_read (dyn_input in);
 dyn_val dyn_read_string (const char *str);
 int dyn_is_eof (dyn_val val);
@@ -392,6 +478,7 @@ dyn_val dyn_formatv (const char *fmt, va_list ap);
 
 dyn_val dyn_eval (dyn_val form, dyn_val env);
 dyn_val dyn_eval_string (dyn_val string, dyn_val env);
+
 
 typedef struct {
   dyn_val val;
