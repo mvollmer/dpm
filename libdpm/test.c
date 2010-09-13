@@ -498,10 +498,43 @@ DEFTEST (dyn_read)
       x = dyn_read_string ("foo");
       EXPECT (dyn_eq (x, "foo"));
 
+      x = dyn_read_string ("  foo");
+      EXPECT (dyn_eq (x, "foo"));
+
       x = dyn_read_string ("\"foo\"");
       EXPECT (dyn_eq (x, "foo"));
 
+      x = dyn_read_string ("  \"foo\"");
+      EXPECT (dyn_eq (x, "foo"));
 
+      x = dyn_read_string ("  \"\\\\\"");
+      EXPECT (dyn_eq (x, "\\"));
+
+      x = dyn_read_string ("  \"\\n\\t\\v\"");
+      EXPECT (dyn_eq (x, "\n\t\v"));
+
+      x = dyn_read_string ("# comment\nfoo");
+      EXPECT (dyn_eq (x, "foo"));
+
+      x = dyn_read_string ("foo: bar");
+      EXPECT (dyn_is_pair (x));
+      EXPECT (dyn_eq (dyn_first (x), "foo"));
+      EXPECT (dyn_eq (dyn_second (x), "bar"));
+
+      x = dyn_read_string ("(foo bar)");
+      EXPECT (dyn_is_seq (x));
+      EXPECT (dyn_eq (dyn_elt (x, 0), "foo"));
+      EXPECT (dyn_eq (dyn_elt (x, 1), "bar"));
+
+      x = dyn_read_string ("(foo: bar)");
+      EXPECT (dyn_is_seq (x));
+      dyn_val y = dyn_elt (x, 0);
+      EXPECT (dyn_is_pair (y));
+      EXPECT (dyn_eq (dyn_first (y), "foo"));
+      EXPECT (dyn_eq (dyn_second (y), "bar"));
+
+      x = dyn_read_string ("");
+      EXPECT (dyn_is_eof (x));
     }
 }
 

@@ -2251,6 +2251,13 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 		dyn_write_string (out, buf, strlen(buf));
 	      }
 	      break;
+	    case 'c':
+	      {
+		char buf[80];
+		sprintf (buf, "%c", va_arg (ap, int));
+		dyn_write_string (out, buf, strlen(buf));
+	      }
+	      break;
 	    case 'I':
 	      {
 		dyn_input in = va_arg (ap, dyn_input);
@@ -2316,7 +2323,10 @@ dyn_read_next (dyn_read_state *state)
 	  const char *pos = dyn_input_pos (in);
 	  char *p1, *p2;
 
-	  if (pos > mark && pos[-1] == '\\')
+	  int n = 0;
+	  while (pos-n > mark && pos[-n-1] == '\\')
+	    n++;
+	  if (n % 2 == 1)
 	    {
 	      dyn_input_advance (in, 1);
 	      continue;
@@ -2345,6 +2355,9 @@ dyn_read_next (dyn_read_state *state)
 		      break;
 		    case '"':
 		      *p2++ = '\"';
+		      break;
+		    case '\\':
+		      *p2++ = '\\';
 		      break;
 		    default:
 		      dyn_error ("Unsupported escape '%c'", *p1);
