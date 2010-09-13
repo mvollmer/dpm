@@ -146,9 +146,10 @@ void *dyn_memdup (void *mem, int n);
 void dyn_begin ();
 void dyn_end ();
 
-#define dyn_block for (int __i__ __attribute__ ((cleanup (dyn_end))) = (dyn_begin(), 1); __i__; __i__=0)
-
 void dyn_on_unwind (void (*func) (int for_throw, void *data), void *data);
+void dyn_on_unwind_free (void *mem);
+
+#define dyn_block for (int __i__ __attribute__ ((cleanup (dyn_end))) = (dyn_begin(), 1); __i__; __i__=0)
 
 struct dyn_type {
   int tag;
@@ -488,8 +489,6 @@ typedef struct {
 dyn_val dyn_get (dyn_var *var);
 void dyn_set (dyn_var *var, dyn_val val);
 void dyn_let (dyn_var *var, dyn_val val);
-
-void dyn_on_unwind_free (void *mem);
 
 typedef struct {
   const char *name;

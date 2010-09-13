@@ -538,6 +538,67 @@ DEFTEST (dyn_read)
     }
 }
 
+dyn_var var_1[1];
+
+DEFTEST (dyn_var)
+{
+  dyn_set (var_1, S("foo"));
+
+  dyn_block
+    {
+      EXPECT (dyn_eq (dyn_get (var_1), "foo"));
+      dyn_let (var_1, S("bar"));
+      EXPECT (dyn_eq (dyn_get (var_1), "bar"));
+      dyn_set (var_1, S("baz"));
+      EXPECT (dyn_eq (dyn_get (var_1), "baz"));
+    }
+  
+  EXPECT (dyn_eq (dyn_get (var_1), "foo"));
+}
+
+static void
+uncaught_test (dyn_val val)
+{
+  fprintf (stderr, "uncaught test: %s\n", dyn_to_string (val));
+  exit (1);
+}
+
+dyn_condition condition_test = {
+  .name = "test",
+  .uncaught = uncaught_test
+};
+
+static void
+throw_test (void *data)
+{
+  dyn_throw (&condition_test, S("test"));
+}
+
+static void
+dont_throw (void *data)
+{
+  return;
+}
+
+DEFTEST (dyn_catch)
+{
+  EXPECT_EXIT
+    {
+      dyn_throw (&condition_test, S("TEST"));
+    }
+
+  dyn_block
+    {
+      dyn_val x;
+
+      x = dyn_catch (&condition_test, throw_test, NULL);
+      EXPECT (dyn_eq (x, "test"));
+
+      x = dyn_catch (&condition_test, dont_throw, NULL);
+      EXPECT (x == NULL);
+    }
+}
+
 int
 main (int argc, char **argv)
 {
