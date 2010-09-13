@@ -557,45 +557,95 @@ DEFTEST (dyn_var)
 }
 
 static void
-uncaught_test (dyn_val val)
+throw_test (dyn_target *target, void *data)
 {
-  fprintf (stderr, "uncaught test: %s\n", dyn_to_string (val));
-  exit (1);
-}
-
-dyn_condition condition_test = {
-  .name = "test",
-  .uncaught = uncaught_test
-};
-
-static void
-throw_test (void *data)
-{
-  dyn_throw (&condition_test, S("test"));
+  dyn_block
+    {
+      int *i = data;
+      dyn_on_unwind (unwind, i);
+      dyn_throw (target, S("test"));
+      *i = 12;
+    }
 }
 
 static void
-dont_throw (void *data)
+dont_throw (dyn_target *target, void *data)
 {
+  int *i = data;
+  *i = 12;
   return;
 }
 
 DEFTEST (dyn_catch)
 {
+  dyn_block
+    {
+      dyn_val x;
+      int i;
+
+      i = 0;
+      x = dyn_catch (throw_test, &i);
+      EXPECT (dyn_eq (x, "test"));
+      EXPECT (i == 1);
+
+      i = 0;
+      x = dyn_catch (dont_throw, &i);
+      EXPECT (x == NULL);
+      EXPECT (i == 12);
+    }
+}
+
+static void
+unhandled_test (dyn_val val)
+{
+  fprintf (stderr, "unhandled test condition: %s\n", dyn_to_string (val));
+  exit (1);
+}
+
+dyn_condition condition_test = {
+  .name = "test",
+  .unhandled = unhandled_test
+};
+
+void
+signal_test (void *data)
+{
+  dyn_signal (&condition_test, S("foo"));
+}
+
+DEFTEST (dyn_signal)
+{
   EXPECT_EXIT
     {
-      dyn_throw (&condition_test, S("TEST"));
+      dyn_signal (&condition_test, S("foo"));
     }
 
   dyn_block
     {
       dyn_val x;
+      x = dyn_catch_condition (&condition_test, signal_test, NULL);
+      EXPECT (dyn_eq (x, "foo"));
+    }
+}
 
-      x = dyn_catch (&condition_test, throw_test, NULL);
-      EXPECT (dyn_eq (x, "test"));
+void
+signal_error (void *data)
+{
+  dyn_error ("foo: %s", "bar");
+}
 
-      x = dyn_catch (&condition_test, dont_throw, NULL);
-      EXPECT (x == NULL);
+DEFTEST (dyn_error)
+{
+  EXPECT_EXIT
+    {
+      dyn_error ("foo");
+    }
+
+  dyn_block
+    {
+      dyn_val x;
+      x = dyn_catch_error (signal_error, NULL);
+      EXPECT (dyn_eq (x, "foo: bar"));
     }
 }
 

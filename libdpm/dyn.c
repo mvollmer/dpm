@@ -624,7 +624,7 @@ typedef enum {
   dyn_kind_func,
   dyn_kind_var,
   dyn_kind_unref,
-  dyn_kind_catch
+  dyn_kind_target
 } dyn_kind;
 
 typedef struct dyn_item {
@@ -643,10 +643,9 @@ typedef struct dyn_item {
       dyn_val val;
     } unref;
     struct {
-      jmp_buf *target;
-      dyn_condition *condition;
+      dyn_target *target;
       dyn_val value;
-    } catch;
+    } target;
   } val;
 } dyn_item;
 
@@ -683,9 +682,8 @@ dyn_unwind (dyn_item *goal, int for_throw)
 	case dyn_kind_unref:
 	  dyn_unref (w->val.unref.val);
 	  break;
-	case dyn_kind_catch:
-	  free (w->val.catch.target);
-	  dyn_unref (w->val.catch.value);
+	case dyn_kind_target:
+	  dyn_unref (w->val.target.value);
 	  break;
 	}
       windlist = w->up;
@@ -776,18 +774,19 @@ dyn_on_unwind_free (void *mem)
   dyn_on_unwind (unwind_free, mem);
 }
 
-/* Conditions */
+/* Catch and throw */
+
+struct dyn_target { jmp_buf jmp; };
 
 dyn_val
-dyn_catch (dyn_condition *condition,
-	   void (*func) (void *data), void *data)
+dyn_catch (void (*func) (dyn_target *target, void *data), void *data)
 {
-  dyn_item *item = dyn_malloc (sizeof (dyn_item));
+  dyn_target target;
 
-  item->kind = dyn_kind_catch;
-  item->val.catch.target = dyn_malloc (sizeof (jmp_buf));
-  item->val.catch.condition = condition;
-  item->val.catch.value = NULL;
+  dyn_item *item = dyn_malloc (sizeof (dyn_item));
+  item->kind = dyn_kind_target;
+  item->val.target.target = &target;
+  item->val.target.value = NULL;
   dyn_add_unwind_item (item);
 
   /* If we caught something, we leave our entry in the windlist so
@@ -796,42 +795,39 @@ dyn_catch (dyn_condition *condition,
      still active.
   */
 
-  if (setjmp (*(item->val.catch.target)) == 0)
+  if (setjmp (target.jmp) == 0)
     {
-      func (data);
+      func (&target, data);
       dyn_unwind (item->up, 0);
       return NULL;
     }
   else
-    return item->val.catch.value;
+    return item->val.target.value;
 }
 
 void
-dyn_throw (dyn_condition *condition, dyn_val value)
+dyn_throw (dyn_target *target, dyn_val value)
 {
   dyn_item *w = windlist;
-  while (w && (w->kind != dyn_kind_catch
-	       || w->val.catch.condition != condition
-	       || w->val.catch.value != NULL))
+  while (w && (w->kind != dyn_kind_target
+	       || w->val.target.target != target
+	       || w->val.target.value != NULL))
     w = w->up;
 
   if (w)
     {
-      w->val.catch.value = dyn_ref (value);
+      w->val.target.value = dyn_ref (value);
       dyn_unwind (w, 1);
-      longjmp (*(w->val.catch.target), 1);
-    }
-  else if (condition->uncaught)
-    {
-      condition->uncaught (value);
-      exit (1);
+      longjmp (target->jmp, 1);
     }
   else
     {
-      fprintf (stderr, "Uncaught condition '%s'\n", condition->name);
+      fprintf (stderr, "Uncaught throw.\n");
       exit (1);
     }
 }
+
+/* Conditions */
 
 void
 dyn_signal (dyn_condition *condition, dyn_val value)
@@ -842,7 +838,8 @@ dyn_signal (dyn_condition *condition, dyn_val value)
   else if (condition->unhandled)
     condition->unhandled (value);
 
-  dyn_throw (condition, value);
+  fprintf (stderr, "Unhandled condition '%s'\n", condition->name);
+  exit (1);
 }
 
 void
@@ -851,8 +848,38 @@ dyn_let_handler (dyn_condition *condition, dyn_val handler)
   dyn_let (&(condition->handler), handler);
 }
 
+struct dyn_cc_data {
+  dyn_condition *cond;
+  void (*func) (void *);
+  void *data;
+};
+
 static void
-dyn_uncaught_error (dyn_val val)
+cond_handler (dyn_val val, void *data)
+{
+  dyn_target *target = data;
+  dyn_throw (target, val);
+}
+
+static void
+call_with_cond_handler (dyn_target *target, void *data)
+{
+  struct dyn_cc_data *d = data;
+  dyn_let_handler (d->cond,
+		   dyn_func (cond_handler, target, NULL));
+  d->func (d->data);
+}
+
+dyn_val
+dyn_catch_condition (dyn_condition *condition,
+		     void (*func) (void *), void *data)
+{
+  struct dyn_cc_data d = { condition, func, data };
+  return dyn_catch (call_with_cond_handler, &d);
+}
+
+static void
+dyn_unhandled_error (dyn_val val)
 {
   fprintf (stderr, "%s\n", dyn_to_string (val));
   exit (1);
@@ -860,7 +887,7 @@ dyn_uncaught_error (dyn_val val)
 
 dyn_condition dyn_condition_error = {
   .name = "error",
-  .uncaught = dyn_uncaught_error
+  .unhandled = dyn_unhandled_error
 };
 
 void
@@ -901,9 +928,9 @@ dyn_error (const char *fmt, ...)
 }
 
 dyn_val
-dyn_catch_error (void (*func) (void *), void *data)
+dyn_catch_error (void (*func) (void *data), void *data)
 {
-  return dyn_catch (&dyn_condition_error, func, data);
+  return dyn_catch_condition (&dyn_condition_error, func, data);
 }
 
 static int

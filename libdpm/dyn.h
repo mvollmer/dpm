@@ -490,20 +490,23 @@ dyn_val dyn_get (dyn_var *var);
 void dyn_set (dyn_var *var, dyn_val val);
 void dyn_let (dyn_var *var, dyn_val val);
 
+typedef struct dyn_target dyn_target;
+
+dyn_val dyn_catch (void (*func) (dyn_target *, void *data), void *data);
+__attribute__ ((noreturn)) 
+void dyn_throw (dyn_target *target, dyn_val value);
+
 typedef struct {
   const char *name;
   dyn_var handler;
-  void (*uncaught) (dyn_val value);
   void (*unhandled) (dyn_val value);
 } dyn_condition;
 
-dyn_val dyn_catch (dyn_condition *condition,
-		   void (*func) (void *data), void *data);
-__attribute__ ((noreturn)) 
-void dyn_throw (dyn_condition *condition, dyn_val value);
 __attribute__ ((noreturn)) 
 void dyn_signal (dyn_condition *condition, dyn_val value);
 void dyn_let_handler (dyn_condition *condition, dyn_val handler);
+dyn_val dyn_catch_condition (dyn_condition *condition,
+			     void (*func) (void *data), void *data);
 
 extern dyn_condition dyn_condition_error;
 
