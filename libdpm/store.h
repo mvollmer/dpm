@@ -179,10 +179,13 @@ DYN_DECLARE_STRUCT_ITER (ss_val, ss_dict_entries, ss_dict *d)
 ss_val ss_ref_safely (ss_val obj, int i);
 int ss_streq (ss_val obj, const char *str);
 
+int ss_equal_blob (ss_val b, int len, const void *blob);
+
 /* Debugging
  */
 void ss_scan_store (ss_store ss);
 int ss_id (ss_store ss, ss_val x);
 void ss_tab_dump (ss_tab *ot);
+void ss_dump_store (ss_store ss, const char *header);
 
 #endif /* !DPM_STORE_H */

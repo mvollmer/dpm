@@ -121,7 +121,7 @@ dpm_parse_relation (dyn_input in,
 	    dyn_error ("missing parentheses in relation");
 	  dyn_input_advance (in, 1);
 
-	  char *mark = dyn_input_mark (in);
+	  const char *mark = dyn_input_mark (in);
 	  func (in,
 		mark, name_len,
 		mark + op_offset, op_len,
@@ -130,7 +130,7 @@ dpm_parse_relation (dyn_input in,
 	}
       else
 	{
-	  char *mark = dyn_input_mark (in);
+	  const char *mark = dyn_input_mark (in);
 	  func (in, mark, name_len, NULL, 0, NULL, 0, data);
 	}
 
@@ -196,6 +196,7 @@ dpm_parse_lines (dyn_input in,
     }
 }
 
+#if 0
 static int
 decode_extended_value (char *value, int len)
 {
@@ -230,6 +231,7 @@ decode_extended_value (char *value, int len)
 
   return dst - value;
 }
+#endif
 
 static void
 decode_value (char **value_ptr, int *value_len_ptr)
@@ -311,7 +313,7 @@ dpm_parse_control (dyn_input in,
 
 	  value_len = dyn_input_pos (in) - dyn_input_mark (in) - value_off;
 
-	  name = dyn_input_mark (in);
+	  name = dyn_input_mutable_mark (in);
 	  value = name + value_off;
 	  decode_value (&value, &value_len);
 	  func (in, name, name_len, value, value_len, data);
@@ -370,7 +372,7 @@ dpm_parse_control_fields (dyn_input in, dpm_control_fields *result)
 		 || dyn_input_looking_at (in, "\t"))
 	    dyn_input_find_after (in, "\n");
 
-	  value = dyn_input_mark (in) + value_off;
+	  value = dyn_input_mutable_mark (in) + value_off;
 	  value_len = dyn_input_pos (in) - value;
 	  decode_value (&value, &value_len);
 	  value[value_len] = 0;
@@ -394,7 +396,7 @@ dpm_parse_control_fields (dyn_input in, dpm_control_fields *result)
 	}
     }
 
-  char *mark = dyn_input_mark (in);
+  char *mark = dyn_input_mutable_mark (in);
   for (int i = 0; i < result->n; i++)
     {
       result->names[i] = mark + (int)result->names[i];

@@ -435,6 +435,76 @@ DEFTEST (dyn_schema)
     }
 }
 
+DEFTEST (dyn_input)
+{
+  dyn_block
+    {
+      dyn_input in = dyn_open_file ("./test-data/numbers.txt");
+      dyn_input_count_lines (in);
+
+      for (int i = 0; i < 10000; i++)
+	{
+	  char *tail;
+
+	  EXPECT (dyn_input_lineno (in) == i+1);
+
+	  dyn_input_set_mark (in);
+	  EXPECT (dyn_input_find (in, "\n"));
+	  int ii = strtol (dyn_input_mark (in), &tail, 10);
+	  EXPECT (tail == dyn_input_pos (in));
+	  EXPECT (ii == i);
+	  
+	  dyn_input_advance (in, 1);
+	}
+    }
+}
+
+DEFTEST (dyn_output)
+{
+  dyn_block
+    {
+      dyn_output out = dyn_create_file ("./test-data/output.txt");
+      for (int i = 0; i < 10000; i++)
+	dyn_write (out, "%d\n", i);
+      dyn_output_commit (out);
+
+      dyn_output out2 = dyn_create_file ("./test-data/output.txt");
+      dyn_write (out2, "boo!\n");
+      dyn_output_abort (out2);
+
+      dyn_input in = dyn_open_file ("./test-data/output.txt");
+
+      for (int i = 0; i < 10000; i++)
+	{
+	  char *tail;
+
+	  dyn_input_set_mark (in);
+	  EXPECT (dyn_input_find (in, "\n"));
+	  int ii = strtol (dyn_input_mark (in), &tail, 10);
+	  EXPECT (tail == dyn_input_pos (in));
+	  EXPECT (ii == i);
+	  
+	  dyn_input_advance (in, 1);
+	}
+    }
+}
+
+DEFTEST (dyn_read)
+{
+  dyn_block
+    {
+      dyn_val x;
+
+      x = dyn_read_string ("foo");
+      EXPECT (dyn_eq (x, "foo"));
+
+      x = dyn_read_string ("\"foo\"");
+      EXPECT (dyn_eq (x, "foo"));
+
+
+    }
+}
+
 int
 main (int argc, char **argv)
 {

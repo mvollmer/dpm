@@ -381,7 +381,8 @@ void dyn_input_count_lines (dyn_input in);
 int dyn_input_lineno (dyn_input in);
 
 void dyn_input_set_mark (dyn_input in);
-char *dyn_input_mark (dyn_input in);
+const char *dyn_input_mark (dyn_input in);
+char *dyn_input_mutable_mark (dyn_input in);
 int dyn_input_off (dyn_input in);
 
 const char *dyn_input_pos (dyn_input in);
@@ -426,10 +427,10 @@ int dyn_output_grow (dyn_output out, int min);
 char *dyn_output_pos (dyn_output out);
 void dyn_output_advance (dyn_output out, int n);
 
-/* Read/write syntax for dynamic values.
+/* Reading and writing.
 
-   Strings, pairs, and sequences can be written to output streams and
-   read from input streams with dyn_write and dyn_read, respectively.
+   The dyn_read function parses the string representation of a dynamic
+   value from a input stream.
 
    The dyn_write function takes a formatting template much like
    printf, with the following formatting codes:

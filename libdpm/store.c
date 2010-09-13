@@ -1366,7 +1366,7 @@ ss_equal (ss_val a, ss_val b)
 }
 
 int
-ss_equal_blob (ss_val b, int len, void *blob)
+ss_equal_blob (ss_val b, int len, const void *blob)
 {
   if (b && !ss_is_int (b) && ss_is_blob (b)
       && ss_len (b) == len)

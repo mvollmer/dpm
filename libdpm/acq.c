@@ -65,6 +65,8 @@ dpm_system (const char *fmt, ...)
       // fprintf (stderr, "%s\n", cmd);
       return system (cmd);
     }
+
+  return 0;
 }
 
 dpm_acq_code

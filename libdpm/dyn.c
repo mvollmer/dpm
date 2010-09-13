@@ -1214,7 +1214,7 @@ dyn_input_new ()
 }
 
 static void
-dyn_input_set_static_buffer (dyn_input in, char *buf, int len)
+dyn_input_set_static_buffer (dyn_input in, const char *buf, int len)
 {
   in->bufstatic = 1;
   in->buf = (char *)buf;
@@ -1223,6 +1223,22 @@ dyn_input_set_static_buffer (dyn_input in, char *buf, int len)
 
   in->mark = in->buf;
   in->pos = in->mark;
+}
+
+static void
+dyn_input_make_buffer_mutable (dyn_input in)
+{
+  if (in->bufstatic)
+    {
+      // XXX - be more clever for very big static buffers.
+      char *buf = dyn_memdup (in->buf, in->bufsize);
+      in->mark = buf + (in->mark - in->buf);
+      in->pos = buf + (in->pos - in->buf);
+      
+      in->bufstatic = 0;
+      in->buf = buf;
+      in->bufend = in->buf + in->bufsize;
+    }
 }
 
 void
@@ -1448,7 +1464,7 @@ dyn_bz2_read (void *handle, char *buf, int n)
 	{
 	  dyn_input_set_mark (z->source);
 	  dyn_input_advance (z->source, dyn_input_grow (z->source, 1));
-	  z->stream.next_in = dyn_input_mark (z->source);
+	  z->stream.next_in = (char *)dyn_input_mark (z->source);
 	  z->stream.avail_in =
 	    dyn_input_pos (z->source) - dyn_input_mark (z->source);
 	}
@@ -1527,7 +1543,7 @@ dyn_input_grow (dyn_input in, int min)
 	   in->bufend - in->buf);
 #endif
 
-  if (!in->bufstatic && in->pos + min > in->bufend)
+  if (in->read && in->pos + min > in->bufend)
     {
       /* Need to read more input
        */
@@ -1610,9 +1626,16 @@ dyn_input_set_mark (dyn_input in)
   in->mark = in->pos;
 }
 
-char *
+const char *
 dyn_input_mark (dyn_input in)
 {
+  return in->mark;
+}
+
+char *
+dyn_input_mutable_mark (dyn_input in)
+{
+  dyn_input_make_buffer_mutable (in);
   return in->mark;
 }
 
@@ -1787,6 +1810,7 @@ dyn_output_abort (dyn_output out)
 dyn_val
 dyn_output_commit (dyn_output out)
 {
+  dyn_output_flush (out);
   if (out->handle)
     {
       dyn_val val = out->commit (out->handle);
@@ -1914,6 +1938,81 @@ dyn_create_output_fd (int fd)
   out->abort = dyn_fd_abort;
   out->commit = dyn_fd_commit;
   out->handle = f;
+
+  return out;
+}
+
+struct dyn_outfile_handle {
+  char *name;
+  char *tmpname;
+  int fd;
+};
+
+static int
+dyn_outfile_write (void *handle, char *buf, int n)
+{
+  struct dyn_outfile_handle *f = handle;
+  return write (f->fd, buf, n);
+}
+
+static void
+dyn_outfile_abort (void *handle)
+{
+  struct dyn_outfile_handle *f = handle;
+
+  if (f->fd >= 0)
+    {
+      close (f->fd);
+      unlink (f->tmpname);
+    }
+
+  free (f->name);
+  free (f->tmpname);
+  free (f);
+}
+
+static dyn_val
+dyn_outfile_commit (void *handle)
+{
+  struct dyn_outfile_handle *f = handle;
+
+  if (f->fd >= 0)
+    {
+      if (close (f->fd) < 0)
+	dyn_error ("error closing %s: %m", f->tmpname);
+      if (rename (f->tmpname, f->name) < 0)
+	dyn_error ("can't rename %s to %s: %m", f->tmpname, f->name);
+    }
+
+  free (f->name);
+  free (f->tmpname);
+  free (f);
+
+  return NULL;
+}
+
+dyn_output
+dyn_create_file (const char *name)
+{
+  struct dyn_outfile_handle *f =
+    dyn_malloc (sizeof (struct dyn_outfile_handle));
+  
+  f->fd = -1;
+  f->name = dyn_strdup (name);
+  f->tmpname = dyn_malloc (strlen (name) + 7);
+  strcpy (f->tmpname, name);
+  strcat (f->tmpname, ".XXXXXX");
+
+  dyn_output out = dyn_output_new ();
+
+  out->write = dyn_outfile_write;
+  out->abort = dyn_outfile_abort;
+  out->commit = dyn_outfile_commit;
+  out->handle = f;
+
+  f->fd = mkstemp (f->tmpname);
+  if (f->fd < 0)
+    dyn_error ("can't create %s: %m", f->name);
 
   return out;
 }
@@ -2213,7 +2312,7 @@ dyn_read_next (dyn_read_state *state)
       dyn_input_set_mark (in);
       while (dyn_input_find (in, "\""))
 	{
-	  char *mark = dyn_input_mark (in);
+	  char *mark = dyn_input_mutable_mark (in);
 	  const char *pos = dyn_input_pos (in);
 	  char *p1, *p2;
 
@@ -2799,5 +2898,6 @@ void dyn_ensure_init ()
 		   dyn_make_interp_spec (dyn_spec_lambda));
 
       // atexit (dyn_report);
+      (void) dyn_report;
     }
 }

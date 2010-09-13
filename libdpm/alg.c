@@ -300,6 +300,7 @@ show_ver_info (ver_info *v)
     dyn_print ("%r", dpm_ver_version (v->ver));
 }
 
+#ifdef DEBUG
 static void
 show_ver (const char *pfx, ver_info *v)
 {
@@ -307,6 +308,7 @@ show_ver (const char *pfx, ver_info *v)
   show_ver_info (v);
   dyn_print ("\n");
 }
+#endif
 
 static void
 show_conflict (const char *pfx, cfl_info *conflict)
@@ -343,6 +345,7 @@ log_rel (const char *msg, dpm_relation rel)
   dyn_print ("\n");
 }
 
+#ifdef DEBUG
 static void
 show_relations (const char *field, ss_val rels)
 {
@@ -358,6 +361,7 @@ show_relations (const char *field, ss_val rels)
       dyn_print ("\n");
     }
 }
+#endif
 
 /* Setup
 

@@ -8,6 +8,7 @@
 #include "alg.h"
 #include "acq.h"
 #include "inst.h"
+#include "store.h"
 
 DPM_CONF_DECLARE (architectures, "architectures",
 		  "(seq string ...)", "(i386)",
