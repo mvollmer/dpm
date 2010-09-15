@@ -145,6 +145,9 @@ DEFTEST (dyn_strdup)
   char *strn = dyn_strndup ("foobarbaz", 6);
   EXPECT (strcmp (strn, "foobar") == 0);
 
+  char *null = dyn_strdup (NULL);
+  EXPECT (null == NULL);
+
   free (str);
   free (strn);
 }
