@@ -301,6 +301,10 @@ DEFTEST (dyn_pair)
       EXPECT (dyn_is_pair (p));
       EXPECT (dyn_eq (dyn_first (p), "1st"));
       EXPECT (dyn_eq (dyn_second (p), "2nd"));
+
+      dyn_val p2 = dyn_pair (S("1st"), S("2nd"));
+      EXPECT (dyn_is_pair (p2));
+      EXPECT (dyn_equal (p, p2));
     }
 }
 
