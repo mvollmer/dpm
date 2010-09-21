@@ -19,6 +19,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <dlfcn.h>
 
 #include "dpm.h"
@@ -91,6 +93,23 @@ check_status_exit (int status, char *file, int line)
       fprintf (stderr, "%s:%d: Expected exit(1)\n", file, line);
       exit (1);
     }
+}
+
+dyn_val
+testsrc (const char *name)
+{
+  const char *dir = getenv ("TESTDATA");
+  if (dir == NULL)
+    dir = "./test-data";
+  return dyn_format ("%s/%s", dir, name);
+}
+
+dyn_val
+testdst (const char *name)
+{
+  if (mkdir ("./test-data", 0777) < 0 && errno != EEXIST)
+    dyn_error ("Can't create ./test-data: %m");
+  return dyn_format ("./test-data/%s", name);
 }
 
 // Tests
@@ -446,7 +465,7 @@ DEFTEST (dyn_input)
 {
   dyn_block
     {
-      dyn_input in = dyn_open_file ("./test-data/numbers.txt");
+      dyn_input in = dyn_open_file (testsrc ("numbers.txt"));
       dyn_input_count_lines (in);
 
       for (int i = 0; i < 10000; i++)
@@ -470,16 +489,17 @@ DEFTEST (dyn_output)
 {
   dyn_block
     {
-      dyn_output out = dyn_create_file ("./test-data/output.txt");
+      dyn_val name = testdst ("output.txt");
+      dyn_output out = dyn_create_file (name);
       for (int i = 0; i < 10000; i++)
 	dyn_write (out, "%d\n", i);
       dyn_output_commit (out);
 
-      dyn_output out2 = dyn_create_file ("./test-data/output.txt");
+      dyn_output out2 = dyn_create_file (name);
       dyn_write (out2, "boo!\n");
       dyn_output_abort (out2);
 
-      dyn_input in = dyn_open_file ("./test-data/output.txt");
+      dyn_input in = dyn_open_file (name);
 
       for (int i = 0; i < 10000; i++)
 	{

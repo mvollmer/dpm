@@ -43,8 +43,8 @@ test_coverage_CFLAGS = -fprofile-arcs -ftest-coverage -std=c99
 test_coverage_LDADD = $(libdpm_la_LIBADD) -ldl
 test_coverage_LDFLAGS = -Wl,--export-dynamic
 
-TESTS = $(shell grep ^DEFTEST test.c | sed 's/DEFTEST *(\(.*\))/\1/g')
-TESTS_ENVIRONMENT = ./run-test
+TESTS = $(shell grep ^DEFTEST $(srcdir)/test.c | sed 's/DEFTEST *(\(.*\))/\1/g')
+TESTS_ENVIRONMENT = $(srcdir)/run-test
 .PHONY: $(TESTS)
 
 coverage: test-coverage
@@ -65,3 +65,6 @@ noinst_PROGRAMS = dpm
 dpm_SOURCES = dpm.c
 dpm_LDADD = libdpm.la
 
+EXTRA_DIST = run-test test-data/numbers.txt
+
+DISTCLEANFILES = test-data/output.txt
