@@ -1299,12 +1299,6 @@ dyn_input_lineno (dyn_input in)
   return in->lineno;
 }
 
-const char *
-dyn_stream_filename (dyn_input in)
-{
-  return in->filename;
-}
-
 //#define BUFMASK 0xF
 #define BUFMASK 0xFFFF
 #define BUFSIZE (BUFMASK+1)

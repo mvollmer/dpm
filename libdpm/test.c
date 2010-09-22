@@ -357,6 +357,14 @@ DEFTEST (dyn_seq)
       EXPECT (dyn_eq (dyn_elt (s, 2), "two"));
       EXPECT (dyn_eq (dyn_elt (s, 3), "three"));
       EXPECT (dyn_eq (dyn_elt (s, 4), "post"));
+
+      dyn_val ss = dyn_concat (s, s, DYN_EOS);
+      dyn_val sss = dyn_seq (S("pre"), S("one"), S("two"),
+			     S("three"), S("post"),
+			     S("pre"), S("one"), S("two"),
+			     S("three"), S("post"),
+			     DYN_EOS);
+      EXPECT (dyn_equal (ss, sss));
     }
 }
 
@@ -405,23 +413,17 @@ DEFTEST (dyn_equal)
   dyn_block
     {
       dyn_val a = S("foo");
+      dyn_val b = dyn_seq (S("foo"), S("bar"), S("baz"), DYN_EOS);
+      dyn_val c = dyn_seq (S("foo"), S("bar"), S("baz"), DYN_EOS);
+      dyn_val d = dyn_seq (S("foo"), S("bar"), S("bazbaz"), DYN_EOS);
+      dyn_val e = dyn_seq (S("foo"), S("bar"), DYN_EOS);
 
-      dyn_seq_builder b1;
-      dyn_seq_start (b1);
-      dyn_seq_append (b1, S("foo"));
-      dyn_seq_append (b1, S("bar"));
-      dyn_seq_append (b1, S("baz"));
-      dyn_val b = dyn_seq_finish (b1);
-
-      dyn_seq_builder b2;
-      dyn_seq_start (b2);
-      dyn_seq_append (b2, S("foo"));
-      dyn_seq_append (b2, S("bar"));
-      dyn_seq_append (b2, S("baz"));
-      dyn_val c = dyn_seq_finish (b2);
-      
+      EXPECT (!dyn_equal (a, NULL));
+      EXPECT (dyn_equal (a, a));
       EXPECT (!dyn_equal (a, b));
       EXPECT (dyn_equal (b, c));
+      EXPECT (!dyn_equal (b, d));
+      EXPECT (!dyn_equal (b, e));
     }
 }
 
@@ -461,27 +463,44 @@ DEFTEST (dyn_schema)
     }
 }
 
+void
+expect_numbers (dyn_input in)
+{
+  dyn_input_count_lines (in);
+
+  for (int i = 0; i < 10000; i++)
+    {
+      char *tail;
+      
+      EXPECT (dyn_input_lineno (in) == i+1);
+      
+      dyn_input_set_mark (in);
+      EXPECT (dyn_input_find (in, "\n"));
+      int ii = strtol (dyn_input_mark (in), &tail, 10);
+      EXPECT (tail == dyn_input_pos (in));
+      EXPECT (ii == i);
+      
+      dyn_input_advance (in, 1);
+    }
+}
+
 DEFTEST (dyn_input)
 {
   dyn_block
     {
-      dyn_input in = dyn_open_file (testsrc ("numbers.txt"));
-      dyn_input_count_lines (in);
+      dyn_val name = testsrc ("numbers.txt");
 
-      for (int i = 0; i < 10000; i++)
-	{
-	  char *tail;
+      EXPECT (dyn_file_exists (name));
 
-	  EXPECT (dyn_input_lineno (in) == i+1);
+      dyn_input in = dyn_open_file (name);
+      expect_numbers (in);
 
-	  dyn_input_set_mark (in);
-	  EXPECT (dyn_input_find (in, "\n"));
-	  int ii = strtol (dyn_input_mark (in), &tail, 10);
-	  EXPECT (tail == dyn_input_pos (in));
-	  EXPECT (ii == i);
-	  
-	  dyn_input_advance (in, 1);
-	}
+      dyn_input inz = dyn_open_file (testsrc ("numbers.gz"));
+      expect_numbers (inz);
+
+      dyn_input in2 = dyn_open_file (testsrc ("numbers.bz2"));
+      expect_numbers (in2);
+
     }
 }
 
@@ -673,6 +692,63 @@ DEFTEST (dyn_error)
       dyn_val x;
       x = dyn_catch_error (signal_error, NULL);
       EXPECT (dyn_eq (x, "foo: bar"));
+    }
+}
+
+DEFTEST (dyn_eval)
+{
+  dyn_block
+    {
+      dyn_val env = dyn_assoc (S("foo"), S("12"), NULL);
+      dyn_val x;
+      
+      x = dyn_eval_string ("foo", env);
+      EXPECT (dyn_eq (x, "foo"));
+
+      x = dyn_read_string ("$foo");
+      EXPECT (dyn_equal (x, dyn_read_string ("$foo")));
+
+      x = dyn_eval_string ("$foo", env);
+      EXPECT (dyn_eq (x, "12"));
+
+      x = dyn_eval_string ("$(+ $foo 1)", env);
+      EXPECT (dyn_eq (x, "13"));
+
+    }
+}
+
+DEFTEST (store_basic)
+{
+  dyn_block
+    {
+      dyn_val name = testdst ("store.db");
+
+      EXPECT_EXIT
+	{
+	  ss_open ("non-existing.db", SS_READ);
+	}
+
+      dyn_val s = ss_open (name, SS_WRITE);
+      EXPECT (ss_get_root (s) == NULL);
+
+      EXPECT_EXIT
+	{
+	  ss_open (name, SS_WRITE);
+	}
+
+      ss_val x = ss_blob_new (s, 3, "foo");
+      EXPECT (ss_is_blob (x));
+      EXPECT (strncmp (ss_blob_start (x), "foo", 3) == 0);
+
+      ss_set_root (s, x);
+      EXPECT (ss_get_root (s) == x);
+
+      s = ss_gc (s);
+      EXPECT (ss_get_root (s) != x);
+      
+      x = ss_get_root (s);
+      EXPECT (ss_is_blob (x));
+      EXPECT (strncmp (ss_blob_start (x), "foo", 3) == 0);      
     }
 }
 

@@ -109,3 +109,5 @@
 /libdpm/test_coverage-store.o
 /libdpm/test_coverage-test.o
 /dpm-0.tar.gz
+/libdpm/test-data/output.txt
+/libdpm/test-data/store.db
