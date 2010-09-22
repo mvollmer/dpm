@@ -728,7 +728,7 @@ DEFTEST (store_basic)
 	  ss_open ("non-existing.db", SS_READ);
 	}
 
-      dyn_val s = ss_open (name, SS_WRITE);
+      dyn_val s = ss_open (name, SS_TRUNC);
       EXPECT (ss_get_root (s) == NULL);
 
       EXPECT_EXIT
@@ -749,6 +749,88 @@ DEFTEST (store_basic)
       x = ss_get_root (s);
       EXPECT (ss_is_blob (x));
       EXPECT (strncmp (ss_blob_start (x), "foo", 3) == 0);      
+    }
+}
+
+DYN_DECLARE_STRUCT_ITER (const char *, sgb_words, int dummy)
+{
+  dyn_input in;
+  const char *cur;
+};
+
+void
+sgb_words_init (sgb_words *iter, int dummy)
+{
+  iter->in = dyn_ref (dyn_open_file (testsrc ("sgb-words.txt")));
+  sgb_words_step (iter);
+}
+
+void
+sgb_words_fini (sgb_words *iter)
+{
+  dyn_unref (iter->in); 
+}
+
+void
+sgb_words_step (sgb_words *iter)
+{
+  dyn_input_set_mark (iter->in);
+  if (dyn_input_find (iter->in, "\n"))
+    {
+      char *m = dyn_input_mutable_mark (iter->in);
+      m[dyn_input_off (iter->in)] = '\0';
+      dyn_input_advance (iter->in, 1);
+      iter->cur = m;
+    }
+  else
+    iter->cur = NULL;
+}
+
+bool
+sgb_words_done (sgb_words *iter)
+{
+  return iter->cur == NULL;
+}
+
+const char *
+sgb_words_elt (sgb_words *iter)
+{ 
+  return iter->cur; 
+}
+
+DEFTEST (store_blob_vector)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+      ss_val v = ss_new (NULL, 0, 0);
+      int i = 0;
+
+      dyn_foreach_ (w, sgb_words, 0)
+	{
+	  ss_val b = ss_blob_new (s, strlen (w), (void *)w);
+	  EXPECT (ss_is_blob (b));
+	  EXPECT (ss_len (b) == strlen (w));
+	  EXPECT (strncmp (w, ss_blob_start (b), strlen (w)) == 0);
+
+	  v = ss_insert (NULL, v, i++, b);
+	}
+
+      v = ss_copy (s, v);
+      ss_set_root (s, v);
+      s = ss_gc (s);
+      v = ss_get_root (s);
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words, 0)
+	{
+	  EXPECT (ss_len (v) > i);
+
+	  ss_val b = ss_ref (v, i++);
+	  EXPECT (ss_is_blob (b));
+	  EXPECT (ss_len (b) == strlen (w));
+	  EXPECT (strncmp (w, ss_blob_start (b), strlen (w)) == 0);
+	}
     }
 }
 
