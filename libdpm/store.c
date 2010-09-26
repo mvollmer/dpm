@@ -747,14 +747,12 @@ ss_gc_scan (ss_gc_data *gc)
 }
 
 static ss_val
-ss_gc_copy_root (ss_gc_data *gc)
+ss_gc_copy_phase (ss_gc_data *gc, ss_val root, int phase)
 {
-  ss_val new_root;
-
-  gc->phase = 0;
-  new_root = ss_gc_copy (gc, ss_get_root (gc->from_store));
+  gc->phase = phase;
+  root = ss_gc_copy (gc, root);
   ss_gc_scan (gc);
-  return new_root;
+  return root;
 }
 
 static void
@@ -813,19 +811,11 @@ ss_gc_ripple_dicts (ss_gc_data *gc)
   } while (gc->again);
 }
 
-
-static void
-ss_gc_copy_delayed (ss_gc_data *gc)
-{
-  gc->phase = 2;
-  ss_gc_scan (gc);
-}
-
 ss_store 
 ss_gc (ss_store ss)
 {
   ss_gc_data gc;
-  ss_val new_root;
+  ss_val root;
   char *newfile;
 
   /* Disconnect old store from file.
@@ -840,12 +830,12 @@ ss_gc (ss_store ss)
   gc.to_store = ss_open (newfile, SS_TRUNC);
   gc.n_delayed = 0;
 
-  new_root = ss_gc_copy_root (&gc);
+  root = ss_gc_copy_phase (&gc, ss_get_root (ss), 0);
   ss_gc_ripple_dicts (&gc);
-  ss_gc_copy_delayed (&gc);
+  root = ss_gc_copy_phase (&gc, root, 2);
 
   gc.to_store->alloced_words = 0;
-  ss_set_root (gc.to_store, new_root);
+  ss_set_root (gc.to_store, root);
 
   /* Rename file
    */
