@@ -752,14 +752,14 @@ DEFTEST (store_basic)
     }
 }
 
-DYN_DECLARE_STRUCT_ITER (const char *, sgb_words, int dummy)
+DYN_DECLARE_STRUCT_ITER (const char *, sgb_words)
 {
   dyn_input in;
   const char *cur;
 };
 
 void
-sgb_words_init (sgb_words *iter, int dummy)
+sgb_words_init (sgb_words *iter)
 {
   iter->in = dyn_ref (dyn_open_file (testsrc ("sgb-words.txt")));
   sgb_words_step (iter);
@@ -806,7 +806,7 @@ DEFTEST (store_blob_vector)
       ss_val v = ss_new (NULL, 0, 0);
       int i = 0;
 
-      dyn_foreach_ (w, sgb_words, 0)
+      dyn_foreach_ (w, sgb_words)
 	{
 	  ss_val b = ss_blob_new (s, strlen (w), (void *)w);
 	  EXPECT (ss_is_blob (b));
@@ -822,7 +822,7 @@ DEFTEST (store_blob_vector)
       v = ss_get_root (s);
 
       i = 0;
-      dyn_foreach_ (w, sgb_words, 0)
+      dyn_foreach_ (w, sgb_words)
 	{
 	  EXPECT (ss_len (v) > i);
 
@@ -830,6 +830,153 @@ DEFTEST (store_blob_vector)
 	  EXPECT (ss_is_blob (b));
 	  EXPECT (ss_len (b) == strlen (w));
 	  EXPECT (strncmp (w, ss_blob_start (b), strlen (w)) == 0);
+	}
+    }
+}
+
+DEFTEST (store_table)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+      ss_tab *t = ss_tab_init (s, NULL);
+
+      ss_val blobs[6000];
+      int i;
+
+      // Put all words into the table.
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_tab_intern_blob (t, strlen (w), (void *)w);
+
+	  EXPECT (ss_is_blob (b));
+	  EXPECT (ss_len (b) == strlen (w));
+	  EXPECT (strncmp (w, ss_blob_start (b), strlen (w)) == 0);
+
+	  EXPECT (i < 6000);
+	  blobs[i++] = b;
+	}
+
+      // Check that they are in it.
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_tab_intern_soft (t, strlen (w), (void *)w);
+	  EXPECT (blobs[i] == b);
+	  i += 1;
+	}
+
+      // Store the table and GC the store.  The table should
+      // disappear since nothing references its entries.
+
+      ss_set_root (s, ss_tab_finish (t));
+      s = ss_gc (s);
+      t = ss_tab_init (s, ss_get_root (s));
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_tab_intern_soft (t, strlen (w), (void *)w);
+	  EXPECT (b == NULL);
+	  i += 1;
+	}
+
+      // Store the words again.
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_tab_intern_blob (t, strlen (w), (void *)w);
+	  blobs[i++] = b;
+	}
+
+      // Remember the first 200 words in a record and GC the rest
+      // away.
+
+      ss_val v = ss_newv (s, 0, 200, blobs);
+      ss_val r = ss_new (s, 0, 2,
+			 ss_tab_finish (t),
+			 v);
+
+      ss_set_root (s, r);
+      s = ss_gc (s);
+      r = ss_get_root (s);
+      t = ss_tab_init (s, ss_ref (r, 0));
+      v = ss_ref (r, 1);
+
+      // Check that the first 200 are still there, and the rest have
+      // disappeared.
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_tab_intern_soft (t, strlen (w), (void *)w);
+	  if (i < 200)
+	    EXPECT (b == ss_ref (v, i));
+	  else
+	    EXPECT (b == NULL);
+	  i++;
+	}
+    }
+}
+
+DEFTEST (store_table_foreach)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+      ss_tab *t = ss_tab_init (s, NULL);
+
+      int count = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_tab_intern_blob (t, strlen (w), (void*)w);
+	  count++;
+	}
+      
+      ss_val tt = ss_tab_finish (t);
+      t = ss_tab_init (s, tt);
+
+      dyn_foreach_ (w, ss_tab_entries, t)
+	{
+	  EXPECT (ss_len (w) == 5);
+	  count--;
+	}
+
+      EXPECT (count == 0);
+    }
+}
+
+DEFTEST (store_dict_strong)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+      ss_dict *d = ss_dict_init (s, NULL, SS_DICT_STRONG);
+      
+      int i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_blob_new (s, strlen(w), (void *)w);
+	  ss_dict_set (d, ss_from_int (i), b);
+	  i += 1;
+	}
+
+      ss_set_root (s, ss_dict_finish (d));
+      s = ss_gc (s);
+      d = ss_dict_init (s, ss_get_root (s), SS_DICT_STRONG);
+
+      i = 0;
+      dyn_foreach_ (w, sgb_words)
+	{
+	  ss_val b = ss_dict_get (d, ss_from_int (i));
+	  EXPECT (ss_is_blob (b));
+	  EXPECT (ss_len (b) == strlen (w));
+	  EXPECT (strncmp (w, ss_blob_start (b), strlen (w)) == 0);
+	  i += 1;
 	}
     }
 }

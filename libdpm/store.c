@@ -1693,6 +1693,107 @@ ss_tab_foreach (void (*func) (ss_val val), ss_tab *ot)
   ss_tab_node_foreach (func, ot->root);
 }
 
+static void
+ss_tab_entries_micro_step (ss_tab_entries *iter)
+{
+  // Perform one micro step that walks us along the tree of dispatch
+  // and search nodes.
+
+  // If we are at the end of the current node, pop it and advance in
+  // the lower level.
+  //
+  if (iter->index[iter->level] >= ss_len (iter->node[iter->level]))
+    {
+      iter->level -= 1;
+      if (iter->level >= 0)
+	iter->index[iter->level] += 1;
+      return;
+    }
+
+  // If we are in a dispatch node, push to the next level (if there is
+  // one), or advance.
+  //
+  if (ss_is (iter->node[iter->level], TAB_DISPATCH_TAG))
+    {
+      ss_val n = ss_ref (iter->node[iter->level], iter->index[iter->level]);
+      if (n)
+	{
+	  iter->level += 1;
+	  iter->node[iter->level] = n;
+	  iter->index[iter->level] = 1;
+	}
+      else
+	iter->index[iter->level] += 1;
+      return;
+    }
+
+  // If we are in a search node, advance.
+  //
+  if (ss_is (iter->node[iter->level], TAB_SEARCH_TAG))
+    {
+      iter->index[iter->level] += 1;
+      return;
+    }
+
+  abort ();
+}
+
+static bool
+ss_tab_entries_hit (ss_tab_entries *iter)
+{
+  // We have a hit when we are inside a search node.
+  ss_val n = iter->node[iter->level];
+  return (iter->index[iter->level] < ss_len (n)
+	  && ss_is (n, TAB_SEARCH_TAG));
+}
+
+void
+ss_tab_entries_init (ss_tab_entries *iter, ss_tab *t)
+{
+  iter->tab = dyn_ref (t);
+  if (t->root)
+    {
+      iter->level = 0;
+      iter->node[0] = t->root;
+      iter->index[0] = 1;
+    }
+  else
+    iter->level = -1;
+
+  while (!(ss_tab_entries_done (iter)
+	   || ss_tab_entries_hit (iter)))
+    ss_tab_entries_micro_step (iter);
+}
+
+void
+ss_tab_entries_fini (ss_tab_entries *iter)
+{
+  dyn_unref (iter->tab);
+}
+
+void
+ss_tab_entries_step (ss_tab_entries *iter)
+{
+  // Do micro steps until we have something or run out.
+  //
+  do {
+    ss_tab_entries_micro_step (iter);
+  } while (!(ss_tab_entries_done (iter)
+	     || ss_tab_entries_hit (iter)));
+}
+
+bool
+ss_tab_entries_done (ss_tab_entries *iter)
+{
+  return iter->level < 0;
+}
+
+ss_val
+ss_tab_entries_elt (ss_tab_entries *iter)
+{
+  return ss_ref (iter->node[iter->level], iter->index[iter->level]);
+}
+
 typedef struct {
   int n_leaves;
   int n_leaf_nodes;

@@ -137,6 +137,16 @@ ss_val ss_tab_intern (ss_tab *tab, ss_val v);
 ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
 ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
 
+DYN_DECLARE_STRUCT_ITER (ss_val, ss_tab_entries, ss_tab *t)
+{
+  ss_tab *tab;
+  ss_val cur;
+
+  int level;
+  ss_val node[10];
+  int index[10];
+};
+
 void ss_tab_foreach (void (*func) (ss_val val), ss_tab *tab);
 
 struct ss_dict;
