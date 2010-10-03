@@ -798,6 +798,63 @@ sgb_words_elt (sgb_words *iter)
   return iter->cur; 
 }
 
+DYN_DECLARE_STRUCT_ITER (void, contiguous_usa)
+{
+  dyn_input in;
+  const char *a;
+  const char *b;
+};
+
+void
+contiguous_usa_init (contiguous_usa *iter)
+{
+  iter->in = dyn_ref (dyn_open_file (testsrc ("contiguous-usa.dat")));
+  contiguous_usa_step (iter);
+}
+
+void
+contiguous_usa_fini (contiguous_usa *iter)
+{
+  dyn_unref (iter->in); 
+}
+
+void
+contiguous_usa_step (contiguous_usa *iter)
+{
+  dyn_input_set_mark (iter->in);
+  if (dyn_input_find (iter->in, " "))
+    {
+      char *m = dyn_input_mutable_mark (iter->in);
+      m[dyn_input_off (iter->in)] = '\0';
+      dyn_input_advance (iter->in, 1);
+      iter->a = m;
+    }
+  else
+    iter->a = NULL;
+
+  dyn_input_set_mark (iter->in);
+  if (dyn_input_find (iter->in, "\n"))
+    {
+      char *m = dyn_input_mutable_mark (iter->in);
+      m[dyn_input_off (iter->in)] = '\0';
+      dyn_input_advance (iter->in, 1);
+      iter->b = m;
+    }
+  else
+    iter->b = NULL;
+}
+
+bool
+contiguous_usa_done (contiguous_usa *iter)
+{
+  return iter->a == NULL;
+}
+
+void
+contiguous_usa_elt (contiguous_usa *iter)
+{ 
+}
+
 DEFTEST (store_blob_vector)
 {
   dyn_block
@@ -955,29 +1012,87 @@ DEFTEST (store_dict_strong)
   dyn_block
     {
       dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+
+      ss_tab *t = ss_tab_init (s, NULL);
       ss_dict *d = ss_dict_init (s, NULL, SS_DICT_STRONG);
       
       int i = 0;
       dyn_foreach_ (w, sgb_words)
 	{
-	  ss_val b = ss_blob_new (s, strlen(w), (void *)w);
-	  ss_dict_set (d, ss_from_int (i), b);
+	  ss_val b = ss_tab_intern_blob (t, strlen(w), (void *)w);
+	  ss_dict_set (d, b, ss_from_int (i));
 	  i += 1;
 	}
 
-      ss_set_root (s, ss_dict_finish (d));
+      ss_set_root (s, ss_new (s, 0, 2,
+			      ss_tab_finish (t),
+			      ss_dict_finish (d)));
       s = ss_gc (s);
-      d = ss_dict_init (s, ss_get_root (s), SS_DICT_STRONG);
+      ss_val r = ss_get_root (s);
+      t = ss_tab_init (s, ss_ref (r, 0));
+      d = ss_dict_init (s, ss_ref (r, 1), SS_DICT_STRONG);
 
       i = 0;
       dyn_foreach_ (w, sgb_words)
 	{
-	  ss_val b = ss_dict_get (d, ss_from_int (i));
-	  EXPECT (ss_is_blob (b));
-	  EXPECT (ss_len (b) == strlen (w));
-	  EXPECT (strncmp (w, ss_blob_start (b), strlen (w)) == 0);
+	  ss_val b = ss_tab_intern_soft (t, strlen(w), (void *)w);
+	  EXPECT (b != NULL);
+
+	  ss_val ii = ss_dict_get (d, b);
+	  EXPECT (ss_is_int (ii));
+	  EXPECT (ss_to_int (ii) == i);
 	  i += 1;
 	}
+
+      ss_tab_abort (t);
+      ss_dict_abort (d);
+    }
+}
+
+DEFTEST (store_dict_strong_set)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+
+      ss_tab *t = ss_tab_init (s, NULL);
+      ss_dict *d = ss_dict_init (s, NULL, SS_DICT_STRONG);
+      
+      dyn_foreach_iter (u, contiguous_usa)
+	{
+	  ss_val a = ss_tab_intern_blob (t, strlen(u.a), (void *)u.a);
+	  ss_val b = ss_tab_intern_blob (t, strlen(u.b), (void *)u.b);
+	  ss_dict_add (d, a, b);
+	}
+
+      ss_set_root (s, ss_new (s, 0, 2,
+			      ss_tab_finish (t),
+			      ss_dict_finish (d)));
+      s = ss_gc (s);
+      ss_val r = ss_get_root (s);
+      t = ss_tab_init (s, ss_ref (r, 0));
+      d = ss_dict_init (s, ss_ref (r, 1), SS_DICT_STRONG);
+
+      dyn_foreach_iter (u, contiguous_usa)
+	{
+	  ss_val a = ss_tab_intern_blob (t, strlen(u.a), (void *)u.a);
+	  ss_val b = ss_tab_intern_blob (t, strlen(u.b), (void *)u.b);
+
+	  EXPECT (a != NULL);
+	  EXPECT (b != NULL);
+
+	  ss_val v = ss_dict_get (d, a);
+	  bool found = false;
+	  for (int i = 0; i < ss_len (v); i++)
+	    {
+	      if (ss_ref (v, i) == b)
+		found = true;
+	    }
+	  EXPECT (found);
+	}
+
+      ss_tab_abort (t);
+      ss_dict_abort (d);
     }
 }
 
