@@ -484,6 +484,9 @@ ss_gc_alive_p (ss_gc_data *gc, ss_val obj)
 {
   int i;
 
+  if (obj == NULL || ss_is_int (obj))
+    return 1;
+
   if (SS_IS_FORWARD (obj))
     return 1;
 
@@ -772,9 +775,9 @@ ss_gc_ripple_dicts (ss_gc_data *gc)
 	    dyn_foreach_x ((ss_val key, ss_val val),
 			   ss_dict_node_foreach, WEAK_DICT_DISPATCH_TAG, d)
 	      {
-		/* If the key is alive, we make sure that the value is alive, too.
-		   Since the value might be used in another dict, we need to scan
-		   again.
+		/* If the key is alive, we make sure that the value is
+		   alive, too.  Since the value might be used in
+		   another dict, we need to scan again.
 		*/
 		if (ss_gc_alive_p (gc, key)
 		    && !ss_gc_alive_p (gc, val))
@@ -790,9 +793,9 @@ ss_gc_ripple_dicts (ss_gc_data *gc)
 	    dyn_foreach_x ((ss_val key, ss_val val),
 			   ss_dict_node_foreach, WEAK_SETS_DISPATCH_TAG, d)
 	      {
-		/* If any of the values are alive, we make sure that the key is
-		   alive, too.  Since the key might be used in another dict, we need
-		   to scan again.
+		/* If any of the values are alive, we make sure that
+		   the key is alive, too.  Since the key might be used
+		   in another dict, we need to scan again.
 		*/
 		if (val && !ss_gc_alive_p (gc, key))
 		  {
