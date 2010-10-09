@@ -1166,6 +1166,110 @@ DEFTEST (store_dict_weak)
     }
 }
 
+DEFTEST (store_dict_weak_set)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+
+      ss_tab *t = ss_tab_init (s, NULL);
+      ss_dict *d = ss_dict_init (s, NULL, SS_DICT_WEAK_SETS);
+      
+      dyn_foreach_iter (u, contiguous_usa)
+	{
+	  ss_val a = ss_tab_intern_blob (t, strlen(u.a), (void *)u.a);
+	  ss_val b = ss_tab_intern_blob (t, strlen(u.b), (void *)u.b);
+	  ss_dict_add (d, a, b);
+	}
+
+      ss_set_root (s, ss_new (s, 0, 2,
+			      ss_tab_finish (t),
+			      ss_dict_finish (d)));
+      s = ss_gc (s);
+      ss_val r = ss_get_root (s);
+
+      EXPECT (ss_ref (r, 0) == NULL);
+      EXPECT (ss_ref (r, 1) == NULL);
+
+      t = ss_tab_init (s, NULL);
+      d = ss_dict_init (s, NULL, SS_DICT_WEAK_SETS);
+      ss_val v[20];
+
+      int i = 0;
+      dyn_foreach_iter (u, contiguous_usa)
+	{
+	  ss_val a = ss_tab_intern_blob (t, strlen(u.a), (void *)u.a);
+	  ss_val b = ss_tab_intern_blob (t, strlen(u.b), (void *)u.b);
+	  ss_dict_add (d, a, b);
+	  if (i < 20)
+	    v[i] = b;
+	  i++;
+	}
+
+      ss_set_root (s, ss_new (s, 0, 3,
+			      ss_tab_finish (t),
+			      ss_dict_finish (d),
+			      ss_newv (s, 0, 20, v)));
+      s = ss_gc (s);
+      r = ss_get_root (s);
+      
+      EXPECT (ss_ref (r, 0) != NULL);
+      EXPECT (ss_ref (r, 1) != NULL);
+
+      ss_val vv = ss_ref (r, 2);
+      t = ss_tab_init (s, ss_ref (r, 0));
+      d = ss_dict_init (s, ss_ref (r, 1), SS_DICT_WEAK_SETS);
+
+      i = 0;
+      dyn_foreach_iter (u, contiguous_usa)
+	{
+	  ss_val a = ss_tab_intern_soft (t, strlen(u.a), (void *)u.a);
+	  ss_val b = ss_tab_intern_soft (t, strlen(u.b), (void *)u.b);
+
+	  if (i < 20)
+	    {
+	      EXPECT (a != NULL);
+	      EXPECT (b == ss_ref (vv, i));
+	      ss_val bb = ss_dict_get (d, a);
+	      EXPECT (bb != NULL);
+	      int found = 0;
+	      for (int j = 0; j < ss_len (bb); j++)
+		if (ss_ref (bb, j) == b)
+		  found = 1;
+	      EXPECT (found);
+	    }
+	  i++;
+	}
+
+    }
+}
+
+DEFTEST (store_dict_foreach)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+
+      ss_tab *t = ss_tab_init (s, NULL);
+      ss_dict *d = ss_dict_init (s, NULL, SS_DICT_WEAK_SETS);
+      
+      int count = 0;
+      dyn_foreach_iter (u, contiguous_usa)
+	{
+	  ss_val a = ss_tab_intern_blob (t, strlen(u.a), (void *)u.a);
+	  ss_val b = ss_tab_intern_blob (t, strlen(u.b), (void *)u.b);
+	  ss_dict_add (d, a, b);
+	  count++;
+	}
+
+      dyn_foreach_iter (kv, ss_dict_entries, d)
+	{
+	  count -= ss_len (kv.val);
+	}
+      EXPECT (count == 0);
+    }
+}
+
 int
 main (int argc, char **argv)
 {

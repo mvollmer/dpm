@@ -176,7 +176,7 @@ void ss_dict_update_members (ss_dict *d,
 					     void *data),
 			     void *data);
 
-DYN_DECLARE_STRUCT_ITER (ss_val, ss_dict_entries, ss_dict *d)
+DYN_DECLARE_STRUCT_ITER (void, ss_dict_entries, ss_dict *d)
 {
   ss_dict *dict;
   ss_val key, val;

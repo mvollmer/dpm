@@ -2148,28 +2148,86 @@ ss_dict_foreach (void (*func) (ss_val key, ss_val val),
 }
 
 /* Dict entries iterator.
-
-   Manually inversing control flow is a bitch.
  */
 
 static void
-ss_dict_entries_push (ss_dict_entries *iter, ss_val node)
+ss_dict_entries_micro_step (ss_dict_entries *iter)
 {
-  do {
-    iter->level += 1;
-    iter->node[iter->level] = node;
-    iter->index[iter->level] = 1;
-    node = ss_ref (node, 1);
-  } while (ss_is (node, iter->dict->dispatch_tag));
+  // Perform one micro step that walks us along the tree of dispatch
+  // and search nodes.
+
+  // If we are at the end of the current node, pop it and advance in
+  // the lower level.
+  //
+  if (iter->index[iter->level] >= ss_len (iter->node[iter->level]))
+    {
+      iter->level -= 1;
+      if (iter->level >= 0)
+	iter->index[iter->level] += 1;
+      return;
+    }
+
+  // If we are in a dispatch node, push to the next level (if there is
+  // one), or advance.
+  //
+  if (ss_is (iter->node[iter->level], iter->dict->dispatch_tag))
+    {
+      ss_val n = ss_ref (iter->node[iter->level], iter->index[iter->level]);
+      if (n)
+	{
+	  iter->level += 1;
+	  iter->node[iter->level] = n;
+	  iter->index[iter->level] = 1;
+	}
+      else
+	iter->index[iter->level] += 1;
+      return;
+    }
+
+  // If we are in a search node, advance.
+  //
+  if (ss_is (iter->node[iter->level], iter->dict->search_tag))
+    {
+      iter->index[iter->level] += 2;
+      return;
+    }
+
+  abort ();
+}
+
+static bool
+ss_dict_entries_hit (ss_dict_entries *iter)
+{
+  // We have a hit when we are inside a search node.
+  ss_val n = iter->node[iter->level];
+  return (iter->index[iter->level] < ss_len (n)
+	  && ss_is (n, iter->dict->search_tag));
 }
 
 void
 ss_dict_entries_init (ss_dict_entries *iter, ss_dict *d)
 {
   iter->dict = dyn_ref (d);
-  iter->level = -1;
   if (d->root)
-    ss_dict_entries_push (iter, d->root);
+    {
+      iter->level = 0;
+      iter->node[0] = d->root;
+      iter->index[0] = 1;
+    }
+  else
+    iter->level = -1;
+
+  while (!(ss_dict_entries_done (iter)
+	   || ss_dict_entries_hit (iter)))
+    ss_dict_entries_micro_step (iter);
+
+  if (!ss_dict_entries_done (iter))
+    {
+      iter->key = ss_ref (iter->node[iter->level],
+			  iter->index[iter->level]);
+      iter->val = ss_ref (iter->node[iter->level],
+			  iter->index[iter->level] + 1);
+    }
 }
 
 void
@@ -2181,41 +2239,26 @@ ss_dict_entries_fini (ss_dict_entries *iter)
 void
 ss_dict_entries_step (ss_dict_entries *iter)
 {
-  // Pop all exhausted nodes
-  
-  while (iter->level >= 0 
-	 && iter->index[iter->level] > ss_len (iter->node[iter->level]))
-    iter->level -= 1;
+  // Do micro steps until we have something or run out.
+  //
+  do {
+    ss_dict_entries_micro_step (iter);
+  } while (!(ss_dict_entries_done (iter)
+	     || ss_dict_entries_hit (iter)));
 
-  if (iter->level < 0)
-    return;
-
-  // Push to search node
-
-  if (ss_is (iter->node[iter->level], iter->dict->dispatch_tag))
+  if (!ss_dict_entries_done (iter))
     {
-      ss_val n = ss_ref (iter->node[iter->level], iter->index[iter->level]);
-      iter->index[iter->level] += 1;
-      ss_dict_entries_push (iter, n);
+      iter->key = ss_ref (iter->node[iter->level],
+			  iter->index[iter->level]);
+      iter->val = ss_ref (iter->node[iter->level],
+			  iter->index[iter->level] + 1);
     }
-
-  // Get current element
-
-  iter->key = ss_ref (iter->node[iter->level], iter->index[iter->level]);
-  iter->val = ss_ref (iter->node[iter->level], iter->index[iter->level] + 1);
-  iter->index[iter->level] += 2;
 }
 
 bool
 ss_dict_entries_done (ss_dict_entries *iter)
 {
-  return iter->level > 0;
-}
-
-ss_val
-ss_dict_entries_elt (ss_dict_entries *iter)
-{
-  return iter->key;
+  return iter->level < 0;
 }
 
 static ss_val
