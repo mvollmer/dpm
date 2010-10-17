@@ -2261,6 +2261,56 @@ ss_dict_entries_done (ss_dict_entries *iter)
   return iter->level < 0;
 }
 
+void
+ss_dict_entry_members_init (ss_dict_entry_members *iter, ss_dict *d)
+{
+  ss_dict_entries_init (&iter->entries, d);
+
+  while (!ss_dict_entries_done (&iter->entries)
+	 && ss_len (iter->entries.val) == 0)
+    ss_dict_entries_step (&iter->entries);
+
+  if (!ss_dict_entries_done (&iter->entries))
+    {
+      iter->index = 0;
+      iter->key = iter->entries.key;
+      iter->val = ss_ref (iter->entries.val, 0);
+    }
+}
+
+void
+ss_dict_entry_members_fini (ss_dict_entry_members *iter)
+{
+  ss_dict_entries_fini (&iter->entries);
+}
+
+void
+ss_dict_entry_members_step (ss_dict_entry_members *iter)
+{
+  iter->index++;
+  if (iter->index >= ss_len (iter->entries.val))
+    {
+      do {
+	ss_dict_entries_step (&iter->entries);
+      } while (!ss_dict_entries_done (&iter->entries)
+	       && ss_len (iter->entries.val) == 0);
+
+      if (ss_dict_entries_done (&iter->entries))
+	return;
+
+      iter->index = 0;
+    }
+  
+  iter->key = iter->entries.key;
+  iter->val = ss_ref (iter->entries.val, 0);
+}
+
+bool
+ss_dict_entry_members_done (ss_dict_entry_members *iter)
+{
+  return ss_dict_entries_done (&iter->entries);
+}
+
 static ss_val
 ss_dict_node_update (ss_store ss, int dispatch_tag, ss_val node,
 		     ss_val (*func) (ss_val key, ss_val val, void *data),

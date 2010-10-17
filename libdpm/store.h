@@ -186,6 +186,13 @@ DYN_DECLARE_STRUCT_ITER (void, ss_dict_entries, ss_dict *d)
   int index[10];
 };
 
+DYN_DECLARE_STRUCT_ITER (void, ss_dict_entry_members, ss_dict *d)
+{
+  ss_dict_entries entries;
+  int index;
+  ss_val key, val;
+};
+
 ss_val ss_ref_safely (ss_val obj, int i);
 int ss_streq (ss_val obj, const char *str);
 

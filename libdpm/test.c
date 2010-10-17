@@ -1262,11 +1262,19 @@ DEFTEST (store_dict_foreach)
 	  count++;
 	}
 
+      int count2 = 0;
       dyn_foreach_iter (kv, ss_dict_entries, d)
 	{
-	  count -= ss_len (kv.val);
+	  count2 += ss_len (kv.val);
 	}
-      EXPECT (count == 0);
+      EXPECT (count == count2);
+
+      int count3 = 0;
+      dyn_foreach_iter (km, ss_dict_entry_members, d)
+	{
+	  count3++;
+	}
+      EXPECT (count == count3);
     }
 }
 
