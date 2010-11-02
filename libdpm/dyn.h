@@ -439,6 +439,8 @@ void dyn_output_advance (dyn_output out, int n);
         escape sequences inside so that it can be parsed correctly by
         dyn_read as a string.
 
+   %ls, %lS - like %s and %S, but print a string with given length.
+
    %v - prints a dyn_val according to its type; strings are printed as
         with %s.
 

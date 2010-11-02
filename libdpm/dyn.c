@@ -2205,6 +2205,12 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
       if (*fmt == '%')
 	{
 	  fmt++;
+	  bool l_mod = false;
+	  if (*fmt == 'l')
+	    {
+	      l_mod = true;
+	      fmt++;
+	    }
 	  switch (*fmt)
 	    {
 	    case '\0':
@@ -2212,13 +2218,23 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 	    case 's':
 	      {
 		char *str = va_arg (ap, char *);
-		dyn_write_string (out, str, strlen (str));
+		int len;
+		if (l_mod)
+		  len = va_arg (ap, int);
+		else
+		  len = strlen (str);
+		dyn_write_string (out, str, len);
 	      }
 	      break;
 	    case 'S':
 	      {
 		char *str = va_arg (ap, char *);
-		dyn_write_quoted (out, str, strlen (str));
+		int len;
+		if (l_mod)
+		  len = va_arg (ap, int);
+		else
+		  len = strlen (str);
+		dyn_write_quoted (out, str, len);
 	      }
 	      break;
 	    case 'v':
