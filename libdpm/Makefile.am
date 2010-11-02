@@ -65,6 +65,12 @@ noinst_PROGRAMS = dpm
 dpm_SOURCES = dpm.c
 dpm_LDADD = libdpm.la
 
-EXTRA_DIST = run-test test-data/numbers.txt
+EXTRA_DIST = run-test 				\
+	     test-data/numbers.txt 		\
+	     test-data/numbers.gz 		\
+	     test-data/numbers.bz2 		\
+	     test-data/sgb-words.txt   		\
+	     test-data/contiguous-usa.dat
 
-DISTCLEANFILES = test-data/output.txt
+DISTCLEANFILES = test-data/output.txt \
+	 	 test-data/store.db
