@@ -1278,6 +1278,27 @@ DEFTEST (store_dict_foreach)
     }
 }
 
+DEFTEST (parse_comma_fields)
+{
+  dyn_block
+    {
+      dyn_val fields[4];
+      int i = 0;
+      dyn_input in = dyn_open_string ("  foo   ,bar,,x y\tz\n z\ny  ", -1);
+      dyn_foreach_iter (f, dpm_parse_comma_fields_, in)
+	{
+	  EXPECT (i < 4);
+	  fields[i++] = dyn_from_stringn (f.field, f.len);
+	}
+
+      EXPECT (i == 4);
+      EXPECT (dyn_eq (fields[0], "foo"));
+      EXPECT (dyn_eq (fields[1], "bar"));
+      EXPECT (dyn_eq (fields[2], ""));
+      EXPECT (dyn_eq (fields[3], "x y\tz\n z\ny"));
+    }
+}
+
 int
 main (int argc, char **argv)
 {

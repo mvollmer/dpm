@@ -41,6 +41,53 @@ whitespace_p (char c)
 }
 
 void
+dpm_parse_comma_fields__init (dpm_parse_comma_fields_ *iter,
+			     dyn_input in)
+{
+  iter->in = dyn_ref (in);
+  dpm_parse_comma_fields__step (iter);
+}
+
+void
+dpm_parse_comma_fields__fini (dpm_parse_comma_fields_ *iter)
+{
+  dyn_unref (iter->in);
+}
+
+void
+dpm_parse_comma_fields__step (dpm_parse_comma_fields_ *iter)
+{
+  dyn_input in = iter->in;
+
+  dyn_input_skip (in, " \t\n");
+  if (dyn_input_grow (in, 1) < 1)
+    {
+      iter->len = -1;
+      return;
+    }
+
+  dyn_input_set_mark (in);
+  dyn_input_find (in, ",");
+      
+  iter->field = dyn_input_mark (in);
+  iter->len = dyn_input_pos (in) - iter->field;
+  while (iter->len > 0 && whitespace_p (iter->field[iter->len-1]))
+    iter->len--;
+
+  if (dyn_input_looking_at (in, ","))
+    dyn_input_advance (in, 1);
+}
+
+bool
+dpm_parse_comma_fields__done (dpm_parse_comma_fields_ *iter)
+{
+  return iter->len < 0;
+}
+
+/* Old style
+ */
+
+void
 dpm_parse_comma_fields (dyn_input in,
 			void (*func) (dyn_input in,
 				      const char *field, int field_len,

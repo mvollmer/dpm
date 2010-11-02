@@ -24,19 +24,18 @@
 
 /* Parsing
  *
- * The parsers are functions that repeatedly invoke a callback with
- * interesting bits of the input.
- *
- * The input is represented by a dpm_stream.  When a parser function
- * returns, the stream has been updated to position and mark of the
- * stream have been advanced to the unparsed rest of the input.
- *
- * Parser functions return true when they have processed a piece of
- * the input, and false otherwise.
- *
- * Parser functions abort in case of errors.  (This will be improved
- * to allow more control, but in general, these parsers expect already
- * validated input.  They won't give nice and helpful error messages.)
+ * Parsers are iterators.
+ */
+
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_comma_fields_, dyn_input in)
+{
+  dyn_input in;
+  
+  const char *field;
+  int len;
+};
+
+/* Old style.
  */
 
 void dpm_parse_comma_fields (dyn_input in,
