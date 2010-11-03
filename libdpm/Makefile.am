@@ -35,10 +35,11 @@ dpm_store_tool_LDADD = libdpm.la
 check_PROGRAMS = test
 EXTRA_PROGRAMS = test-coverage
 
+test_SOURCES = test.c testlib.h testlib.c
 test_LDADD = libdpm.la -ldl
 test_LDFLAGS = -Wl,--export-dynamic
 
-test_coverage_SOURCES = test.c $(libdpm_la_SOURCES)
+test_coverage_SOURCES = $(test_SOURCES) $(libdpm_la_SOURCES)
 test_coverage_CFLAGS = -fprofile-arcs -ftest-coverage -std=c99
 test_coverage_LDADD = $(libdpm_la_LIBADD) -ldl
 test_coverage_LDFLAGS = -Wl,--export-dynamic

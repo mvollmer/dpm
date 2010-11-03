@@ -16,84 +16,18 @@
  */
 
 #include <stdio.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <dlfcn.h>
 
 #include "dpm.h"
 
+#include "testlib.h"
+
 // Utilities
 
 #define S(x) dyn_from_string(x)
 #define Q(x) dyn_read_string(#x)
-
-#define DEFTEST(x) void test_##x ()
-#define EXPECT(expr) expect((expr), #expr, __FILE__, __LINE__)
-#define EXPECT_STATUS(check)			\
-  if(expect_status (check, __FILE__, __LINE__))	\
-    for (; true; exit(0))
-
-#define EXPECT_ABORT EXPECT_STATUS (check_status_abort)
-#define EXPECT_EXIT  EXPECT_STATUS (check_status_exit)
-
-void
-expect (int b, char *msg, char *file, int line)
-{
-  if (!b)
-    {
-      fprintf (stderr, "%s:%d: Expected %s\n", file, line, msg);
-      exit (1);
-    }
-}
-
-bool
-expect_status (void (*check) (int status, char *file, int line),
-	       char *file, int line)
-{
-  pid_t p = fork ();
-  if (p < 0)
-    {
-      fprintf (stderr, "Can't fork: %m\n");
-      exit (1);
-    }
-
-  if (p == 0)
-    return 1;
-
-  int status;
-  if (waitpid (p, &status, 0) < 0)
-    {
-      fprintf (stderr, "Can't waitpid: %m\n");
-      exit (1);
-    }
-
-  check (status, file, line);
-
-  return 0;
-}
-
-void
-check_status_abort (int status, char *file, int line)
-{
-  if (!WIFSIGNALED (status) || WTERMSIG (status) != SIGABRT)
-    {
-      fprintf (stderr, "%s:%d: Expected abort\n", file, line);
-      exit (1);
-    }
-}
-
-void
-check_status_exit (int status, char *file, int line)
-{
-  if (!WIFEXITED (status) || WEXITSTATUS (status) != 1)
-    {
-      fprintf (stderr, "%s:%d: Expected exit(1)\n", file, line);
-      exit (1);
-    }
-}
 
 dyn_val
 testsrc (const char *name)
@@ -110,6 +44,14 @@ testdst (const char *name)
   if (mkdir ("./test-data", 0777) < 0 && errno != EEXIST)
     dyn_error ("Can't create ./test-data: %m");
   return dyn_format ("./test-data/%s", name);
+}
+
+// Main
+
+int
+main (int argc, char **argv)
+{
+  return test_main (argc, argv);
 }
 
 // Tests
@@ -144,12 +86,12 @@ DEFTEST (dyn_alloc)
 
 DEFTEST (dyn_alloc_fail)
 {
-  EXPECT_ABORT
+  EXPECT_ABORT ("Out of memory.\n")
     {
       dyn_malloc (INT_MAX);
     }
 
-  EXPECT_ABORT
+  EXPECT_ABORT ("Out of memory.\n")
     {
       void *mem = dyn_malloc (10);
       mem = dyn_realloc (mem, INT_MAX);
@@ -453,7 +395,8 @@ DEFTEST (dyn_schema)
 				    Q(seq));
       EXPECT (dyn_equal (e, Q((foo bar))));
 
-      EXPECT_EXIT
+      EXPECT_STDERR 
+	(1, "value does not match schema, expecting pair: (foo bar)\n")
 	{
 	  dyn_apply_schema (Q((foo bar)),
 			    Q(pair));
@@ -661,7 +604,7 @@ signal_test (void *data)
 
 DEFTEST (dyn_signal)
 {
-  EXPECT_EXIT
+  EXPECT_STDERR (1, "unhandled test condition: foo\n")
     {
       dyn_signal (&condition_test, S("foo"));
     }
@@ -682,7 +625,7 @@ signal_error (void *data)
 
 DEFTEST (dyn_error)
 {
-  EXPECT_EXIT
+  EXPECT_STDERR (1, "foo\n")
     {
       dyn_error ("foo");
     }
@@ -723,7 +666,9 @@ DEFTEST (store_basic)
     {
       dyn_val name = testdst ("store.db");
 
-      EXPECT_EXIT
+      EXPECT_STDERR (1,
+		     "Can't open non-existing.db: "
+		     "No such file or directory\n")
 	{
 	  ss_open ("non-existing.db", SS_READ);
 	}
@@ -731,7 +676,11 @@ DEFTEST (store_basic)
       dyn_val s = ss_open (name, SS_TRUNC);
       EXPECT (ss_get_root (s) == NULL);
 
-      EXPECT_EXIT
+      dyn_val exp =
+	dyn_format ("Can't lock %s: Resource temporarily unavailable\n",
+		    name);
+
+      EXPECT_STDERR (1, exp)
 	{
 	  ss_open (name, SS_WRITE);
 	}
@@ -1296,29 +1245,5 @@ DEFTEST (parse_comma_fields)
       EXPECT (dyn_eq (fields[1], "bar"));
       EXPECT (dyn_eq (fields[2], ""));
       EXPECT (dyn_eq (fields[3], "x y\tz\n z\ny"));
-    }
-}
-
-int
-main (int argc, char **argv)
-{
-  if (argc != 2)
-    {
-      fprintf (stderr, "Usage: test TEST\n");
-      exit (1);
-    }
-
-  char *name = dyn_format ("test_%s", argv[1]);
-  void (*func)() = dlsym (NULL, name);
-
-  if (func)
-    {
-      func ();
-      exit (0);
-    }
-  else
-    {
-      fprintf (stderr, "Test %s is not defined.\n", argv[1]);
-      exit (1);
     }
 }
