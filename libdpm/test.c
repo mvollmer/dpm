@@ -46,6 +46,12 @@ testdst (const char *name)
   return dyn_format ("./test-data/%s", name);
 }
 
+bool
+streqn (const char *a, const char *b, int b_len)
+{
+  return strncmp (a, b, b_len) == 0 && a[b_len] == '\0';
+}
+
 // Main
 
 int
@@ -1245,5 +1251,31 @@ DEFTEST (parse_comma_fields)
       EXPECT (dyn_eq (fields[1], "bar"));
       EXPECT (dyn_eq (fields[2], ""));
       EXPECT (dyn_eq (fields[3], "x y\tz\n z\ny"));
+    }
+}
+
+DEFTEST (parse_relations)
+{
+  dyn_block
+    {
+      dyn_input in = dyn_open_string ("foo | bar (>= 1.0)", -1);
+      int i = 0;
+      dyn_foreach_iter (r, dpm_parse_relations, in)
+	{
+	  switch (i)
+	    {
+	    case 0:
+	      EXPECT (streqn ("foo", r.name, r.name_len));
+	      EXPECT (r.op_len == 0);
+	      EXPECT (r.version_len == 0);
+	      break;
+	    case 1:
+	      EXPECT (streqn ("bar", r.name, r.name_len));
+	      EXPECT (streqn (">=", r.op, r.op_len));
+	      EXPECT (streqn ("1.0", r.version, r.version_len));
+	      break;
+	    }
+	  i++;
+	}
     }
 }

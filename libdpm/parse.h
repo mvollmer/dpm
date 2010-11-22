@@ -31,8 +31,17 @@ DYN_DECLARE_STRUCT_ITER(void, dpm_parse_comma_fields_, dyn_input in)
 {
   dyn_input in;
   
-  const char *field;
-  int len;
+  const char *field; int len;
+};
+
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_relations, dyn_input in)
+{
+  dyn_input in;
+  bool first;
+
+  const char *name; int name_len;
+  const char *op; int op_len;
+  const char *version; int version_len;
 };
 
 /* Old style.

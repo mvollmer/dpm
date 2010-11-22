@@ -62,7 +62,7 @@ dpm_parse_comma_fields__step (dpm_parse_comma_fields_ *iter)
   dyn_input_skip (in, " \t\n");
   if (dyn_input_grow (in, 1) < 1)
     {
-      iter->len = -1;
+      iter->field = NULL;
       return;
     }
 
@@ -81,7 +81,104 @@ dpm_parse_comma_fields__step (dpm_parse_comma_fields_ *iter)
 bool
 dpm_parse_comma_fields__done (dpm_parse_comma_fields_ *iter)
 {
-  return iter->len < 0;
+  return iter->field == NULL;
+}
+
+void
+dpm_parse_relations_init (dpm_parse_relations *iter,
+			  dyn_input in)
+{
+  iter->in = dyn_ref (in);
+  iter->first = true;
+  dpm_parse_relations_step (iter);
+}
+
+void
+dpm_parse_relations_fini (dpm_parse_relations *iter)
+{
+  dyn_unref (iter->in);
+}
+
+void
+dpm_parse_relations_step (dpm_parse_relations *iter)
+{
+  dyn_input in = iter->in;
+
+  dyn_input_skip (in, " \t\n");
+
+  if (!iter->first)
+    {
+      if (dyn_input_looking_at (in, "|"))
+	{
+	  dyn_input_advance (in, 1);
+	  dyn_input_skip (in, " \t\n");
+	}
+      else
+	{
+	  iter->name = NULL;
+	  return;
+	}
+    }
+
+  dyn_input_set_mark (in);
+  dyn_input_find (in, " \t\n,(|");
+  iter->name_len = dyn_input_off (in);
+  
+  if (iter->name_len == 0)
+    {
+      iter->name = NULL;
+      return;
+    }
+
+  dyn_input_skip (in, " \t\n");
+  if (dyn_input_looking_at (in, "("))
+    {
+      int op_offset, version_offset;
+      
+      dyn_input_advance (in, 1);
+
+      dyn_input_skip (in, " \t\n");
+      op_offset = dyn_input_off (in);
+      dyn_input_skip (in, "<>=");
+      iter->op_len = dyn_input_off (in) - op_offset;
+
+      dyn_input_skip (in, " \t\n");
+      if (dyn_input_looking_at (in, ")")
+	  || dyn_input_looking_at (in, ",")
+	  || dyn_input_looking_at (in, "|"))
+	dyn_error ("missing version in relation: %I", in);
+
+      version_offset = dyn_input_off (in);
+      dyn_input_find (in, " \t\n),|");
+      iter->version_len = dyn_input_off (in) - version_offset;
+	  
+      dyn_input_skip (in, " \t\n");
+      if (!dyn_input_looking_at (in, ")"))
+	dyn_error ("missing parentheses in relation");
+      dyn_input_advance (in, 1);
+
+      const char *mark = dyn_input_mark (in);
+      iter->name = mark;
+      iter->op = mark + op_offset;
+      iter->version = mark + version_offset;
+    }
+  else
+    {
+      const char *mark = dyn_input_mark (in);
+      iter->name = mark;
+      iter->op = NULL;
+      iter->op_len = 0;
+      iter->version = NULL;
+      iter->version_len = 0;
+    }
+
+  iter->first = false;
+}
+
+bool
+dpm_parse_relations_done (dpm_parse_relations *iter)
+{
+  return iter->name == 0;
 }
 
 /* Old style
