@@ -181,6 +181,156 @@ dpm_parse_relations_done (dpm_parse_relations *iter)
   return iter->name == 0;
 }
 
+static const int max_line_fields = 512;
+
+void
+dpm_parse_lines__init (dpm_parse_lines_ *iter,
+		       dyn_input in)
+{
+  iter->in = dyn_ref (in);
+  iter->fields = dyn_malloc (max_line_fields * sizeof (const char *));
+  iter->field_lens = dyn_malloc (max_line_fields * sizeof (int));
+  dpm_parse_lines__step (iter);
+}
+
+void
+dpm_parse_lines__fini (dpm_parse_lines_ *iter)
+{
+  free (iter->fields);
+  free (iter->field_lens);
+  dyn_unref (iter->in);
+}
+
+void
+dpm_parse_lines__step (dpm_parse_lines_ *iter)
+{
+  dyn_input in = iter->in;
+
+  iter->n_fields = 0;
+  dyn_input_set_mark (in);
+
+  while (1)
+    {
+      dyn_input_skip (in, " \t");
+      if (dyn_input_looking_at (in, "\n"))
+	{
+	  dyn_input_advance (in, 1);
+	  return;
+	}
+      else if (dyn_input_grow (in, 1) < 1)
+	{
+	  if (iter->n_fields == 0)
+	    iter->n_fields = -1;
+	  return;
+	}
+      else
+	{
+	  int n = iter->n_fields;
+	  if (n == max_line_fields)
+	    dyn_error ("too many fields");
+	  iter->fields[n] = dyn_input_pos (in);
+	  dyn_input_find (in, " \t\n");
+	  iter->field_lens[n] = dyn_input_pos (in) - iter->fields[n];
+	  iter->n_fields++;
+	}
+    }
+}
+
+bool
+dpm_parse_lines__done (dpm_parse_lines_ *iter)
+{
+  return iter->n_fields < 0;
+}
+
+void
+dpm_parse_control__init (dpm_parse_control_ *iter, dyn_input in)
+{
+  iter->in = dyn_ref (in);
+  iter->starting = true;
+  dpm_parse_control__step (iter);
+}
+
+void
+dpm_parse_control__fini (dpm_parse_control_ *iter)
+{
+  dyn_unref (iter->in);
+}
+
+void
+dpm_parse_control__step (dpm_parse_control_ *iter)
+{
+  dyn_input in = iter->in;
+
+  dyn_input_set_mark (in);
+
+  while (dyn_input_find (in, ":\n")
+	 || dyn_input_pos (in) > dyn_input_mark (in))
+    {
+      if (dyn_input_pos (in) == dyn_input_mark (in))
+	{
+	  /* Empty line.  Gobble it up when we haven't seen a field yet.
+	   */
+	  if (iter->starting)
+	    {
+	      dyn_input_advance (in, 1);
+	      dyn_input_set_mark (in);
+	    }
+	  else
+	    {
+	      iter->name = NULL;
+	      return;
+	    }
+	}
+      else
+	{
+	  int value_off;
+
+	  if (!dyn_input_looking_at (in, ":"))
+	    dyn_error ("No field name");
+
+	  iter->name_len = dyn_input_pos (in) - dyn_input_mark (in);
+
+	  dyn_input_advance (in, 1);
+
+	  value_off = dyn_input_pos (in) - dyn_input_mark (in);
+
+	  dyn_input_find_after (in, "\n");
+	  while (dyn_input_looking_at (in, " ")
+		 || dyn_input_looking_at (in, "\t"))
+	    dyn_input_find_after (in, "\n");
+
+	  iter->value_len =
+	    dyn_input_pos (in) - dyn_input_mark (in) - value_off;
+
+	  iter->name = dyn_input_mark (in);
+	  iter->value = iter->name + value_off;
+
+	  while (iter->value_len > 0
+		 && whitespace_p (iter->value[0]))
+	    {
+	      iter->value++;
+	      iter->value_len--;
+	    }
+	  while (iter->value_len > 0
+		 && whitespace_p (iter->value[iter->value_len-1]))
+	    {
+	      iter->value_len--;
+	    }
+
+	  iter->starting = false;
+	  return;
+	}
+    }
+
+  iter->name = NULL;
+}
+
+bool
+dpm_parse_control__done (dpm_parse_control_ *iter)
+{
+  return iter->name == NULL;
+}
+
 /* Old style
  */
 

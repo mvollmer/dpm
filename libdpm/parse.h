@@ -44,6 +44,24 @@ DYN_DECLARE_STRUCT_ITER(void, dpm_parse_relations, dyn_input in)
   const char *version; int version_len;
 };
 
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_lines_, dyn_input in)
+{
+  dyn_input in;
+
+  int n_fields;
+  const char **fields;
+  int *field_lens;
+};
+
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_control_, dyn_input in)
+{
+  dyn_input in;
+  bool starting;
+  
+  const char *name; int name_len;
+  const char *value; int value_len;
+};
+
 /* Old style.
  */
 

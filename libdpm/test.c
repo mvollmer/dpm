@@ -1262,6 +1262,7 @@ DEFTEST (parse_relations)
       int i = 0;
       dyn_foreach_iter (r, dpm_parse_relations, in)
 	{
+	  EXPECT (i < 2);
 	  switch (i)
 	    {
 	    case 0:
@@ -1278,4 +1279,86 @@ DEFTEST (parse_relations)
 	  i++;
 	}
     }
+}
+
+DEFTEST (parse_lines)
+{
+  dyn_block
+    {
+      dyn_input in = dyn_open_file (testsrc ("lines.txt"));
+      int i = 0;
+      dyn_foreach_iter (l, dpm_parse_lines_, in)
+	{
+	  EXPECT (i < 3);
+	  switch (i)
+	    {
+	    case 0:
+	      EXPECT (l.n_fields == 3);
+	      EXPECT (streqn ("1", l.fields[0], l.field_lens[0]));
+	      EXPECT (streqn ("2", l.fields[1], l.field_lens[1]));
+	      EXPECT (streqn ("3", l.fields[2], l.field_lens[2]));
+	      break;
+	    case 1:
+	      EXPECT (l.n_fields == 3);
+	      EXPECT (streqn ("one", l.fields[0], l.field_lens[0]));
+	      EXPECT (streqn ("two", l.fields[1], l.field_lens[1]));
+	      EXPECT (streqn ("three", l.fields[2], l.field_lens[2]));
+	      break;
+	    case 2:
+	      EXPECT (l.n_fields == 5);
+	      EXPECT (streqn ("and,", l.fields[0], l.field_lens[0]));
+	      EXPECT (streqn ("a,", l.fields[1], l.field_lens[1]));
+	      EXPECT (streqn ("hundred", l.fields[2], l.field_lens[2]));
+	      EXPECT (streqn (",thousand", l.fields[3], l.field_lens[3]));
+	      EXPECT (streqn ("more", l.fields[4], l.field_lens[4]));
+	      break;
+	    }
+	  i++;
+	}
+    }
+}
+
+DEFTEST (parse_control)
+{
+  dyn_input in = dyn_open_file (testsrc ("control.txt"));
+
+  int i, j;
+
+  bool got_some;
+  i = 0;
+  do {
+    got_some = false;
+    j = 0;
+    dyn_foreach_iter (f, dpm_parse_control_, in)
+      {
+	got_some = true;
+	EXPECT (i < 2);
+	switch (i)
+	  {
+	  case 0:
+	    switch (j)
+	      {
+	      case 0:
+		EXPECT (streqn ("Package", f.name, f.name_len));
+		EXPECT (streqn ("test", f.value, f.value_len));
+		break;
+	      case 1:
+		EXPECT (streqn ("Field", f.name, f.name_len));
+		EXPECT (streqn ("one   two three", f.value, f.value_len));
+		break;
+	      }
+	    break;
+	  case 1:
+	    if (streqn ("Package", f.name, f.name_len))
+	      EXPECT (streqn ("xterm", f.value, f.value_len));
+	    else if (streqn ("Version", f.name, f.name_len))
+	      EXPECT (streqn ("266-1", f.value, f.value_len));
+	    else if (streqn ("Description", f.name, f.name_len))
+	      EXPECT (f.value_len == 1110);
+	    break;
+	  }
+	j++;
+      }
+    i++;
+  } while (got_some);
 }
