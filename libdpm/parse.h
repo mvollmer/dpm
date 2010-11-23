@@ -53,7 +53,9 @@ DYN_DECLARE_STRUCT_ITER(void, dpm_parse_lines_, dyn_input in)
   int *field_lens;
 };
 
-DYN_DECLARE_STRUCT_ITER(void, dpm_parse_control_, dyn_input in)
+bool dpm_parse_looking_at_control (dyn_input in);
+
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_control_fields, dyn_input in)
 {
   dyn_input in;
   bool starting;
@@ -92,16 +94,6 @@ int dpm_parse_control (dyn_input in,
 				     const char *value, int value_len,
 				     void *data),
 		       void *data);
-
-typedef struct {
-  int n, max;
-  char **names;
-  char **values;
-} dpm_control_fields;
-
-int dpm_parse_control_fields (dyn_input in, dpm_control_fields *result);
-char *dpm_control_fields_get (dpm_control_fields *fields, const char *name);
-void dpm_control_fields_free (dpm_control_fields *fields);
 
 void dpm_parse_ar (dyn_input in,
 		   void (*func) (dyn_input in,

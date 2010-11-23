@@ -1324,41 +1324,39 @@ DEFTEST (parse_control)
 
   int i, j;
 
-  bool got_some;
   i = 0;
-  do {
-    got_some = false;
-    j = 0;
-    dyn_foreach_iter (f, dpm_parse_control_, in)
-      {
-	got_some = true;
-	EXPECT (i < 2);
-	switch (i)
-	  {
-	  case 0:
-	    switch (j)
-	      {
-	      case 0:
-		EXPECT (streqn ("Package", f.name, f.name_len));
-		EXPECT (streqn ("test", f.value, f.value_len));
-		break;
-	      case 1:
-		EXPECT (streqn ("Field", f.name, f.name_len));
-		EXPECT (streqn ("one   two three", f.value, f.value_len));
-		break;
-	      }
-	    break;
-	  case 1:
-	    if (streqn ("Package", f.name, f.name_len))
-	      EXPECT (streqn ("xterm", f.value, f.value_len));
-	    else if (streqn ("Version", f.name, f.name_len))
-	      EXPECT (streqn ("266-1", f.value, f.value_len));
-	    else if (streqn ("Description", f.name, f.name_len))
-	      EXPECT (f.value_len == 1110);
-	    break;
-	  }
-	j++;
-      }
-    i++;
-  } while (got_some);
+  while (dpm_parse_looking_at_control (in))
+    {
+      j = 0;
+      dyn_foreach_iter (f, dpm_parse_control_fields, in)
+	{
+	  EXPECT (i < 2);
+	  switch (i)
+	    {
+	    case 0:
+	      switch (j)
+		{
+		case 0:
+		  EXPECT (streqn ("Package", f.name, f.name_len));
+		  EXPECT (streqn ("test", f.value, f.value_len));
+		  break;
+		case 1:
+		  EXPECT (streqn ("Field", f.name, f.name_len));
+		  EXPECT (streqn ("one   two three", f.value, f.value_len));
+		  break;
+		}
+	      break;
+	    case 1:
+	      if (streqn ("Package", f.name, f.name_len))
+		EXPECT (streqn ("xterm", f.value, f.value_len));
+	      else if (streqn ("Version", f.name, f.name_len))
+		EXPECT (streqn ("266-1", f.value, f.value_len));
+	      else if (streqn ("Description", f.name, f.name_len))
+		EXPECT (f.value_len == 1110);
+	      break;
+	    }
+	  j++;
+	}
+      i++;
+    }
 }
