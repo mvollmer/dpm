@@ -47,6 +47,12 @@ testdst (const char *name)
 }
 
 bool
+streq (const char *a, const char *b)
+{
+  return strcmp (a, b) == 0;
+}
+
+bool
 streqn (const char *a, const char *b, int b_len)
 {
   return strncmp (a, b, b_len) == 0 && a[b_len] == '\0';
@@ -1318,7 +1324,7 @@ DEFTEST (parse_lines)
     }
 }
 
-DEFTEST (parse_control)
+DEFTEST (parse_control_fields)
 {
   dyn_input in = dyn_open_file (testsrc ("control.txt"));
 
@@ -1358,5 +1364,86 @@ DEFTEST (parse_control)
 	  j++;
 	}
       i++;
+    }
+}
+
+DEFTEST (parse_ar_members)
+{
+  dyn_block
+    {
+      dyn_input in = dyn_open_file (testsrc ("pkg.deb"));
+
+      int i = 0;
+      dyn_foreach_iter (m, dpm_parse_ar_members, in)
+	{
+	  EXPECT (i < 3);
+	  switch (i) 
+	    {
+	    case 0:
+	      EXPECT (strcmp (m.name, "debian-binary") == 0);
+	      EXPECT (m.size == 4);
+	      EXPECT (dyn_input_looking_at (in, "2.0\n"));
+	      break;
+	    case 1:
+	      EXPECT (strcmp (m.name, "control.tar.gz") == 0);
+	      EXPECT (m.size == 910);
+	      break;
+	    case 2:
+	      EXPECT (strcmp (m.name, "data.tar.gz") == 0);
+	      EXPECT (m.size == 14932);
+	      break;
+	    }
+	  i++;
+	}
+    }
+}
+
+DEFTEST (parse_tar_members)
+{
+  dyn_block
+    {
+      const char *lorem =
+	"./neque-porro-quisquam-est-qui-dolorem-ipsum-quia-dolor-"
+	"sit-amet-consectetur-adipisci-velit.txt";
+
+      dyn_input in = dyn_open_file (testsrc ("src.tar"));
+
+      int i = 0;
+      dyn_foreach_iter (m, dpm_parse_tar_members, in)
+	{
+	  EXPECT (i < 5);
+	  switch (i)
+	    {
+	    case 0:
+	      EXPECT (m.type == DPM_TAR_DIRECTORY);
+	      EXPECT (streq ("./", m.name));
+	      EXPECT (m.size == 0);
+	      break;
+	    case 1:
+	      EXPECT (m.type == DPM_TAR_SYMLINK);
+	      EXPECT (streq (lorem, m.name));
+	      EXPECT (streq ("hello.txt", m.target));
+	      EXPECT (m.size == 0);
+	      break;
+	    case 2:
+	      EXPECT (m.type == DPM_TAR_SYMLINK);
+	      EXPECT (streq ("./hi.txt", m.name));
+	      EXPECT (streq (lorem+2, m.target));
+	      EXPECT (m.size == 0);
+	      break;
+	    case 3:
+	      EXPECT (m.type == DPM_TAR_FILE);
+	      EXPECT (streq ("./README", m.name));
+	      EXPECT (m.size == 2099);
+	      break;
+	    case 4:
+	      EXPECT (m.type == DPM_TAR_FILE);
+	      EXPECT (streq ("./hello.txt", m.name));
+	      EXPECT (m.size == 14);
+	      EXPECT (dyn_input_looking_at (in, "Hello, World!\n"));
+	      break;
+	    }
+	  i++;
+	}
     }
 }
