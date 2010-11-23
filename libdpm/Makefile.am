@@ -71,7 +71,11 @@ EXTRA_DIST = run-test 				\
 	     test-data/numbers.gz 		\
 	     test-data/numbers.bz2 		\
 	     test-data/sgb-words.txt   		\
-	     test-data/contiguous-usa.dat
+	     test-data/contiguous-usa.dat       \
+             test-data/lines.txt                \
+             test-data/control.txt              \
+             test-data/pkg.deb                  \
+             test-data/src.tar
 
 DISTCLEANFILES = test-data/output.txt \
 	 	 test-data/store.db
