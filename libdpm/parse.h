@@ -44,7 +44,7 @@ DYN_DECLARE_STRUCT_ITER(void, dpm_parse_relations, dyn_input in)
   const char *version; int version_len;
 };
 
-DYN_DECLARE_STRUCT_ITER(void, dpm_parse_lines_, dyn_input in)
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_lines, dyn_input in)
 {
   dyn_input in;
 
@@ -127,13 +127,6 @@ int dpm_parse_relation (dyn_input in,
 				      const char *version, int version_len,
 				      void *data),
 			void *data);
-
-void dpm_parse_lines (dyn_input in,
-		      void (*func) (dyn_input in,
-				    int n_fields,
-				    const char **fields, int *field_lens,
-				    void *data),
-		      void *data);
 
 int dpm_parse_control (dyn_input in,
 		       void (*func) (dyn_input in,

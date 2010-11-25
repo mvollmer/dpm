@@ -184,17 +184,17 @@ dpm_parse_relations_done (dpm_parse_relations *iter)
 static const int max_line_fields = 512;
 
 void
-dpm_parse_lines__init (dpm_parse_lines_ *iter,
+dpm_parse_lines_init (dpm_parse_lines *iter,
 		       dyn_input in)
 {
   iter->in = dyn_ref (in);
   iter->fields = dyn_malloc (max_line_fields * sizeof (const char *));
   iter->field_lens = dyn_malloc (max_line_fields * sizeof (int));
-  dpm_parse_lines__step (iter);
+  dpm_parse_lines_step (iter);
 }
 
 void
-dpm_parse_lines__fini (dpm_parse_lines_ *iter)
+dpm_parse_lines_fini (dpm_parse_lines *iter)
 {
   free (iter->fields);
   free (iter->field_lens);
@@ -202,7 +202,7 @@ dpm_parse_lines__fini (dpm_parse_lines_ *iter)
 }
 
 void
-dpm_parse_lines__step (dpm_parse_lines_ *iter)
+dpm_parse_lines_step (dpm_parse_lines *iter)
 {
   dyn_input in = iter->in;
 
@@ -237,7 +237,7 @@ dpm_parse_lines__step (dpm_parse_lines_ *iter)
 }
 
 bool
-dpm_parse_lines__done (dpm_parse_lines_ *iter)
+dpm_parse_lines_done (dpm_parse_lines *iter)
 {
   return iter->n_fields < 0;
 }
@@ -725,51 +725,6 @@ dpm_parse_relation (dyn_input in,
 	}
       else
 	dyn_error ("snytax error in relation");
-    }
-}
-
-void
-dpm_parse_lines (dyn_input in,
-		 void (*func) (dyn_input in,
-			       int n_fields,
-			       const char **fields, int *field_lens,
-			       void *data),
-		 void *data)
-{
-  const int max_fields = 512;
-  int n_fields;
-  const char *fields[max_fields];
-  int field_lens[max_fields];
-  
-  n_fields = 0;
-  dyn_input_set_mark (in);
-
-  while (1)
-    {
-      dyn_input_skip (in, " \t");
-      if (dyn_input_looking_at (in, "\n"))
-	{
-	  func (in, n_fields, fields, field_lens, data);
-	  dyn_input_advance (in, 1);
-	  dyn_input_set_mark (in);
-	  n_fields = 0;
-	}
-      else if (dyn_input_grow (in, 1) < 1)
-	{
-	  if (n_fields > 0)
-	    func (in, n_fields, fields, field_lens, data);
-	  dyn_input_set_mark (in);
-	  return;
-	}
-      else
-	{
-	  if (n_fields == max_fields)
-	    dyn_error ("too many fields");
-	  fields[n_fields] = dyn_input_pos (in);
-	  dyn_input_find (in, " \t\n");
-	  field_lens[n_fields] = dyn_input_pos (in) - fields[n_fields];
-	  n_fields++;
-	}
     }
 }
 

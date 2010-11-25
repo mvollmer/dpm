@@ -797,30 +797,6 @@ reuse_index (update_data *ud, dpm_release_index release,
 }
 
 static void
-sha256_line (dyn_input in,
-	     int n_fields, const char **fields, int *field_lens,
-	     void *data)
-{
-  update_data *ud = data;
-
-  if (n_fields == 3)
-    {
-      for (int i = 0; i < ud->n_indices; i++)
-	{
-	  const char *p = dyn_to_string (ud->index[i].path);
-	  if (field_lens[2] + ud->index_prefix_len == strlen (p)
-	      && strncmp (p + ud->index_prefix_len,
-			  fields[2], field_lens[2]) == 0)
-	    {
-	      ud->index[i].sha256 =
-		dyn_ref (dyn_from_stringn (fields[0], field_lens[0]));
-	      break;
-	    }
-	}
-    }
-}
-
-static void
 release_field (dyn_input in,
 	       const char *name, int name_len,
 	       const char *value, int value_len,
@@ -831,7 +807,25 @@ release_field (dyn_input in,
   if (strncmp (name, "SHA256", name_len) == 0)
     {
       dyn_input val_in = dyn_open_string (value, value_len);
-      dpm_parse_lines (val_in, sha256_line, ud);
+      dyn_foreach_iter (f, dpm_parse_lines, val_in)
+	{
+	  if (f.n_fields == 3)
+	    {
+	      for (int i = 0; i < ud->n_indices; i++)
+		{
+		  const char *p = dyn_to_string (ud->index[i].path);
+		  if (f.field_lens[2] + ud->index_prefix_len == strlen (p)
+		      && strncmp (p + ud->index_prefix_len,
+				  f.fields[2], f.field_lens[2]) == 0)
+		    {
+		      ud->index[i].sha256 =
+			dyn_ref (dyn_from_stringn (f.fields[0],
+						   f.field_lens[0]));
+		      break;
+		    }
+		}
+	    }
+	}
     }
 }
 

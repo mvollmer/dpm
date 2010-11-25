@@ -1293,7 +1293,7 @@ DEFTEST (parse_lines)
     {
       dyn_input in = dyn_open_file (testsrc ("lines.txt"));
       int i = 0;
-      dyn_foreach_iter (l, dpm_parse_lines_, in)
+      dyn_foreach_iter (l, dpm_parse_lines, in)
 	{
 	  EXPECT (i < 3);
 	  switch (i)
