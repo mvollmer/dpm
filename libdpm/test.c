@@ -1246,7 +1246,7 @@ DEFTEST (parse_comma_fields)
       dyn_val fields[4];
       int i = 0;
       dyn_input in = dyn_open_string ("  foo   ,bar,,x y\tz\n z\ny  ", -1);
-      dyn_foreach_iter (f, dpm_parse_comma_fields_, in)
+      dyn_foreach_iter (f, dpm_parse_comma_fields, in)
 	{
 	  EXPECT (i < 4);
 	  fields[i++] = dyn_from_stringn (f.field, f.len);
@@ -1266,7 +1266,7 @@ DEFTEST (parse_relations)
     {
       dyn_input in = dyn_open_string ("foo | bar (>= 1.0)", -1);
       int i = 0;
-      dyn_foreach_iter (r, dpm_parse_relations, in)
+      dyn_foreach_iter (r, dpm_parse_relation_alternatives, in)
 	{
 	  EXPECT (i < 2);
 	  switch (i)

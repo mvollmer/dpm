@@ -472,157 +472,67 @@ typedef struct {
   dpm_version *versions;
 } update_data;
 
-void
-package_stanza_relation (dyn_input in,
-			 const char *name, int name_len,
-			 const char *op, int op_len,
-			 const char *version, int version_len,
-			 void *data)
-{
-  update_data *ud = data;
-  
-  int op_code;
-  if (op == NULL)
-    op_code = DPM_ANY;
-  else if (op_len == 1 && !strncmp (op, "=", 1))
-    op_code = DPM_EQ;
-  else if (op_len == 2 && !strncmp (op, "<<", 2))
-    op_code = DPM_LESS;
-  else if (op_len == 2 && !strncmp (op, "<=", 2))
-    op_code = DPM_LESSEQ;
-  else if (op_len == 2 && !strncmp (op, ">>", 2))
-    op_code = DPM_GREATER;
-  else if (op_len == 2 && !strncmp (op, ">=", 2))
-    op_code = DPM_GREATEREQ;
-  else if (op_len == 1 && !strncmp (op, "<", 1))
-    op_code = DPM_LESSEQ;    // sic
-  else if (op_len == 1 && !strncmp (op, ">", 1))
-    op_code = DPM_GREATEREQ; // sic
-  else
-    dyn_error ("Unknown relation operator: %B", op, op_len);
-
-  if (ud->n_alternatives >= 3*64)
-    dyn_error ("Too many alternatives: %r", dpm_pkg_name (ud->package));
-
-  int i = ud->n_alternatives;
-  ud->alternatives[i++] = ss_from_int (op_code);
-  ud->alternatives[i++] = find_create_package (ud->db, name, name_len);
-  ud->alternatives[i++] = (version
-			   ? ss_tab_intern_blob (ud->db->strings,
-						 version_len, (void *)version)
-			   : NULL);
-  ud->n_alternatives = i;
-}
-
 ss_val
-package_stanza_relation_field (update_data *ud,
-			       const char *value, int value_len)
+parse_relations (update_data *ud, const char *value, int value_len)
 {
   dyn_input in = dyn_open_string (value, value_len);
 
-  ud->n_alternatives = 0;
   ud->n_relations = 0;
-  while (dpm_parse_relation (in, package_stanza_relation, ud))
+  while (true)
     {
-      if (ud->n_relations >= 2048)
-	dyn_error ("Too many relations: %r", dpm_pkg_name (ud->package));
-      
-      ud->relations[ud->n_relations++] = ss_newv (ud->db->store, 0,
-						  ud->n_alternatives, 
-						  ud->alternatives);
       ud->n_alternatives = 0;
+      dyn_foreach_iter (alt, dpm_parse_relation_alternatives, in)
+	{
+	  int op_code;
+	  if (alt.op == NULL)
+	    op_code = DPM_ANY;
+	  else if (alt.op_len == 1 && !strncmp (alt.op, "=", 1))
+	    op_code = DPM_EQ;
+	  else if (alt.op_len == 2 && !strncmp (alt.op, "<<", 2))
+	    op_code = DPM_LESS;
+	  else if (alt.op_len == 2 && !strncmp (alt.op, "<=", 2))
+	    op_code = DPM_LESSEQ;
+	  else if (alt.op_len == 2 && !strncmp (alt.op, ">>", 2))
+	    op_code = DPM_GREATER;
+	  else if (alt.op_len == 2 && !strncmp (alt.op, ">=", 2))
+	    op_code = DPM_GREATEREQ;
+	  else if (alt.op_len == 1 && !strncmp (alt.op, "<", 1))
+	    op_code = DPM_LESSEQ;    // sic
+	  else if (alt.op_len == 1 && !strncmp (alt.op, ">", 1))
+	    op_code = DPM_GREATEREQ; // sic
+	  else
+	    dyn_error ("Unknown relation operator: %B", alt.op, alt.op_len);
+
+	  if (ud->n_alternatives >= 3*64)
+	    dyn_error ("Too many alternatives: %r", dpm_pkg_name (ud->package));
+
+	  int i = ud->n_alternatives;
+	  ud->alternatives[i++] = ss_from_int (op_code);
+	  ud->alternatives[i++] = find_create_package (ud->db, 
+						       alt.name, alt.name_len);
+	  ud->alternatives[i++] = (alt.version
+				   ? ss_tab_intern_blob (ud->db->strings,
+							 alt.version_len,
+							 (void *)alt.version)
+				   : NULL);
+	  ud->n_alternatives = i;
+	}
+
+      if (ud->n_alternatives > 0)
+	{
+	  if (ud->n_relations >= 2048)
+	    dyn_error ("Too many relations: %r", dpm_pkg_name (ud->package));
+      
+	  ud->relations[ud->n_relations++] = ss_newv (ud->db->store, 0,
+						      ud->n_alternatives, 
+						      ud->alternatives);
+	}
+
+      if (!dpm_parse_next_relation (in))
+	break;
     }
 
   return ss_newv (ud->db->store, 0, ud->n_relations, ud->relations);
-}
-
-void
-package_stanza_field (dyn_input in,
-		      const char *name, int name_len,
-		      const char *value, int value_len,
-		      void *data)
-{
-  update_data *ud = data;
-  dpm_db db = ud->db;
-
-  ss_val key = ss_tab_intern_blob (db->strings, name_len, (void *)name);
-
-  if (key == ud->tag_key)
-    {
-      dyn_block
-	{
-	  /* XXX - tags have a more complicated syntax than comma
-	           separated fields.
-	   */
-	  dyn_input t = dyn_open_string (value, value_len);
-	  dyn_foreach_iter (f, dpm_parse_comma_fields_, t)
-	    {
-	      if (ud->n_tags >= 64)
-		dyn_error ("Too many tags");
-
-	      ud->tags[ud->n_tags++] =
-		ss_tab_intern_blob (ud->db->strings,
-				    f.len, (void *)f.field);
-	    }
-	}
-    }
-  else if (key == ud->pre_depends_key)
-    ud->pre_depends = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->depends_key)
-    ud->depends = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->conflicts_key)
-    ud->conflicts = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->provides_key)
-    ud->provides = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->replaces_key)
-    ud->replaces = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->breaks_key)
-    ud->breaks = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->recommends_key)
-    ud->recommends = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->enhances_key)
-    ud->enhances = package_stanza_relation_field (ud, value, value_len);
-  else if (key == ud->suggests_key)
-    ud->suggests = package_stanza_relation_field (ud, value, value_len);
-  else
-    {
-      ss_val val = ss_tab_intern_blob (db->strings, value_len, (void *)value);
-
-      if (key == ud->package_key)
-	{
-	  dpm_package pkg = ss_dict_get (db->packages, val);
-	  if (pkg == NULL)
-	    {
-	      pkg = ss_new (db->store, 65, 2,
-			    NULL,
-			    val);
-	      ss_dict_set (db->packages, val, pkg);
-	    }
-	  ud->package = pkg;
-	}
-      else if (key == ud->version_key)
-	ud->version = val;
-      else if (key == ud->architecture_key)
-	ud->architecture = val;
-      else
-	{
-	  ud->fields[ud->n_fields] = key;
-	  ud->fields[ud->n_fields+1] = val;
-	  ud->n_fields += 2;
-	  if (ud->n_fields > 63)
-	    dyn_error ("too many fields");
-	}
-      
-      if (key == ud->description_key)
-	{
-	  char *desc = ss_blob_start (val);
-	  char *pos = memchr (desc, '\n', ss_len (val));
-	  if (pos)
-	    ud->shortdesc = ss_tab_intern_blob (db->strings, pos-desc, desc);
-	  else
-	    ud->shortdesc = val;
-	}
-    }
 }
 
 static void
@@ -651,7 +561,7 @@ record_version (dpm_db db, dpm_version ver)
       ss_dict_add (db->tags, ss_ref (tags, i), ver);
 }
 
-static int
+static bool
 parse_package_stanza (update_data *ud, dyn_input in)
 {
   dpm_db db = ud->db;
@@ -674,62 +584,145 @@ parse_package_stanza (update_data *ud, dyn_input in)
   ud->n_tags = 0;
   ud->n_fields = 0;
 
-  if (dpm_parse_control (in, package_stanza_field, ud))
+  if (!dpm_parse_looking_at_control (in))
+    return false;
+
+  dyn_foreach_iter (f, dpm_parse_control_fields, in)
     {
-      if (ud->package == NULL)
-	dyn_error ("Stanza without package");
-      if (ud->version == NULL)
-	dyn_error ("Package without version: %r",
-		   dpm_pkg_name (ud->package));
-      if (ud->architecture == NULL)
-	dyn_error ("Package without architecture: %r",
-		   dpm_pkg_name (ud->package));
+      ss_val key = ss_tab_intern_blob (db->strings,
+				       f.name_len, (void *)f.name);
 
-      dpm_version ver = find_version (ud->db,
-				      ud->package,
-				      ud->version, 
-				      ud->architecture);
-
-      if (ver == NULL)
+      if (key == ud->tag_key)
 	{
-	  ver = ss_new (db->store, 64, 8,
-			NULL,
-			ud->package,
-			ud->version,
-			ud->architecture,
-			ss_new (db->store, 0, 9,
-				ud->pre_depends,
-				ud->depends,
-				ud->conflicts,
-				ud->provides,
-				ud->replaces,
-				ud->breaks,
-				ud->recommends,
-				ud->enhances,
-				ud->suggests),
-			ss_newv (db->store, 0,
-				 ud->n_tags, ud->tags),
-			ud->shortdesc,
-			ss_newv (db->store, 0,
-				 ud->n_fields, ud->fields));
-
-	  record_version (ud->db, ver);
-
-	  ud->new_versions++;
+	  dyn_block
+	    {
+	      /* XXX - tags have a more complicated syntax than comma
+		       separated fields.
+	      */
+	      dyn_input t = dyn_open_string (f.value, f.value_len);
+	      dyn_foreach_iter (f, dpm_parse_comma_fields, t)
+		{
+		  if (ud->n_tags >= 64)
+		    dyn_error ("Too many tags");
+		  
+		  ud->tags[ud->n_tags++] =
+		    ss_tab_intern_blob (ud->db->strings,
+					f.len, (void *)f.field);
+		}
+	    }
 	}
-
-      if (ud->n_versions >= ud->max_versions)
+      else if (key == ud->pre_depends_key)
+	ud->pre_depends = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->depends_key)
+	ud->depends = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->conflicts_key)
+	ud->conflicts = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->provides_key)
+	ud->provides = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->replaces_key)
+	ud->replaces = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->breaks_key)
+	ud->breaks = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->recommends_key)
+	ud->recommends = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->enhances_key)
+	ud->enhances = parse_relations (ud, f.value, f.value_len);
+      else if (key == ud->suggests_key)
+	ud->suggests = parse_relations (ud, f.value, f.value_len);
+      else
 	{
-	  ud->max_versions += 1024;
-	  ud->versions = dyn_realloc (ud->versions,
-				      sizeof(dpm_version) * ud->max_versions);
+	  ss_val val = ss_tab_intern_blob (db->strings,
+					   f.value_len, (void *)f.value);
+	  
+	  if (key == ud->package_key)
+	    {
+	      dpm_package pkg = ss_dict_get (db->packages, val);
+	      if (pkg == NULL)
+		{
+		  pkg = ss_new (db->store, 65, 2,
+				NULL,
+				val);
+		  ss_dict_set (db->packages, val, pkg);
+		}
+	      ud->package = pkg;
+	    }
+	  else if (key == ud->version_key)
+	    ud->version = val;
+	  else if (key == ud->architecture_key)
+	    ud->architecture = val;
+	  else
+	    {
+	      ud->fields[ud->n_fields] = key;
+	      ud->fields[ud->n_fields+1] = val;
+	      ud->n_fields += 2;
+	      if (ud->n_fields > 63)
+		dyn_error ("too many fields");
+	    }
+      
+	  if (key == ud->description_key)
+	    {
+	      char *desc = ss_blob_start (val);
+	      char *pos = memchr (desc, '\n', ss_len (val));
+	      if (pos)
+		ud->shortdesc = ss_tab_intern_blob (db->strings,
+						    pos-desc, desc);
+	      else
+		ud->shortdesc = val;
+	    }
 	}
-      ud->versions[ud->n_versions++] = ver;
-
-      return 1;
     }
-  else
-    return 0;
+
+  if (ud->package == NULL)
+    dyn_error ("Stanza without package");
+  if (ud->version == NULL)
+    dyn_error ("Package without version: %r",
+	       dpm_pkg_name (ud->package));
+  if (ud->architecture == NULL)
+    dyn_error ("Package without architecture: %r",
+	       dpm_pkg_name (ud->package));
+
+  dpm_version ver = find_version (ud->db,
+				  ud->package,
+				  ud->version, 
+				  ud->architecture);
+
+  if (ver == NULL)
+    {
+      ver = ss_new (db->store, 64, 8,
+		    NULL,
+		    ud->package,
+		    ud->version,
+		    ud->architecture,
+		    ss_new (db->store, 0, 9,
+			    ud->pre_depends,
+			    ud->depends,
+			    ud->conflicts,
+			    ud->provides,
+			    ud->replaces,
+			    ud->breaks,
+			    ud->recommends,
+			    ud->enhances,
+			    ud->suggests),
+		    ss_newv (db->store, 0,
+			     ud->n_tags, ud->tags),
+		    ud->shortdesc,
+		    ss_newv (db->store, 0,
+			     ud->n_fields, ud->fields));
+      
+      record_version (ud->db, ver);
+      
+      ud->new_versions++;
+    }
+
+  if (ud->n_versions >= ud->max_versions)
+    {
+      ud->max_versions += 1024;
+      ud->versions = dyn_realloc (ud->versions,
+				  sizeof(dpm_version) * ud->max_versions);
+    }
+  ud->versions[ud->n_versions++] = ver;
+
+  return true;
 }
 
 static void
@@ -794,39 +787,6 @@ reuse_index (update_data *ud, dpm_release_index release,
 }
 
 static void
-release_field (dyn_input in,
-	       const char *name, int name_len,
-	       const char *value, int value_len,
-	       void *data)
-{
-  update_data *ud = data;
-
-  if (strncmp (name, "SHA256", name_len) == 0)
-    {
-      dyn_input val_in = dyn_open_string (value, value_len);
-      dyn_foreach_iter (f, dpm_parse_lines, val_in)
-	{
-	  if (f.n_fields == 3)
-	    {
-	      for (int i = 0; i < ud->n_indices; i++)
-		{
-		  const char *p = dyn_to_string (ud->index[i].path);
-		  if (f.field_lens[2] + ud->index_prefix_len == strlen (p)
-		      && strncmp (p + ud->index_prefix_len,
-				  f.fields[2], f.field_lens[2]) == 0)
-		    {
-		      ud->index[i].sha256 =
-			dyn_ref (dyn_from_stringn (f.fields[0],
-						   f.field_lens[0]));
-		      break;
-		    }
-		}
-	    }
-	}
-    }
-}
-
-static void
 add_release (update_data *ud,
 	     dyn_val source, dyn_val dist,
 	     dyn_val comps, dyn_val archs)
@@ -859,7 +819,35 @@ add_release (update_data *ud,
 
   dyn_input in = dpm_acq_open (path);
   if (in)
-    dpm_parse_control (in, release_field, ud);
+    {
+      dyn_foreach_iter (f, dpm_parse_control_fields, in)
+	{
+	  if (strncmp (f.name, "SHA256", f.name_len) == 0)
+	    {
+	      dyn_input val_in = dyn_open_string (f.value, f.value_len);
+	      dyn_foreach_iter (l, dpm_parse_lines, val_in)
+		{
+		  if (l.n_fields == 3)
+		    {
+		      for (int i = 0; i < ud->n_indices; i++)
+			{
+			  const char *p = dyn_to_string (ud->index[i].path);
+			  if ((l.field_lens[2] +
+			       ud->index_prefix_len) == strlen (p)
+			      && strncmp (p + ud->index_prefix_len,
+					  l.fields[2], l.field_lens[2]) == 0)
+			    {
+			      ud->index[i].sha256 =
+				dyn_ref (dyn_from_stringn (l.fields[0],
+							   l.field_lens[0]));
+			      break;
+			    }
+			}
+		    }
+		}
+	    }
+	}
+    }
 
   for (int i = first_index; i < ud->n_indices; i++)
     {

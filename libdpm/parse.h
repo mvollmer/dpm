@@ -27,14 +27,16 @@
  * Parsers are iterators.
  */
 
-DYN_DECLARE_STRUCT_ITER(void, dpm_parse_comma_fields_, dyn_input in)
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_comma_fields, dyn_input in)
 {
   dyn_input in;
   
   const char *field; int len;
 };
 
-DYN_DECLARE_STRUCT_ITER(void, dpm_parse_relations, dyn_input in)
+bool dpm_parse_next_relation (dyn_input in);
+
+DYN_DECLARE_STRUCT_ITER(void, dpm_parse_relation_alternatives, dyn_input in)
 {
   dyn_input in;
   bool first;
@@ -113,21 +115,6 @@ DYN_DECLARE_STRUCT_ITER (void, dpm_parse_tar_members, dyn_input in)
 
 /* Old style.
  */
-
-int dpm_parse_relation (dyn_input in,
-			void (*func) (dyn_input in,
-				      const char *name, int name_len,
-				      const char *op, int op_len,
-				      const char *version, int version_len,
-				      void *data),
-			void *data);
-
-int dpm_parse_control (dyn_input in,
-		       void (*func) (dyn_input in,
-				     const char *name, int name_len,
-				     const char *value, int value_len,
-				     void *data),
-		       void *data);
 
 void dpm_parse_ar (dyn_input in,
 		   void (*func) (dyn_input in,

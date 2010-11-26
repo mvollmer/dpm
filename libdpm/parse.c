@@ -29,33 +29,27 @@
 #include "parse.h"
 
 static int
-linear_whitespace_p (char c)
-{
-  return c == ' ' || c == '\t';
-}
-
-static int
 whitespace_p (char c)
 {
   return c == ' ' || c == '\t' || c == '\n';
 }
 
 void
-dpm_parse_comma_fields__init (dpm_parse_comma_fields_ *iter,
+dpm_parse_comma_fields_init (dpm_parse_comma_fields *iter,
 			     dyn_input in)
 {
   iter->in = dyn_ref (in);
-  dpm_parse_comma_fields__step (iter);
+  dpm_parse_comma_fields_step (iter);
 }
 
 void
-dpm_parse_comma_fields__fini (dpm_parse_comma_fields_ *iter)
+dpm_parse_comma_fields_fini (dpm_parse_comma_fields *iter)
 {
   dyn_unref (iter->in);
 }
 
 void
-dpm_parse_comma_fields__step (dpm_parse_comma_fields_ *iter)
+dpm_parse_comma_fields_step (dpm_parse_comma_fields *iter)
 {
   dyn_input in = iter->in;
 
@@ -79,28 +73,41 @@ dpm_parse_comma_fields__step (dpm_parse_comma_fields_ *iter)
 }
 
 bool
-dpm_parse_comma_fields__done (dpm_parse_comma_fields_ *iter)
+dpm_parse_comma_fields_done (dpm_parse_comma_fields *iter)
 {
   return iter->field == NULL;
 }
 
-void
-dpm_parse_relations_init (dpm_parse_relations *iter,
-			  dyn_input in)
+bool
+dpm_parse_next_relation (dyn_input in)
 {
-  iter->in = dyn_ref (in);
-  iter->first = true;
-  dpm_parse_relations_step (iter);
+  dyn_input_skip (in, " \t");
+  if (dyn_input_looking_at (in, ","))
+    {
+      dyn_input_advance (in, 1);
+      return true;
+    }
+  else
+    return false;
 }
 
 void
-dpm_parse_relations_fini (dpm_parse_relations *iter)
+dpm_parse_relation_alternatives_init (dpm_parse_relation_alternatives *iter,
+				      dyn_input in)
+{
+  iter->in = dyn_ref (in);
+  iter->first = true;
+  dpm_parse_relation_alternatives_step (iter);
+}
+
+void
+dpm_parse_relation_alternatives_fini (dpm_parse_relation_alternatives *iter)
 {
   dyn_unref (iter->in);
 }
 
 void
-dpm_parse_relations_step (dpm_parse_relations *iter)
+dpm_parse_relation_alternatives_step (dpm_parse_relation_alternatives *iter)
 {
   dyn_input in = iter->in;
 
@@ -176,7 +183,7 @@ dpm_parse_relations_step (dpm_parse_relations *iter)
 }
 
 bool
-dpm_parse_relations_done (dpm_parse_relations *iter)
+dpm_parse_relation_alternatives_done (dpm_parse_relation_alternatives *iter)
 {
   return iter->name == 0;
 }
@@ -242,19 +249,19 @@ dpm_parse_lines_done (dpm_parse_lines *iter)
   return iter->n_fields < 0;
 }
 
+bool
+dpm_parse_looking_at_control (dyn_input in)
+{
+  dyn_input_skip (in, "\n");
+  return (dyn_input_grow (in, 1) > 0);
+}
+
 void
 dpm_parse_control_fields_init (dpm_parse_control_fields *iter, dyn_input in)
 {
   iter->in = dyn_ref (in);
   iter->starting = true;
   dpm_parse_control_fields_step (iter);
-}
-
-bool
-dpm_parse_looking_at_control (dyn_input in)
-{
-  dyn_input_skip (in, "\n");
-  return (dyn_input_grow (in, 1) > 0);
 }
 
 void
@@ -612,379 +619,4 @@ bool
 dpm_parse_tar_members_done (dpm_parse_tar_members *iter)
 {
   return iter->name == NULL;
-}
-
-/* Old style
- */
-
-int
-dpm_parse_relation (dyn_input in,
-		    void (*func) (dyn_input in,
-				  const char *name, int name_len,
-				  const char *op, int op_len,
-				  const char *version, int version_len,
-				  void *data),
-		    void *data)
-{
-  while (1)
-    {
-      int name_len;
-
-      dyn_input_skip (in, " \t\n");
-      if (dyn_input_grow (in, 1) < 1)
-	return 0;
-      
-      dyn_input_set_mark (in);
-      dyn_input_find (in, " \t\n,(|");
-      name_len = dyn_input_off (in);
-      
-      dyn_input_skip (in, " \t\n");
-      if (dyn_input_looking_at (in, "("))
-	{
-	  int op_offset, version_offset;
-	  int op_len, version_len;
-
-	  dyn_input_advance (in, 1);
-
-	  dyn_input_skip (in, " \t\n");
-	  op_offset = dyn_input_off (in);
-	  dyn_input_skip (in, "<>=");
-	  op_len = dyn_input_off (in) - op_offset;
-	  
-	  dyn_input_skip (in, " \t\n");
-	  if (dyn_input_looking_at (in, ")")
-	      || dyn_input_looking_at (in, ",")
-	      || dyn_input_looking_at (in, "|"))
-	    dyn_error ("missing version in relation: %I", in);
-
-	  version_offset = dyn_input_off (in);
-	  dyn_input_find (in, " \t\n),|");
-	  version_len = dyn_input_off (in) - version_offset;
-	  
-	  dyn_input_skip (in, " \t\n");
-	  if (!dyn_input_looking_at (in, ")"))
-	    dyn_error ("missing parentheses in relation");
-	  dyn_input_advance (in, 1);
-
-	  const char *mark = dyn_input_mark (in);
-	  func (in,
-		mark, name_len,
-		mark + op_offset, op_len,
-		mark + version_offset, version_len,
-		data);
-	}
-      else
-	{
-	  const char *mark = dyn_input_mark (in);
-	  func (in, mark, name_len, NULL, 0, NULL, 0, data);
-	}
-
-      dyn_input_skip (in, " \t\n");
-      if (dyn_input_grow (in, 1) == 0)
-	return 1;
-      else if (dyn_input_looking_at (in, ","))
-	{
-	  dyn_input_advance (in, 1);
-	  return 1;
-	}
-      else if (dyn_input_looking_at (in, "|"))
-	{
-	  dyn_input_advance (in, 1);
-	}
-      else
-	dyn_error ("snytax error in relation");
-    }
-}
-
-#if 0
-static int
-decode_extended_value (char *value, int len)
-{
-  /* For all lines, the first space is removed. If after that a line
-     consists solely of a '.', that dot is removed as well.
-
-     XXX - skip trailing whitespace of lines.
-  */
-
-  char *src = value, *dst = value;
-  char *bol = src;
-
-  while (src < value + len)
-    {
-      if (src == bol && linear_whitespace_p (*src))
-	{
-	  src++;
-	  continue;
-	}
-
-      if (*src == '\n')
-	{
-	  if (bol+2 == src
-	      && linear_whitespace_p (bol[0])
-	      && bol[1] == '.')
-	    dst--;
-	  bol = src + 1;
-	}
-
-      *dst++ = *src++;
-    }
-
-  return dst - value;
-}
-#endif
-
-static void
-decode_value (char **value_ptr, int *value_len_ptr)
-{
-  char *value = *value_ptr, *rest;
-  int len = *value_len_ptr;
-
-  while (len > 0 && linear_whitespace_p (value[0]))
-    {
-      value++;
-      len--;
-    }
-
-  *value_ptr = value;
-  *value_len_ptr = len;
-
-  rest = memchr (value, '\n', len);
-#if 0
-  if (rest && rest < value+len-1)
-    {
-      int skip = rest + 1 - value;
-      *value_len_ptr = (decode_extended_value (rest + 1, len - skip)
-			+ skip);
-    }
-  else
-#endif
-    {
-      while (len > 0 && whitespace_p (value[len-1]))
-	len--;
-      *value_len_ptr = len;
-    }
-}
-
-int
-dpm_parse_control (dyn_input in,
-		   void (*func) (dyn_input in,
-				 const char *name, int name_len,
-				 const char *value, int value_len,
-				 void *data),
-		   void *data)
-{
-  int in_header = 0;
-
-  dyn_input_set_mark (in);
-
-  while (dyn_input_find (in, ":\n")
-	 || dyn_input_pos (in) > dyn_input_mark (in))
-    {
-      if (dyn_input_pos (in) == dyn_input_mark (in))
-	{
-	  /* Empty line.  Gobble it up when we haven't seen a field yet.
-	   */
-	  if (!in_header)
-	    {
-	      dyn_input_advance (in, 1);
-	      dyn_input_set_mark (in);
-	    }
-	  else
-	    return 1;
-	}
-      else
-	{
-	  char *name, *value;
-	  int name_len, value_off, value_len;
-
-	  if (!dyn_input_looking_at (in, ":"))
-	    dyn_error ("No field name");
-
-	  name_len = dyn_input_pos (in) - dyn_input_mark (in);
-
-	  dyn_input_advance (in, 1);
-
-	  value_off = dyn_input_pos (in) - dyn_input_mark (in);
-
-	  dyn_input_find_after (in, "\n");
-	  while (dyn_input_looking_at (in, " ")
-		 || dyn_input_looking_at (in, "\t"))
-	    dyn_input_find_after (in, "\n");
-
-	  value_len = dyn_input_pos (in) - dyn_input_mark (in) - value_off;
-
-	  name = dyn_input_mutable_mark (in);
-	  value = name + value_off;
-	  decode_value (&value, &value_len);
-	  func (in, name, name_len, value, value_len, data);
-
-	  dyn_input_set_mark (in);
-	  in_header = 1;
-	}
-    }
-
-  return in_header;
-}
-
-void
-dpm_parse_ar (dyn_input in,
-	      void (*func) (dyn_input in,
-			    const char *member_name,
-			    void *data),
-	      void *data)
-{
-  dyn_input_must_grow (in, 8);
-  if (memcmp (dyn_input_mark (in), "!<arch>\n", 8) != 0)
-    dyn_error ("Not a deb file");
-  dyn_input_advance (in, 8);
-  dyn_input_set_mark (in);
-
-  while (dyn_input_grow (in, sizeof (ar_header)) >= sizeof (ar_header))
-    {
-      off_t size;
-      char *name;
-      int name_len;
-      ar_header *head = (ar_header *)dyn_input_mark (in);
-    
-      size = dpm_parse_uint (in, head->size, sizeof (head->size), 10, 
-			     OFF_T_MAX);
-
-      if (size == 0)
-	dyn_error ("huh?");
-
-      if (memcmp (head->name, "#1/", 3) == 0)
-	{
-	  dyn_error ("long names not supported yet");
-	}
-      else
-	{
-	  name_len = sizeof (head->name);
-	  while (name_len > 0 && head->name[name_len-1] == ' ')
-	    name_len--;
-
-	  name = dyn_malloc (name_len + 1);
-	  memcpy (name, head->name, name_len);
-	  name[name_len] = 0;
-	}
-
-      dyn_input_advance (in, sizeof (ar_header));
-      dyn_input_set_mark (in);
-
-      dyn_input_push_limit (in, size);
-      func (in, name, data);
-      dyn_input_pop_limit (in);
-
-      dyn_input_advance (in, size % 2);
-      dyn_input_set_mark (in);
-
-      free (name);
-    }
-}
-
-void
-dpm_parse_tar (dyn_input in,
-	       void (*func) (dyn_input in,
-			     dpm_tar_member *info,
-			     void *data),
-	       void *data)
-{
-  dpm_tar_member info;
-
-  info.name = NULL;
-  info.target = NULL;
-
-  while (dyn_input_grow (in, 1) > 0)
-    {
-      unsigned char *block;
-      tar_header *head;
-      int checksum, wantsum, i;
-
-      dyn_input_must_grow (in, 512);
-      block = (unsigned char *)dyn_input_mark (in);
-      head = (tar_header *)block;
-
-      /* Compute checksum, pretending the checksum field itself is
-	 filled with blanks.
-       */
-      wantsum = dpm_parse_uint (in,
-				head->checksum, sizeof (head->checksum), 8,
-				INT_MAX);
-
-      checksum = 0;
-      for (i = 0; i < 512; i++)
-	checksum += block[i];
-      if (checksum == 0)
-	return;
-      for (i = 0; i < sizeof (head->checksum); i++)
-	checksum -= head->checksum[i];
-      checksum += ' '*sizeof (head->checksum);
-
-      if (checksum != wantsum)
-	dyn_error ("checksum mismatch in tar header");
-
-      info.size  = dpm_parse_uint (in,
-				   head->size, sizeof (head->size), 8,
-				   OFF_T_MAX);
-      info.mode  = dpm_parse_uint (in,
-				   head->mode, sizeof (head->mode), 8,
-				   INT_MAX);
-      info.uid   = dpm_parse_uint (in,
-				   head->userid, sizeof (head->userid), 8,
-				   INT_MAX);
-      info.gid   = dpm_parse_uint (in,
-				   head->groupid, sizeof (head->groupid), 8,
-				   INT_MAX);
-      info.mtime = dpm_parse_uint (in,
-				   head->mtime, sizeof (head->mtime), 8,
-				   INT_MAX);
-      info.major = dpm_parse_uint (in,
-				   head->major, sizeof (head->major), 8,
-				   INT_MAX);
-      info.minor = dpm_parse_uint (in,
-				   head->minor, sizeof (head->minor), 8,
-				   INT_MAX);
-
-      if (info.name == NULL)
-	info.name = dyn_strndup (head->name, sizeof (head->name));
-      if (info.target == NULL)
-	info.target = dyn_strndup (head->linkname, sizeof (head->linkname));
-
-      info.type = head->linkflag;
-      if (info.type == 0)
-	info.type = '0';
-
-      dyn_input_advance (in, 512);
-      dyn_input_set_mark (in);
-
-      dyn_input_push_limit (in, info.size);
-
-      if (info.type == 'L')
-	{
-	  dyn_input_advance (in, info.size);
-	  info.name = dyn_strndup (dyn_input_mark (in), info.size);
-	}
-      else if (info.type == 'K')
-	{
-	  dyn_input_advance (in, info.size);
-	  info.target = dyn_strndup (dyn_input_mark (in), info.size);
-	}
-      else
-	func (in, &info, data);
-
-      dyn_input_pop_limit (in);
-      
-      dyn_input_advance (in, ((info.size + 511) & ~511) - info.size);
-      dyn_input_set_mark (in);
-
-      if (info.type != 'L')
-	{
-	  free (info.name);
-	  info.name = NULL;
-	}
-      if (info.type != 'K')
-	{
-	  free (info.target);
-	  info.target = NULL;
-	}
-    }
 }
