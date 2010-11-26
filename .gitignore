@@ -111,3 +111,4 @@
 /libdpm/test-data/output.txt
 /libdpm/test-data/store.db
 /libdpm/testlib.o
+/libdpm/test_coverage-testlib.o

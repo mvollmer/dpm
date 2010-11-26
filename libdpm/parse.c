@@ -617,38 +617,6 @@ dpm_parse_tar_members_done (dpm_parse_tar_members *iter)
 /* Old style
  */
 
-void
-dpm_parse_comma_fields (dyn_input in,
-			void (*func) (dyn_input in,
-				      const char *field, int field_len,
-				      void *data),
-			void *data)
-{
-  while (1)
-    {
-      const char *field;
-      int field_len;
-
-      dyn_input_skip (in, " \t");
-      if (dyn_input_grow (in, 1) < 1)
-	return;
-
-      dyn_input_set_mark (in);
-      dyn_input_find (in, ",");
-      
-      field = dyn_input_mark (in);
-      field_len = dyn_input_pos (in) - field;
-      while (field_len > 0 && linear_whitespace_p (field[field_len-1]))
-	field_len--;
-
-      if (field_len > 0)
-	func (in, field, field_len, data);
-
-      if (dyn_input_looking_at (in, ","))
-	dyn_input_advance (in, 1);
-    }
-}
-
 int
 dpm_parse_relation (dyn_input in,
 		    void (*func) (dyn_input in,

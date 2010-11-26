@@ -114,12 +114,6 @@ DYN_DECLARE_STRUCT_ITER (void, dpm_parse_tar_members, dyn_input in)
 /* Old style.
  */
 
-void dpm_parse_comma_fields (dyn_input in,
-			     void (*func) (dyn_input in,
-					   const char *field, int field_len,
-					   void *data),
-			     void *data);
-
 int dpm_parse_relation (dyn_input in,
 			void (*func) (dyn_input in,
 				      const char *name, int name_len,

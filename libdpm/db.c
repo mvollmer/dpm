@@ -473,20 +473,6 @@ typedef struct {
 } update_data;
 
 void
-package_stanza_tag (dyn_input in,
-		    const char *field, int field_len,
-		    void *data)
-{
-  update_data *ud = data;
-
-  if (ud->n_tags >= 64)
-    dyn_error ("Too many tags");
-
-  ud->tags[ud->n_tags++] = ss_tab_intern_blob (ud->db->strings,
-					       field_len, (void *)field);
-}
-
-void
 package_stanza_relation (dyn_input in,
 			 const char *name, int name_len,
 			 const char *op, int op_len,
@@ -565,8 +551,19 @@ package_stanza_field (dyn_input in,
     {
       dyn_block
 	{
+	  /* XXX - tags have a more complicated syntax than comma
+	           separated fields.
+	   */
 	  dyn_input t = dyn_open_string (value, value_len);
-	  dpm_parse_comma_fields (t, package_stanza_tag, ud);
+	  dyn_foreach_iter (f, dpm_parse_comma_fields_, t)
+	    {
+	      if (ud->n_tags >= 64)
+		dyn_error ("Too many tags");
+
+	      ud->tags[ud->n_tags++] =
+		ss_tab_intern_blob (ud->db->strings,
+				    f.len, (void *)f.field);
+	    }
 	}
     }
   else if (key == ud->pre_depends_key)
