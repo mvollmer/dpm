@@ -398,6 +398,7 @@ setup_package_available_and_installed (dpm_ws ws)
     {
       bool found_any = false;
 
+#if 0
       dyn_foreach (dpm_package_index idx,
 		   dpm_db_foreach_package_index)
 	{
@@ -418,6 +419,7 @@ setup_package_available_and_installed (dpm_ws ws)
 		}
 	    }
 	}
+#endif
 
       if (!found_any)
 	dyn_error ("No such distribution: %s", ws->target_dist);

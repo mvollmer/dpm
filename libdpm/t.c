@@ -2,78 +2,95 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define dyn_eat_parens(ARGS...) ARGS
-
-#define DYN_DECLARE_ITER(TYPE, ITER, ELTS, INIT_ARGS...)	\
-  typedef TYPE ITER##_type; \
-  typedef struct ITER dyn_eat_parens ELTS ITER;	\
-  void ITER##_init (ITER *, ##INIT_ARGS);	\
-  void ITER##_fini (ITER *);	\
-  void ITER##_step (ITER *);	\
-  bool ITER##_not_done (ITER *);	\
-  TYPE ITER##_elt (ITER *);
-
-#define dyn_paste(a,b) dyn_paste__aux(a,b)
-#define dyn_paste__aux(a,b) a##b
-
-#define dyn_foreach_iter(NAME, ITER, ARGS...) \
-  for (ITER NAME __attribute__ ((cleanup (ITER##_fini))) = ITER##_init (&NAME, ARGS), NAME;  \
-       ITER##_not_done (&NAME); \
+#define dyn_foreach_iter(NAME, ITER, ARGS...)				\
+  for (ITER NAME __attribute__ ((cleanup (ITER##_fini)))		\
+	 = (ITER##_init (&NAME, ## ARGS), NAME);			\
+       !ITER##_done (&NAME);						\
        ITER##_step (&NAME))
 
-#define dyn_foreach(VAR, ITER, ARGS...) \
-  for (bool __c = true; __c;) \
-    for (ITER##_type VAR; __c; __c = false) \
-      for (ITER __i __attribute__ ((cleanup (ITER##_fini))) \
-	     = (ITER##_init (&__i, ARGS), VAR = ITER##_elt (&__i), __i); \
-           ITER##_not_done (&__i); \
-	   ITER##_step (&__i), VAR = ITER##_elt (&__i))
+#define DYN_DECLARE_STRUCT_ITER(ITER, INIT_ARGS...)		\
+  typedef struct ITER ITER;					\
+  void ITER##_init (ITER *, ##INIT_ARGS);			\
+  void ITER##_fini (ITER *);					\
+  void ITER##_step (ITER *);					\
+  bool ITER##_done (ITER *);					\
+  struct ITER
 
-DYN_DECLARE_ITER (int, count, ({ int i, n; }), int n);
+#define dyn_foreach_iter2(NAME, ITER, ARGS...)				\
+  for (ITER NAME __attribute__ ((cleanup (ITER##_fini)))		\
+	 = (ITER##_init (&NAME, ## ARGS), NAME);			\
+       ITER##_step (&NAME);)
+
+#define DYN_DECLARE_STRUCT_ITER2(ITER, INIT_ARGS...)		\
+  typedef struct ITER ITER;					\
+  void ITER##_init (ITER *, ##INIT_ARGS);			\
+  void ITER##_fini (ITER *);					\
+  bool ITER##_step (ITER *);					\
+  struct ITER
+
+DYN_DECLARE_STRUCT_ITER2 (count, int n)
+{
+  int n;
+  int i;
+};
 
 void
 count_init (count *iter, int n)
 {
   iter->n = n;
-  iter->i = 0;
+  iter->i = -1;
 }
 
 void
 count_fini (count *iter)
 {
-  printf ("fini: %d %d\n", iter->i, iter->n);
-}
-
-void
-count_step (count *iter)
-{
-  iter->i++;
 }
 
 bool
-count_not_done (count *iter)
+count_step (count *iter)
 {
-  return iter->i < iter->n;
+  return ++(iter->i) < iter->n;
 }
 
-int
-count_elt (count *iter)
+DYN_DECLARE_STRUCT_ITER2 (subcount, int n, int m)
 {
-  return iter->i;
+  count outer;
+  int m;
+
+  int i, j;
+};
+
+void
+subcount_init (subcount *iter, int n, int m)
+{
+  count_init (&iter->outer, n);
+  iter->m = m;
+  iter->j = -1;
 }
 
-int
-main (int argc, char **argv)
+void
+subcount_fini (subcount *iter)
 {
-  dyn_foreach (i, count, atoi (argv[1]))
+  count_fini (&iter->outer);
+}
+
+bool
+subcount_step (subcount *iter)
+{
+  while (++iter->j >= iter->m)
     {
-      if (i % 3 == 0)
-	continue;
-
-      if (i > 5)
-	break;
-      printf ("%d\n", i);
+      if (!count_step (&iter->outer))
+	return false;
+      iter->i = iter->outer.i;
+      iter->j = -1;
     }
-
-  return 0;
+  return true;
 }
+
+int
+main ()
+{
+  dyn_foreach_iter2 (c, subcount, 10, 10)
+    printf ("%d %d\n", c.i, c.j);
+}
+

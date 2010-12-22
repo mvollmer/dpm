@@ -21,9 +21,9 @@
 #include "dyn.h"
 #include "store.h"
 
-/* Dpm stores all information in a single struct-store, in a specific
-   format.  This store is called the Dpm database. These are the
-   functions for creating and accessing the database.
+/* Dpm stores all permanent information in a single struct-store, in a
+   specific format.  This store is called the Dpm database. These are
+   the functions for creating and accessing the database.
 
    The database stores "package installation status" and "package
    version information" records.
@@ -88,18 +88,6 @@ enum {
   DPM_GREATEREQ
 };
 
-typedef ss_val dpm_release_index;
-
-#define dpm_relidx_path(r)  ss_ref((r),0)
-#define dpm_relidx_dist(r)  ss_ref((r),1)
-#define dpm_relidx_keys(r)  ss_ref((r),2)
-
-typedef ss_val dpm_package_index;
-
-#define dpm_pkgidx_path(i)      ss_ref((i),0)
-#define dpm_pkgidx_release(i)   ss_ref((i),1)
-#define dpm_pkgidx_versions(i)  ss_ref((i),2)
-
 typedef ss_val dpm_status;
 
 #define dpm_stat_installed(s)   ss_ref((s),0)
@@ -114,12 +102,6 @@ void dpm_db_done ();
 
 ss_val dpm_db_intern (const char *string);
 
-void dpm_db_full_update (dyn_val sources, dyn_val dists,
-			 dyn_val comps, dyn_val archs);
-
-void dpm_db_maybe_full_update (dyn_val sources, dyn_val dists,
-			       dyn_val comps, dyn_val archs);
-
 void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
 
 int dpm_db_package_count ();
@@ -128,12 +110,6 @@ int dpm_db_version_count ();
 void dpm_db_foreach_package (void (*func) (dpm_package pkg));
 void dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_package ver));
 void dpm_db_foreach_installed_package (void (*func) (dpm_package pkg));
-void dpm_db_foreach_package_index (void (*func) (dpm_package_index idx));
-
-DYN_DECLARE_STRUCT_ITER (dpm_package_index, dpm_db_package_indices)
-{
-  ss_dict_entries entries_iter;
-};
 
 dpm_package dpm_db_find_package (const char *name);
 
@@ -143,14 +119,46 @@ dpm_version dpm_db_installed (dpm_package pkg);
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
-void dpm_db_version_foreach_pkgindex (void (*func)(dpm_package_index idx),
-				      dpm_version ver);
-
 ss_val dpm_db_query_tag (const char *tag);
 ss_val dpm_db_reverse_relations (dpm_package pkg);
 
 void dpm_db_show_version (dpm_version ver);
 
 void dpm_db_stats ();
+
+/* Inserting information
+ */
+
+typedef ss_val dpm_origin;
+
+#define dpm_origin_label(o) o
+
+dpm_origin dpm_db_origin_find (const char *label);
+
+DYN_DECLARE_STRUCT_ITER (void, dpm_db_origins)
+{
+  dpm_db db;
+  ss_dict_entries origins;
+  dpm_origin origin;
+};
+
+DYN_DECLARE_STRUCT_ITER (void, dpm_db_origin_versions,
+			 dpm_origin origin, dpm_package pkg)
+{
+  dpm_db db;
+  ss_val versions;
+  int i;
+};
+
+void dpm_db_origin_update (dpm_origin origin,
+			   dyn_input in,
+			   bool reset);
+
+void dpm_db_full_update (dyn_val sources, dyn_val dists,
+			 dyn_val comps, dyn_val archs);
+
+void dpm_db_maybe_full_update (dyn_val sources, dyn_val dists,
+			       dyn_val comps, dyn_val archs);
+
 
 #endif /* !DPM_DB_H */
