@@ -1421,8 +1421,41 @@ DEFTEST (db_init)
 {
   dyn_block
     {
+      EXPECT (dpm_db_current () == NULL);
+
       dyn_let (dpm_database_name, testdst ("test.db"));
       dpm_db_open ();
+      EXPECT (dpm_db_current () != NULL);
+      EXPECT (dpm_db_package_max_id () == 0);
+      EXPECT (dpm_db_version_max_id () == 0);
+      dpm_db_done ();
+
+      EXPECT (dpm_db_current () == NULL);
+    }
+}
+
+DEFTEST (db_simple)
+{
+  dyn_block
+    {
+      dyn_input in = dyn_open_string 
+        ("Package: foo\n"
+         "Version: 1\n"
+         "Architecture: all\n",
+         -1);
+
+      dyn_let (dpm_database_name, testdst ("test.db"));
+      dpm_db_open ();
+
+      dpm_origin o = dpm_db_origin_find ("o");
+      dpm_db_origin_update (o, in, true);
+
+      dyn_foreach_ (o, dpm_db_origins)
+        dyn_foreach_iter (p, dpm_db_origin_packages, o)
+          {
+            dyn_print ("%r %d\n", dpm_pkg_name (p.package),
+                       ss_len (p.versions));
+          }
       dpm_db_done ();
     }
 }

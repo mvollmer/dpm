@@ -200,7 +200,7 @@ dpm_db_checkpoint ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_val root = ss_new (db->store, 0, 8,
+  ss_val root = ss_new (db->store, 0, 7,
 			ss_blob_new (db->store, 5, "dpm-0"),
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->packages),
@@ -310,7 +310,7 @@ dpm_db_set_installed (dpm_package pkg, dpm_version ver)
 dpm_origin
 dpm_db_origin_find (const char *label)
 {
-  return dpm_db_intern (label);
+  return intern (dyn_get (cur_db), label);
 }
 
 typedef struct {
@@ -557,7 +557,7 @@ parse_package_stanza (update_data *ud, dyn_input in)
     dyn_error ("Package without architecture: %r",
 	       dpm_pkg_name (ud->package));
 
-  ss_val ver = ss_new (db->store, 64, 8,
+  ss_val ver = ss_new (db->store, 64, 9,
 		       NULL,
 		       ud->package,
 		       version,
@@ -576,7 +576,8 @@ parse_package_stanza (update_data *ud, dyn_input in)
 				n_tags, tags),
 		       shortdesc,
 		       ss_newv (db->store, 0,
-				n_fields, fields));
+				n_fields, fields),
+                       ud->origin);
   
   record_version (ud, ver);
   ud->new_versions++;
@@ -892,6 +893,46 @@ dpm_origin
 dpm_db_origins_elt (dpm_db_origins *iter)
 {
   return iter->origin;
+}
+
+void
+dpm_db_origin_packages_init (dpm_db_origin_packages *iter, dpm_origin origin)
+{
+  iter->db = dyn_ref (dyn_get (cur_db));
+  iter->dict = ss_dict_init (iter->db->store, 
+                             ss_dict_get (iter->db->origin_available, origin),
+                             SS_DICT_STRONG);
+  ss_dict_entries_init (&iter->packages, iter->dict);
+  iter->package = iter->packages.key;
+  iter->versions = iter->packages.val;
+}
+
+void
+dpm_db_origin_packages_fini (dpm_db_origin_packages *iter)
+{
+  ss_dict_entries_fini (&iter->packages);
+  ss_dict_finish (iter->dict);
+  dyn_unref (iter->db);
+}
+
+void
+dpm_db_origin_packages_step (dpm_db_origin_packages *iter)
+{
+  ss_dict_entries_step (&iter->packages);
+  iter->package = iter->packages.key;
+  iter->versions = iter->packages.val;
+}
+
+bool
+dpm_db_origin_packages_done (dpm_db_origin_packages *iter)
+{
+  return ss_dict_entries_done (&iter->packages);
+}
+
+dpm_origin
+dpm_db_origin_packages_elt (dpm_db_origin_packages *iter)
+{
+  return iter->package;
 }
 
 static void

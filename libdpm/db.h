@@ -62,6 +62,7 @@ typedef ss_val dpm_version;
 #define dpm_ver_tags(v)         ss_ref(v,5)
 #define dpm_ver_shortdesc(v)    ss_ref(v,6)
 #define dpm_ver_fields(v)       ss_ref(v,7)
+#define dpm_ver_origin(v)       ss_ref(v,8)
 
 typedef ss_val dpm_relations;
 
@@ -136,6 +137,15 @@ DYN_DECLARE_STRUCT_ITER (dpm_origin, dpm_db_origins)
   dpm_db db;
   ss_dict_entries origins;
   dpm_origin origin;
+};
+
+DYN_DECLARE_STRUCT_ITER (dpm_package, dpm_db_origin_packages, dpm_origin)
+{
+  dpm_db db;
+  ss_dict *dict;
+  ss_dict_entries packages;
+  dpm_package package;
+  ss_val versions;
 };
 
 void dpm_db_origin_update (dpm_origin origin,
