@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <dlfcn.h>
+#include <unistd.h>
 
 #include "dpm.h"
 
@@ -43,7 +43,11 @@ testdst (const char *name)
 {
   if (mkdir ("./test-data", 0777) < 0 && errno != EEXIST)
     dyn_error ("Can't create ./test-data: %m");
-  return dyn_format ("./test-data/%s", name);
+  dyn_val n = dyn_format ("./test-data/%s", name);
+  if (unlink (dyn_to_string (n)) < 0
+      && errno != ENOENT)
+    dyn_error ("Can't remove %v: %m", n);
+  return n;
 }
 
 bool
