@@ -21,6 +21,6 @@
 #include "dyn.h"
 #include "parse.h"
 #include "store.h"
-#include "conf.h"
+#include "db.h"
 
 #endif /* !DPM_H */

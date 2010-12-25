@@ -42,6 +42,8 @@
    Instead, a set of accessor functions is used to maintain it
  */
 
+extern dyn_var dpm_database_name[1];
+
 DYN_DECLARE_TYPE (dpm_db);
 dpm_db dpm_db_current ();
 
@@ -100,21 +102,15 @@ void dpm_db_open ();
 void dpm_db_checkpoint ();
 void dpm_db_done ();
 
+int dpm_db_package_max_id ();
+int dpm_db_version_max_id ();
+
 ss_val dpm_db_intern (const char *string);
 
 void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
-
-int dpm_db_package_count ();
-int dpm_db_version_count ();
-
-void dpm_db_foreach_package (void (*func) (dpm_package pkg));
-void dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_package ver));
-void dpm_db_foreach_installed_package (void (*func) (dpm_package pkg));
+dpm_version dpm_db_installed (dpm_package pkg);
 
 dpm_package dpm_db_find_package (const char *name);
-
-ss_val      dpm_db_available (dpm_package pkg);
-dpm_version dpm_db_installed (dpm_package pkg);
 
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
@@ -135,30 +131,15 @@ typedef ss_val dpm_origin;
 
 dpm_origin dpm_db_origin_find (const char *label);
 
-DYN_DECLARE_STRUCT_ITER (void, dpm_db_origins)
+DYN_DECLARE_STRUCT_ITER (dpm_origin, dpm_db_origins)
 {
   dpm_db db;
   ss_dict_entries origins;
   dpm_origin origin;
 };
 
-DYN_DECLARE_STRUCT_ITER (void, dpm_db_origin_versions,
-			 dpm_origin origin, dpm_package pkg)
-{
-  dpm_db db;
-  ss_val versions;
-  int i;
-};
-
 void dpm_db_origin_update (dpm_origin origin,
 			   dyn_input in,
 			   bool reset);
-
-void dpm_db_full_update (dyn_val sources, dyn_val dists,
-			 dyn_val comps, dyn_val archs);
-
-void dpm_db_maybe_full_update (dyn_val sources, dyn_val dists,
-			       dyn_val comps, dyn_val archs);
-
 
 #endif /* !DPM_DB_H */

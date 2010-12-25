@@ -31,7 +31,9 @@
 #include <sys/stat.h>
 
 #include <zlib.h>
+#ifdef HAVE_BZLIB
 #include <bzlib.h>
+#endif
 
 #include "dyn.h"
 #include "store.h"
@@ -933,253 +935,6 @@ dyn_catch_error (void (*func) (void *data), void *data)
   return dyn_catch_condition (&dyn_condition_error, func, data);
 }
 
-static int
-dyn_schema_mismatch (dyn_val schema, dyn_val val, int soft)
-{
-  if (soft)
-    return 0;
-  else
-    dyn_error ("value does not match schema, expecting %V: %V", schema, val);
-}
-
-static int
-dyn_apply_schema_with_env (dyn_val val, dyn_val schema,
-			   dyn_val *result, int soft,
-			   dyn_val env)
-{
-#if 0
-  dyn_write (dyn_stdout, "applying %V to %V\n", schema, val);
-  dyn_output_flush (dyn_stdout);
-#endif
-
-  if (dyn_is_string (schema))
-    {
-      if (dyn_eq (schema, "any")
-	  || strcmp (dyn_type_name (val), dyn_to_string (schema)) == 0)
-	{
-	  *result = val;
-	  return 1;
-	}
-      else 
-	{
-	  dyn_val env_schema = dyn_lookup (schema, env);
-	  if (env_schema)
-	    return dyn_apply_schema_with_env (val, env_schema,
-					      result, soft, env);
-	  else 
-	    return dyn_schema_mismatch (schema, val, soft);
-	}
-    }
-  else if (dyn_is_seq (schema))
-    {
-      if (dyn_len (schema) < 1)
-	dyn_error ("invalid schema: %V", schema);
-
-      dyn_val op = dyn_elt (schema, 0);
-
-      if (dyn_eq (op, "value"))
-	{
-	  if (dyn_len (schema) != 2)
-	    dyn_error ("invalid schema: %V", schema);
-
-	  dyn_val schema_value = dyn_elt (schema, 1);
-
-	  if (dyn_equal (val, schema_value))
-	    {
-	      *result = val;
-	      return 1;
-	    }
-	  else 
-	    return dyn_schema_mismatch (schema, val, soft);
-	}
-      if (dyn_eq (op, "pair"))
-	{
-	  if (dyn_len (schema) != 3)
-	    dyn_error ("invalid schema: %V", schema);
-
-	  dyn_val first_result;
-	  if (!dyn_apply_schema_with_env (dyn_first (val), dyn_elt (schema, 1),
-					  &first_result, soft,
-					  env))
-	    return 0;
-
-	  dyn_val second_result;
-	  if (!dyn_apply_schema_with_env (dyn_second (val), dyn_elt (schema, 2),
-					  &second_result, soft,
-					  env))
-	    return 0;
-
-	  *result = dyn_pair (first_result, second_result);
-	  return 1;
-	}
-      else if (dyn_eq (op, "seq"))
-	{
-	  if (!dyn_is_seq (val))
-	    return dyn_schema_mismatch (schema, val, soft);
-	    
-	  dyn_seq_builder result_builder;
-
-	  int cur_schema_index = 1;
-	  int cur_val_index = 0;
-
-	  dyn_seq_start (result_builder);
-	  while (cur_schema_index < dyn_len (schema))
-	    {
-	      dyn_val cur_schema = dyn_elt (schema, cur_schema_index);
-	      
-	      if (dyn_eq (cur_schema, "..."))
-		{
-		  if (cur_schema_index != dyn_len (schema) - 1)
-		    dyn_error ("ellipsis must be last in list schema: %V", 
-			       schema);
-
-		  if (cur_schema_index == 1)
-		    dyn_error ("ellipsis must not be first in list schema: %V",
-			       schema);
-		    
-		  /* It's OK to end the list at any time.
-		   */
-		  if (cur_val_index == dyn_len (val))
-		    break;
-
-		  /* Go back to previous schema
-		   */
-		  cur_schema_index -= 1;
-		}
-	      else
-		{
-		  dyn_val cur_value = (cur_val_index < dyn_len (val)
-				       ? dyn_elt (val, cur_val_index)
-				       : NULL);
-		  dyn_val result_value;
-		  if (!dyn_apply_schema_with_env (cur_value, cur_schema,
-						  &result_value, soft,
-						  env))
-		    return 0;
-		  else
-		    dyn_seq_append (result_builder, result_value);
-
-		  cur_schema_index += 1;
-		  if (cur_val_index < dyn_len (val))
-		    cur_val_index += 1;
-		}
-	    }
-
-	  /* We made it through all the schemas, the sequence is valid
-	     when there isn't anything left.
-	   */
-	  *result = dyn_seq_finish (result_builder);
-	  if (cur_val_index == dyn_len (val))
-	    return 1;
-	  else
-	    return dyn_schema_mismatch (schema, val, soft);
-	}
-      else if (dyn_eq (op, "dict"))
-	{
-	  return dyn_schema_mismatch (schema, val, soft);
-	}
-      else if (dyn_eq (op, "defaulted"))
-	{
-	  if (dyn_len (schema) != 3)
-	    dyn_error ("invalid schema: %V", schema);
-	  
-	  if (val == NULL)
-	    {
-	      *result = dyn_elt (schema, 2);
-	      return 1;
-	    }
-	  else 
-	    return dyn_apply_schema_with_env (val, dyn_elt (schema, 1),
-					      result, soft, env);
-	}
-      else if (dyn_eq (op, "not"))
-	{
-	  if (dyn_len (schema) != 2)
-	    dyn_error ("invalid schema: %V", schema);
-
-	  dyn_val not_schema = dyn_elt (schema, 1);
-	  dyn_val unused_result;
-	  if (dyn_apply_schema_with_env (val, not_schema, &unused_result, 1,
-					 env))
-	    return dyn_schema_mismatch (schema, val, soft);
-	  else
-	    {
-	      *result = val;
-	      return 1;
-	    }
-	}
-      else if (dyn_eq (op, "or"))
-	{
-	  int i = 1;
-	  while (i < dyn_len (schema))
-	    {
-	      dyn_val cur_schema = dyn_elt (schema, i);
-	      
-	      if (dyn_apply_schema_with_env (val, cur_schema,
-					     result, 1, env))
-		return 1;
-
-	      i += 1;
-	    }
-
-	  return dyn_schema_mismatch (schema, val, soft);
-	}
-      else if (dyn_eq (op, "if"))
-	{
-	  int i = 1;
-	  while (i < dyn_len (schema))
-	    {
-	      dyn_val cur_schema = dyn_elt (schema, i);
-	      
-	      if (dyn_apply_schema_with_env (val, cur_schema,
-					     result, 1, env))
-		{
-		  if (i+1 < dyn_len (schema))
-		    *result = dyn_elt (schema, i+1);
-		  return 1;
-		}
-
-	      i += 1;
-	      if (i < dyn_len (schema))
-		i += 1;
-	    }
-
-	  return dyn_schema_mismatch (schema, val, soft);
-	}
-#if 0
-      else if (dyn_eq (op, "let"))
-	{
-	}
-      else if (dyn_eq (op, "schema"))
-	{
-	}
-#endif
-      else
-	dyn_error ("unsupported schema: %V", schema);
-    }
-  else
-    dyn_error ("unsupported schema: %V", schema);
-}
-
-static dyn_var top_schema_env;
-
-void
-dyn_register_schema (const char *name, dyn_val schema)
-{
-  dyn_set (&top_schema_env,
-	   dyn_assoc (dyn_from_string (name), schema,
-		      dyn_get (&top_schema_env)));
-}
-
-dyn_val
-dyn_apply_schema (dyn_val val, dyn_val schema)
-{
-  dyn_val result;
-  dyn_apply_schema_with_env (val, schema, &result,
-			     0, dyn_get (&top_schema_env));
-  return result;
-}
-
 /* Input streams */
 
 int
@@ -1341,8 +1096,10 @@ dyn_open_file (const char *filename)
 
   if (has_suffix (filename, ".gz"))
     in = dyn_open_zlib (in);
+#ifdef HAVE_BZLIB
   else if (has_suffix (filename, ".bz2"))
     in = dyn_open_bz2 (in);
+#endif
 
   /* Read a bit already so that dyn_input_mark does not return NULL
      when it is the first thing being called.
@@ -1452,6 +1209,8 @@ dyn_open_zlib (dyn_input source)
   return in;
 }
 
+#ifdef HAVE_BZLIB
+
 static const char *
 bzerrfmt (int ret)
 {
@@ -1539,6 +1298,7 @@ dyn_open_bz2 (dyn_input source)
 
   return in;
 }
+#endif
 
 void
 dyn_input_unref (dyn_type *type, void *object)

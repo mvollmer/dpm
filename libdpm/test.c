@@ -381,43 +381,6 @@ DEFTEST (dyn_equal)
     }
 }
 
-DYN_DEFINE_SCHEMA (maybe_string, (or string null));
-
-DEFTEST (dyn_schema)
-{
-  dyn_block
-    {
-      dyn_val a = dyn_apply_schema (S("foo"),
-				    Q(maybe_string));
-      EXPECT (dyn_eq (a, "foo"));
-
-      dyn_val b = dyn_apply_schema (NULL,
-				    Q(maybe_string));
-      EXPECT (b == NULL);
-
-      dyn_val c = dyn_apply_schema (NULL,
-				    Q((defaulted string foo)));
-      EXPECT (dyn_eq (c, "foo"));
-
-      dyn_val d = dyn_apply_schema (Q((foo bar)),
-				    Q(any));
-      EXPECT (dyn_equal (d, Q((foo bar))));
-
-      dyn_val e = dyn_apply_schema (Q((foo bar)),
-				    Q(seq));
-      EXPECT (dyn_equal (e, Q((foo bar))));
-
-      EXPECT_STDERR 
-	(1, "value does not match schema, expecting pair: (foo bar)\n")
-	{
-	  dyn_apply_schema (Q((foo bar)),
-			    Q(pair));
-	}
-
-      
-    }
-}
-
 void
 expect_numbers (dyn_input in)
 {
@@ -453,8 +416,10 @@ DEFTEST (dyn_input)
       dyn_input inz = dyn_open_file (testsrc ("numbers.gz"));
       expect_numbers (inz);
 
+#ifdef HAVE_BZIP
       dyn_input in2 = dyn_open_file (testsrc ("numbers.bz2"));
       expect_numbers (in2);
+#endif
 
     }
 }
@@ -1445,5 +1410,15 @@ DEFTEST (parse_tar_members)
 	    }
 	  i++;
 	}
+    }
+}
+
+DEFTEST (db_init)
+{
+  dyn_block
+    {
+      dyn_let (dpm_database_name, testdst ("test.db"));
+      dpm_db_open ();
+      dpm_db_done ();
     }
 }

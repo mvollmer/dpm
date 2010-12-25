@@ -112,3 +112,4 @@
 /libdpm/test-data/store.db
 /libdpm/testlib.o
 /libdpm/test_coverage-testlib.o
+/libdpm/test-data/test.db

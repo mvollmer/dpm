@@ -23,17 +23,10 @@
 #include "dyn.h"
 #include "store.h"
 #include "db.h"
-#include "conf.h"
 #include "parse.h"
 #include "acq.h"
 
-DPM_CONF_DECLARE (database, "database",
-		  "string", "dpm.db",
-		  "The filename of the database.")
-
-DPM_CONF_DECLARE (keyring, "keyring",
-		  "string", "/usr/share/keyrings/debian-archive-keyring.gpg",
-		  "The keyring to use.")
+dyn_var dpm_database_name[1];
 
 /* The root:
 
@@ -175,7 +168,10 @@ dpm_db_current ()
 void
 dpm_db_open ()
 {
-  const char *name = dpm_conf_string (database);
+  dyn_val name = dyn_get (dpm_database_name);
+
+  if (name == NULL)
+    dyn_error ("dpm_database_name not set");
 
   dpm_db db = dpm_db_make (ss_open (name, SS_WRITE));
   dyn_let (cur_db, db);
@@ -186,17 +182,17 @@ dpm_db_open ()
     dyn_error ("%s is not a dpm database", name);
 
   db->strings =
-    ss_tab_init (db->store, ss_ref (root, 1));
+    ss_tab_init (db->store, ss_ref_safely (root, 1));
   db->packages =
-    ss_dict_init (db->store, ss_ref (root, 2), SS_DICT_WEAK_KEYS);
+    ss_dict_init (db->store, ss_ref_safely (root, 2), SS_DICT_WEAK_KEYS);
   db->installed =
-    ss_dict_init (db->store, ss_ref (root, 3), SS_DICT_STRONG);
+    ss_dict_init (db->store, ss_ref_safely (root, 3), SS_DICT_STRONG);
   db->origin_available =
-    ss_dict_init (db->store, ss_ref (root, 4), SS_DICT_STRONG);
+    ss_dict_init (db->store, ss_ref_safely (root, 4), SS_DICT_STRONG);
   db->tags =
-    ss_dict_init (db->store, ss_ref (root, 5), SS_DICT_WEAK_SETS);
+    ss_dict_init (db->store, ss_ref_safely (root, 5), SS_DICT_WEAK_SETS);
   db->reverse_rels =
-    ss_dict_init (db->store, ss_ref (root, 6), SS_DICT_WEAK_SETS);
+    ss_dict_init (db->store, ss_ref_safely (root, 6), SS_DICT_WEAK_SETS);
 }
 
 void
@@ -229,14 +225,14 @@ dpm_db_done ()
 }
 
 int
-dpm_db_package_count ()
+dpm_db_package_max_id ()
 {
   dpm_db db = dyn_get (cur_db);
   return ss_tag_count (db->store, 65);
 }
 
 int
-dpm_db_version_count ()
+dpm_db_version_max_id ()
 {
   dpm_db db = dyn_get (cur_db);
   return ss_tag_count (db->store, 64);
@@ -315,13 +311,6 @@ dpm_origin
 dpm_db_origin_find (const char *label)
 {
   return dpm_db_intern (label);
-}
-
-ss_val
-dpm_db_origin_available (dpm_origin origin)
-{
-  dpm_db db = dyn_get (cur_db);
-  return ss_dict_get (db->origin_available, origin);
 }
 
 typedef struct {
@@ -634,133 +623,6 @@ dpm_db_origin_update (dpm_origin origin,
 	       ss_dict_finish (ud.available));
 }
 
-static void
-update_index (dyn_val path)
-{
-  dyn_block 
-    {
-      dpm_origin origin = dpm_db_origin_find (dyn_to_string (path));
-      dyn_input in = dpm_acq_open_local (dyn_to_string (path));
-      dpm_db_origin_update (origin, in, true);
-    }
-}
-
-static void
-update_source (dyn_val source, dyn_val dist,
-	       dyn_val comps, dyn_val archs)
-{
-  for (int i = 0; i < dyn_len (comps); i++)
-    for (int j = 0; j < dyn_len (archs); j++)
-      {
-	update_index (dyn_format ("%v/dists/%v/%v/binary-%v/Packages.gz",
-				  source,
-				  dist,
-				  dyn_elt (comps, i),
-				  dyn_elt (archs, j)));
-      }
-}
-
-void
-dpm_db_full_update (dyn_val srcs, dyn_val dists,
-		    dyn_val comps, dyn_val archs)
-{
-  for (int i = 0; i < dyn_len (srcs); i++)
-    for (int j = 0; j < dyn_len (dists); j++)
-      update_source (dyn_elt (srcs, i), dyn_elt (dists, j),
-		     comps, archs);
-
-  dpm_db_checkpoint ();
-}
-
-/* Iterating
- */
-
-void
-dpm_db_foreach_package (void (*func) (dpm_package pkg))
-{
-  dpm_db db = dyn_get (cur_db);
-
-  dyn_foreach_x ((ss_val key, ss_val val),
-		 ss_dict_foreach, db->packages)
-    {
-      func (val);
-    }
-}
-
-void
-dpm_db_foreach_installed (void (*func) (dpm_package pkg, dpm_version ver))
-{
-  dpm_db db = dyn_get (cur_db);
-  
-  dyn_foreach_x ((ss_val key, ss_val val),
-		 ss_dict_foreach, db->installed)
-    {
-      func (key, val);
-    }
-}
-
-void
-dpm_db_foreach_installed_package (void (*func) (dpm_package pkg))
-{
-  dpm_db db = dyn_get (cur_db);
-  
-  dyn_foreach_x ((ss_val key, ss_val val),
-		 ss_dict_foreach, db->installed)
-    {
-      func (key);
-    }
-}
-
-static bool
-dpm_db_available_versions_subinit (dpm_db_available_versions *iter)
-{
-  if (ss_dict_elements_done (&iter->origins))
-    return false;
-  iter->origin = iter->origins.val;
-  ss_dict *d = ss_dict_init (iter->db, iter->origin, SS_DICT_STRONG);
-  iter->versions = ss_dict_get (d, iter->pkg);
-  ss_dict_finish (d);
-  iter->i = -1;
-  return true;
-}
-
-void
-dpm_db_available_versions_init (dpm_db_available_versions *iter,
-				dpm_package pkg)
-{
-  iter->db = dyn_ref (dyn_get (cur_db));
-  iter->pkg = pkg;
-  ss_dict_elements_init (&iter->origins, iter->db->origin_available);
-  if (!dpm_db_available_versions_subinit (iter))
-    return;
-  dpm_db_available_versions_step (iter);
-}
-
-void
-dpm_db_available_versions_fini (dpm_db_available_versions *iter)
-{
-  ss_dict_elements_fini (&iter->origins);
-  dyn_unref (iter->db);
-}
-
-void
-dpm_db_available_versions_step (dpm_db_available_versions *iter)
-{
-  while (++iter->i >= ss_len (iter->versions))
-    {
-      ss_dict_elements_step (&iter->origins);
-      if (!dpm_db_available_versions_subinit (iter))
-	return;
-    }
-  iter->ver = ss_ref (iter->versions, iter->i);
-}
-
-bool
-dpm_db_available_versions_done (dpm_db_available_versions *iter)
-{
-  return ss_dict_elements_done (&iter->origin);
-}
-
 /* Version comparison
  *
  * Lifted from apt.
@@ -996,6 +858,40 @@ dpm_db_reverse_relations (dpm_package pkg)
   dpm_db db = dyn_get (cur_db);
 
   return ss_dict_get (db->reverse_rels, pkg);
+}
+
+void
+dpm_db_origins_init (dpm_db_origins *iter)
+{
+  iter->db = dyn_ref (dyn_get (cur_db));
+  ss_dict_entries_init (&iter->origins, iter->db->origin_available);
+  iter->origin = iter->origins.key;
+}
+
+void
+dpm_db_origins_fini (dpm_db_origins *iter)
+{
+  ss_dict_entries_fini (&iter->origins);
+  dyn_unref (iter->db);
+}
+
+void
+dpm_db_origins_step (dpm_db_origins *iter)
+{
+  ss_dict_entries_step (&iter->origins);
+  iter->origin = iter->origins.key;
+}
+
+bool
+dpm_db_origins_done (dpm_db_origins *iter)
+{
+  return ss_dict_entries_done (&iter->origins);
+}
+
+dpm_origin
+dpm_db_origins_elt (dpm_db_origins *iter)
+{
+  return iter->origin;
 }
 
 static void
