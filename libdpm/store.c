@@ -1440,6 +1440,36 @@ ss_mapvec_set (ss_store ss, ss_val vec, int index, ss_val val)
   return new_vec;
 }
 
+void
+ss_elts_init (ss_elts *iter, ss_val rec)
+{
+  iter->rec = rec;
+  iter->i = 0;
+}
+
+void
+ss_elts_fini (ss_elts *iter)
+{
+}
+
+void
+ss_elts_step (ss_elts *iter)
+{
+  iter->i++;
+}
+
+bool
+ss_elts_done (ss_elts *iter)
+{
+  return iter->rec == NULL || iter->i >= ss_len (iter->rec);
+}
+
+ss_val
+ss_elts_elt (ss_elts *iter)
+{
+  return ss_ref (iter->rec, iter->i);
+}
+
 /* Hash tables
 
    Bit partitioned hash tries.  I don't know what that means exactly,

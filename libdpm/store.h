@@ -126,6 +126,13 @@ ss_val ss_copy (ss_store ss, ss_val v);
 ss_val ss_insert (ss_store ss, ss_val obj, int index, ss_val v);
 ss_val ss_insert_many (ss_store ss, ss_val obj, int index, int n, ...);
 
+DYN_DECLARE_STRUCT_ITER (ss_val, ss_elts, ss_val rec)
+{
+  ss_val rec;
+  int i;
+  ss_val elt;
+};
+
 struct ss_tab;
 typedef struct ss_tab ss_tab;
 

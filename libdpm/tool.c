@@ -3,70 +3,71 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "db.h"
-#include "alg.h"
-#include "acq.h"
-#include "inst.h"
-#include "store.h"
+#include "dpm.h"
 
 void
 usage ()
 {
-  fprintf (stderr, "Usage: test update-origin [--reset] ORIGIN FILE\n");
-  fprintf (stderr, "       test show PACKAGE [VERSION]\n");
+  fprintf (stderr, "Usage: dpm-tool [OPTIONS] update ORIGIN FILE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] show [PACKAGE [VERSION]]\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   exit (1);
 }
 
 void
-update_origin (bool reset, const char *origin, const char *file)
+update_origin (const char *origin, const char *file)
 {
+  dyn_input in = dyn_open_file (file);
+
   dpm_db_open ();
-  // punt
+  dpm_origin o = dpm_db_origin_find (origin);
+  dpm_db_origin_update (o, in);
+  dpm_db_checkpoint ();
   dpm_db_done ();
 }
 
 void
 show (const char *package, const char *version)
 {
-  if (package)
+  dpm_db_open ();
+
+  if (package == NULL)
     {
-      dpm_db_open ();
-      
-#if 0
-
-      dpm_package pkg = dpm_db_find_package (package);
-      dpm_version ver_to_show = NULL;
-
-      if (pkg)
-	{
-	  ss_val versions = dpm_db_available (pkg);
-	  dyn_print ("%r [%d]:", dpm_pkg_name (pkg), dpm_pkg_id (pkg));
-	  if (versions)
-	    for (int i = 0; i < ss_len (versions); i++)
-	      {
-		dpm_version ver = ss_ref (versions, i);
-		dyn_print (" %r (%r) [%d]",
-			   dpm_ver_version (ver),
-			   dpm_ver_architecture (ver),
-			   dpm_ver_id (ver));
-		if (!ver_to_show)
-                  {
-                    if (version == NULL
-                        || ss_equal_blob (dpm_ver_version (ver),
-                                          strlen (version), version))
-                      ver_to_show = ver;
-                  }
-	      }
-	  dyn_print ("\n");
-	}
-
-      if (ver_to_show)
-	dpm_db_show_version (ver_to_show);
-
-#endif
-
-      dpm_db_done ();
+      dyn_foreach_ (p, dpm_db_packages)
+        dyn_print ("%r\n", dpm_pkg_name (p));
     }
+  else
+    {
+      dpm_package pkg = dpm_db_package_find (package);
+      ss_val interned_version = version? dpm_db_intern (version) : NULL;
+
+      dyn_foreach_ (o, dpm_db_origins)
+        {
+          bool origin_shown = false;
+          bool need_blank_line = false;
+          dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
+            {
+              if (version == NULL)
+                {
+                  if (!origin_shown)
+                    dyn_print ("From %r:\n", o);
+                  origin_shown = true;
+                  dyn_print ("  %r %r\n",
+                             dpm_pkg_name (dpm_ver_package (v)),
+                             dpm_ver_version (v));
+                }
+              else if (dpm_ver_version (v) == interned_version)
+                {
+                  if (need_blank_line)
+                    dyn_print ("\n");
+                  dpm_db_version_show (v);
+                  need_blank_line = true;
+                }
+            }
+        }
+    }
+
+  dpm_db_done ();
 }
 
 void
@@ -282,11 +283,22 @@ list_provides (const char *package)
 int
 main (int argc, char **argv)
 {
-  if (argc < 2)
+  while (argv[1] && argv[1][0] == '-')
+    {
+      if (strcmp (argv[1], "--db") == 0)
+        {
+          dyn_set (dpm_database_name, dyn_from_string (argv[2]));
+          argv += 2;
+        }
+      else
+        usage ();
+    }
+
+  if (argv[1] == NULL)
     usage ();
 
-  if (strcmp (argv[1], "update-origin") == 0)
-    update_origin (true, argv[2], argv[3]);
+  if (strcmp (argv[1], "update") == 0 && argv[2] && argv[3])
+    update_origin (argv[2], argv[3]);
   else if (strcmp (argv[1], "show") == 0)
     show (argv[2], argv[3]);
   else if (strcmp (argv[1], "stats") == 0)

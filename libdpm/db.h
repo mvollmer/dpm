@@ -47,10 +47,39 @@ extern dyn_var dpm_database_name[1];
 DYN_DECLARE_TYPE (dpm_db);
 dpm_db dpm_db_current ();
 
+int dpm_db_compare_versions (ss_val a, ss_val b);
+int dpm_db_check_versions (ss_val a, int op, ss_val b);
+
+void dpm_db_open ();
+void dpm_db_checkpoint ();
+void dpm_db_done ();
+
+int dpm_db_package_max_id ();
+int dpm_db_version_max_id ();
+
+ss_val dpm_db_intern (const char *string);
+
+void dpm_db_stats ();
+
+/* Packages
+ */
+
 typedef ss_val dpm_package;
 
 #define dpm_pkg_id(v)           ss_ref_int(v,0)
 #define dpm_pkg_name(v)         ss_ref(v,1)
+
+dpm_package dpm_db_package_find (const char *name);
+
+DYN_DECLARE_STRUCT_ITER (dpm_package, dpm_db_packages)
+{
+  dpm_db db;
+  ss_dict_entries packages;
+  dpm_package package;
+};
+
+/* Versions
+ */
 
 typedef ss_val dpm_version;
 
@@ -91,39 +120,12 @@ enum {
   DPM_GREATEREQ
 };
 
-typedef ss_val dpm_status;
-
-#define dpm_stat_installed(s)   ss_ref((s),0)
-#define dpm_stat_isroot(s)      ss_ref((s),1)
-
-int dpm_db_compare_versions (ss_val a, ss_val b);
-int dpm_db_check_versions (ss_val a, int op, ss_val b);
-
-void dpm_db_open ();
-void dpm_db_checkpoint ();
-void dpm_db_done ();
-
-int dpm_db_package_max_id ();
-int dpm_db_version_max_id ();
-
-ss_val dpm_db_intern (const char *string);
-
-void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
-dpm_version dpm_db_installed (dpm_package pkg);
-
-dpm_package dpm_db_find_package (const char *name);
-
 ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
-ss_val dpm_db_query_tag (const char *tag);
-ss_val dpm_db_reverse_relations (dpm_package pkg);
+void dpm_db_version_show (dpm_version ver);
 
-void dpm_db_show_version (dpm_version ver);
-
-void dpm_db_stats ();
-
-/* Inserting information
+/* Origins
  */
 
 typedef ss_val dpm_origin;
@@ -148,8 +150,26 @@ DYN_DECLARE_STRUCT_ITER (dpm_package, dpm_db_origin_packages, dpm_origin)
   ss_val versions;
 };
 
+DYN_DECLARE_STRUCT_ITER (dpm_version, dpm_db_origin_package_versions,
+                         dpm_origin, dpm_package)
+{
+  dpm_db db;
+  ss_elts versions;
+};
+
 void dpm_db_origin_update (dpm_origin origin,
-			   dyn_input in,
-			   bool reset);
+			   dyn_input in);
+
+/* Indexed queries
+ */
+
+ss_val dpm_db_query_tag (const char *tag);
+ss_val dpm_db_reverse_relations (dpm_package pkg);
+
+/* Status
+ */
+
+void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
+dpm_version dpm_db_installed (dpm_package pkg);
 
 #endif /* !DPM_DB_H */

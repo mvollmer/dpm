@@ -32,7 +32,7 @@ dyn_var dpm_database_name[1];
 
    - format              (string, "dpm-0")
    - strings             (string table)
-   - packages            (package -> package, weak key)
+   - packages            (string -> package, weak key)
    - installed version   (package -> something, maybe version, strong)
    - origin_available    (origin -> (package -> versions, strong), strong)
    - tags                (tag -> versions)
@@ -247,6 +247,12 @@ intern_soft (dpm_db db, const char *string)
   return ss_tab_intern_soft (db->strings, strlen (string), (void *)string);
 }
 
+static ss_val
+intern_softn (dpm_db db, const char *string, int len)
+{
+  return ss_tab_intern_soft (db->strings, len, (void *)string);
+}
+
 ss_val 
 dpm_db_intern (const char *string)
 {
@@ -259,7 +265,7 @@ intern (dpm_db db, const char *string)
   return ss_tab_intern_blob (db->strings, strlen (string), (void *)string);
 }
 
-/* Basic accessors
+/* Packages
  */
 
 static dpm_package
@@ -278,7 +284,7 @@ find_create_package (dpm_db db, const char *name, int len)
 }
 
 dpm_package
-dpm_db_find_package (const char *name)
+dpm_db_package_find (const char *name)
 {
   dpm_db db = dyn_get (cur_db);
   ss_val interned_name = intern_soft (db, name);
@@ -288,23 +294,41 @@ dpm_db_find_package (const char *name)
     return NULL;
 }
 
-dpm_version
-dpm_db_installed (dpm_package pkg)
+void
+dpm_db_packages_init (dpm_db_packages *iter)
 {
-  dpm_db db = dyn_get (cur_db);
-
-  return ss_dict_get (db->installed, pkg);
+  iter->db = dyn_ref (dyn_get (cur_db));
+  ss_dict_entries_init (&iter->packages, iter->db->packages);
+  iter->package = iter->packages.val;
 }
 
 void
-dpm_db_set_installed (dpm_package pkg, dpm_version ver)
+dpm_db_packages_fini (dpm_db_packages *iter)
 {
-  dpm_db db = dyn_get (cur_db);
-
-  return ss_dict_set (db->installed, pkg, ver);
+  ss_dict_entries_fini (&iter->packages);
+  dyn_unref (iter->db);
 }
 
-/* Inserting
+void
+dpm_db_packages_step (dpm_db_packages *iter)
+{
+  ss_dict_entries_step (&iter->packages);
+  iter->package = iter->packages.val;
+}
+
+bool
+dpm_db_packages_done (dpm_db_packages *iter)
+{
+  return ss_dict_entries_done (&iter->packages);
+}
+
+dpm_package
+dpm_db_packages_elt (dpm_db_packages *iter)
+{
+  return iter->package;
+}
+
+/* Origins
  */
 
 dpm_origin
@@ -336,8 +360,6 @@ typedef struct {
   ss_dict *available;
 
   dpm_package package;
-
-  int new_versions;
 } update_data;
 
 ss_val
@@ -433,6 +455,49 @@ record_version (update_data *ud, dpm_version ver)
       ss_dict_add (ud->db->tags, ss_ref (tags, i), ver);
 }
 
+static void
+handle_removes (update_data *ud, dyn_input in)
+{
+  while (dyn_input_looking_at (in, "Remove:"))
+    {
+      int name_len, version_off, version_len;
+      
+      dyn_input_advance (in, 7);
+      dyn_input_skip (in, " \t");
+      dyn_input_set_mark (in);
+      dyn_input_find (in, " \t\n");
+      name_len = dyn_input_off (in);
+      dyn_input_skip (in, " \t");
+      version_off = dyn_input_off (in);
+      dyn_input_find (in, " \t\n");
+      version_len = dyn_input_off (in) - version_off;
+
+      const char *name = dyn_input_mark (in);
+      const char *version = name + version_off;
+      if (name_len == 0)
+        {
+          ss_dict_finish (ud->available);
+          ud->available = ss_dict_init (ud->db->store,
+                                        NULL,
+                                        SS_DICT_STRONG);
+        }
+      else if (version_len == 0)
+        {
+          ss_val i = intern_softn (ud->db, name, name_len);
+          dpm_package p = ss_dict_get (ud->db->packages, i);
+          if (p)
+            ss_dict_set (ud->available, p, NULL);
+        }
+      else
+        dyn_print ("remove %ls %ls\n",
+                   name, name_len, version, version_len);
+
+      dyn_input_find (in, "\n");
+      dyn_input_advance (in, 1);
+      dyn_input_set_mark (in);
+    }
+}
+
 static bool
 parse_package_stanza (update_data *ud, dyn_input in)
 {
@@ -459,6 +524,12 @@ parse_package_stanza (update_data *ud, dyn_input in)
 
   int n_fields = 0;
   ss_val fields[64];
+
+  if (dyn_input_looking_at (in, "Remove:"))
+    {
+      handle_removes (ud, in);
+      return true;
+    }
 
   if (!dpm_parse_looking_at_control (in))
     return false;
@@ -580,14 +651,12 @@ parse_package_stanza (update_data *ud, dyn_input in)
                        ud->origin);
   
   record_version (ud, ver);
-  ud->new_versions++;
   return true;
 }
 
 void
 dpm_db_origin_update (dpm_origin origin,
-		      dyn_input in,
-		      bool reset)
+		      dyn_input in)
 {
   update_data ud;
   ud.db = dyn_get (cur_db);
@@ -611,11 +680,8 @@ dpm_db_origin_update (dpm_origin origin,
   ud.origin = origin;
   ud.available =
     ss_dict_init (ud.db->store,
-		  (reset 
-		   ? NULL
-		   : ss_dict_get (ud.db->origin_available, origin)),
+                  ss_dict_get (ud.db->origin_available, origin),
 		  SS_DICT_STRONG);
-  ud.new_versions = 0;
 
   while (parse_package_stanza (&ud, in))
     ;
@@ -624,10 +690,122 @@ dpm_db_origin_update (dpm_origin origin,
 	       ss_dict_finish (ud.available));
 }
 
-/* Version comparison
- *
- * Lifted from apt.
+void
+dpm_db_origins_init (dpm_db_origins *iter)
+{
+  iter->db = dyn_ref (dyn_get (cur_db));
+  ss_dict_entries_init (&iter->origins, iter->db->origin_available);
+  iter->origin = iter->origins.key;
+}
+
+void
+dpm_db_origins_fini (dpm_db_origins *iter)
+{
+  ss_dict_entries_fini (&iter->origins);
+  dyn_unref (iter->db);
+}
+
+void
+dpm_db_origins_step (dpm_db_origins *iter)
+{
+  ss_dict_entries_step (&iter->origins);
+  iter->origin = iter->origins.key;
+}
+
+bool
+dpm_db_origins_done (dpm_db_origins *iter)
+{
+  return ss_dict_entries_done (&iter->origins);
+}
+
+dpm_origin
+dpm_db_origins_elt (dpm_db_origins *iter)
+{
+  return iter->origin;
+}
+
+void
+dpm_db_origin_packages_init (dpm_db_origin_packages *iter, dpm_origin origin)
+{
+  iter->db = dyn_ref (dyn_get (cur_db));
+  iter->dict = ss_dict_init (iter->db->store, 
+                             ss_dict_get (iter->db->origin_available, origin),
+                             SS_DICT_STRONG);
+  ss_dict_entries_init (&iter->packages, iter->dict);
+  iter->package = iter->packages.key;
+  iter->versions = iter->packages.val;
+}
+
+void
+dpm_db_origin_packages_fini (dpm_db_origin_packages *iter)
+{
+  ss_dict_entries_fini (&iter->packages);
+  ss_dict_finish (iter->dict);
+  dyn_unref (iter->db);
+}
+
+void
+dpm_db_origin_packages_step (dpm_db_origin_packages *iter)
+{
+  ss_dict_entries_step (&iter->packages);
+  iter->package = iter->packages.key;
+  iter->versions = iter->packages.val;
+}
+
+bool
+dpm_db_origin_packages_done (dpm_db_origin_packages *iter)
+{
+  return ss_dict_entries_done (&iter->packages);
+}
+
+dpm_origin
+dpm_db_origin_packages_elt (dpm_db_origin_packages *iter)
+{
+  return iter->package;
+}
+
+void
+dpm_db_origin_package_versions_init (dpm_db_origin_package_versions *iter,
+                                     dpm_origin origin, dpm_package package)
+{
+  iter->db = dyn_ref (dyn_get (cur_db));
+  ss_dict *dict = ss_dict_init (iter->db->store, 
+                                ss_dict_get (iter->db->origin_available,
+                                             origin),
+                                SS_DICT_STRONG);
+  ss_elts_init (&iter->versions, ss_dict_get (dict, package));
+  ss_dict_finish (dict);
+}
+
+void
+dpm_db_origin_package_versions_fini (dpm_db_origin_package_versions *iter)
+{
+  ss_elts_fini (&iter->versions);
+  dyn_unref (iter->db);
+}
+
+void
+dpm_db_origin_package_versions_step (dpm_db_origin_package_versions *iter)
+{
+  ss_elts_step (&iter->versions);
+}
+
+bool
+dpm_db_origin_package_versions_done (dpm_db_origin_package_versions *iter)
+{
+  return ss_elts_done (&iter->versions);
+}
+
+dpm_version
+dpm_db_origin_package_versions_elt (dpm_db_origin_package_versions *iter)
+{
+  return ss_elts_elt (&iter->versions);
+}
+
+/* Versions
  */
+
+// Lifted from apt.
 
 #define order(x) ((x) == '~' ? -1    \
 		: isdigit((x)) ? 0   \
@@ -827,9 +1005,6 @@ dpm_db_check_versions (ss_val a, int op, ss_val b)
   }
 }
 
-/* Accessors
- */
-
 ss_val
 dpm_db_version_get (dpm_version ver, const char *field)
 {
@@ -839,100 +1014,6 @@ dpm_db_version_get (dpm_version ver, const char *field)
       if (ss_streq (ss_ref (fields, i), field))
 	return ss_ref (fields, i+1);
   return NULL;
-}
-
-ss_val
-dpm_db_query_tag (const char *tag)
-{
-  dpm_db db = dyn_get (cur_db);
-
-  ss_val interned_tag = intern_soft (db, tag);
-  if (interned_tag)
-    return ss_dict_get (db->tags, interned_tag);
-  else
-    return NULL;
-}
-
-ss_val
-dpm_db_reverse_relations (dpm_package pkg)
-{
-  dpm_db db = dyn_get (cur_db);
-
-  return ss_dict_get (db->reverse_rels, pkg);
-}
-
-void
-dpm_db_origins_init (dpm_db_origins *iter)
-{
-  iter->db = dyn_ref (dyn_get (cur_db));
-  ss_dict_entries_init (&iter->origins, iter->db->origin_available);
-  iter->origin = iter->origins.key;
-}
-
-void
-dpm_db_origins_fini (dpm_db_origins *iter)
-{
-  ss_dict_entries_fini (&iter->origins);
-  dyn_unref (iter->db);
-}
-
-void
-dpm_db_origins_step (dpm_db_origins *iter)
-{
-  ss_dict_entries_step (&iter->origins);
-  iter->origin = iter->origins.key;
-}
-
-bool
-dpm_db_origins_done (dpm_db_origins *iter)
-{
-  return ss_dict_entries_done (&iter->origins);
-}
-
-dpm_origin
-dpm_db_origins_elt (dpm_db_origins *iter)
-{
-  return iter->origin;
-}
-
-void
-dpm_db_origin_packages_init (dpm_db_origin_packages *iter, dpm_origin origin)
-{
-  iter->db = dyn_ref (dyn_get (cur_db));
-  iter->dict = ss_dict_init (iter->db->store, 
-                             ss_dict_get (iter->db->origin_available, origin),
-                             SS_DICT_STRONG);
-  ss_dict_entries_init (&iter->packages, iter->dict);
-  iter->package = iter->packages.key;
-  iter->versions = iter->packages.val;
-}
-
-void
-dpm_db_origin_packages_fini (dpm_db_origin_packages *iter)
-{
-  ss_dict_entries_fini (&iter->packages);
-  ss_dict_finish (iter->dict);
-  dyn_unref (iter->db);
-}
-
-void
-dpm_db_origin_packages_step (dpm_db_origin_packages *iter)
-{
-  ss_dict_entries_step (&iter->packages);
-  iter->package = iter->packages.key;
-  iter->versions = iter->packages.val;
-}
-
-bool
-dpm_db_origin_packages_done (dpm_db_origin_packages *iter)
-{
-  return ss_dict_entries_done (&iter->packages);
-}
-
-dpm_origin
-dpm_db_origin_packages_elt (dpm_db_origin_packages *iter)
-{
-  return iter->package;
 }
 
 static void
@@ -966,11 +1047,13 @@ show_relations (const char *field, ss_val rels)
 }
 
 void
-dpm_db_show_version (dpm_version ver)
+dpm_db_version_show (dpm_version ver)
 {
   dyn_print ("Package: %r\n", dpm_pkg_name (dpm_ver_package (ver)));
   dyn_print ("Version: %r\n", dpm_ver_version (ver));
+  dyn_print ("Origin: %r\n", dpm_origin_label (dpm_ver_origin (ver)));
   dyn_print ("Architecture: %r\n", dpm_ver_architecture (ver));
+
 
   ss_val relations = dpm_ver_relations (ver);
 
@@ -992,12 +1075,58 @@ dpm_db_show_version (dpm_version ver)
   if (tags)
     {
       int len = ss_len (tags);
-      dyn_print ("Tags:");
-      for (int i = 0; i < len; i++)
-	dyn_print (" %r%s", ss_ref (tags, i), (i < len-1)? ",":"");
-      dyn_print ("\n");
+      if (len > 0)
+        {
+          dyn_print ("Tags:");
+          for (int i = 0; i < len; i++)
+            dyn_print (" %r%s", ss_ref (tags, i), (i < len-1)? ",":"");
+          dyn_print ("\n");
+        }
     }
 }
+
+/* Status
+ */
+
+dpm_version
+dpm_db_installed (dpm_package pkg)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  return ss_dict_get (db->installed, pkg);
+}
+
+void
+dpm_db_set_installed (dpm_package pkg, dpm_version ver)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  return ss_dict_set (db->installed, pkg, ver);
+}
+
+/* Indexed queries
+ */
+
+ss_val
+dpm_db_query_tag (const char *tag)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  ss_val interned_tag = intern_soft (db, tag);
+  if (interned_tag)
+    return ss_dict_get (db->tags, interned_tag);
+  else
+    return NULL;
+}
+
+ss_val
+dpm_db_reverse_relations (dpm_package pkg)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  return ss_dict_get (db->reverse_rels, pkg);
+}
+
 
 /* Stats
  */
@@ -1008,17 +1137,13 @@ dpm_db_stats ()
   int n_packages = 0;
   int n_versions = 0;
 
-#if 0
-  dpm_db db = dyn_get (cur_db);
+  dyn_foreach_ (p, dpm_db_packages)
+    if (p)
+      n_packages++;
 
-  dyn_foreach_x ((ss_val key, ss_val val),
-		 ss_dict_foreach, db->available)
-    {
-      n_packages += 1;
-      if (val)
-	n_versions += ss_len (val);
-    }
-#endif
+  dyn_foreach_ (o, dpm_db_origins)
+    dyn_foreach_iter (p, dpm_db_origin_packages, o)
+      n_versions += ss_len (p.versions);
 
   fprintf (stderr, "%d packages, %d versions\n",
 	   n_packages, n_versions);

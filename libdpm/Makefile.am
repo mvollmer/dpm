@@ -19,10 +19,10 @@ libdpm_la_LIBADD = -lz # -lbz2
 
 pkginclude_HEADERS = dpm.h dyn.h parse.h conf.h
 
-bin_PROGRAMS = dpm-store-tool
+bin_PROGRAMS = dpm-tool
 
-dpm_store_tool_SOURCES = store-tool.c
-dpm_store_tool_LDADD = libdpm.la
+dpm_tool_SOURCES = tool.c
+dpm_tool_LDADD = libdpm.la
 
 # Tests and their coverage
 
@@ -52,13 +52,6 @@ coverage-clean:
 	rm -rf *.gcno *.gcda test-coverage.trace coverage test_coverage-*.o test-coverage
 
 .PHONY: coverage
-
-# Ad-hoc development aids
-
-noinst_PROGRAMS = dpm
-
-dpm_SOURCES = dpm.c
-dpm_LDADD = libdpm.la
 
 EXTRA_DIST = run-test 				\
 	     test-data/numbers.txt 		\

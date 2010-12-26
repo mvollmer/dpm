@@ -1450,12 +1450,15 @@ DEFTEST (db_simple)
       dpm_origin o = dpm_db_origin_find ("o");
       dpm_db_origin_update (o, in, true);
 
-      dyn_foreach_ (o, dpm_db_origins)
-        dyn_foreach_iter (p, dpm_db_origin_packages, o)
-          {
-            dyn_print ("%r %d\n", dpm_pkg_name (p.package),
-                       ss_len (p.versions));
-          }
+      dyn_foreach_iter (p, dpm_db_origin_packages, o)
+        {
+          dyn_print ("%r %d\n", dpm_pkg_name (p.package),
+                     ss_len (p.versions));
+          dyn_foreach_ (v, ss_elts, p.versions)
+            dpm_db_version_show (v);
+        }
+
+      dpm_db_checkpoint ();
       dpm_db_done ();
     }
 }
