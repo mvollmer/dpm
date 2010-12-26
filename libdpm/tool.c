@@ -26,6 +26,14 @@ update_origin (const char *origin, const char *file)
   dpm_db_done ();
 }
 
+static uint32_t
+hash_version (dpm_version ver)
+{
+  return (ss_hash (dpm_pkg_name (dpm_ver_package (ver)))
+          + ss_hash (dpm_ver_architecture (ver))
+          + ss_hash (dpm_ver_version (ver)));
+}
+
 void
 show (const char *package, const char *version)
 {
@@ -52,9 +60,11 @@ show (const char *package, const char *version)
                   if (!origin_shown)
                     dyn_print ("From %r:\n", o);
                   origin_shown = true;
-                  dyn_print ("  %r %r\n",
+                  dyn_print ("  %r %r (id %d, hash %d)\n",
                              dpm_pkg_name (dpm_ver_package (v)),
-                             dpm_ver_version (v));
+                             dpm_ver_version (v),
+                             dpm_ver_id (v),
+                             hash_version (v));
                 }
               else if (dpm_ver_version (v) == interned_version)
                 {

@@ -1307,7 +1307,7 @@ ss_hash_blob (int len, void *blob)
   return h & 0x3FFFFFFF;
 }
 
-static uint32_t
+uint32_t
 ss_hash (ss_val o)
 {
   if (o == NULL)
@@ -1334,7 +1334,7 @@ ss_id_hash (ss_store ss, ss_val o)
   return ((uint32_t)o - (uint32_t)(ss->start)) & 0x3FFFFFFF;
 }
 
-static int
+static bool
 ss_equal (ss_val a, ss_val b)
 {
   if (a == NULL)
@@ -1552,17 +1552,20 @@ ss_hash_node_lookup (int dispatch_tag,
 /* Object tables
  */
 
+typedef struct  {
+  ss_val obj;
+  bool (*equal) (ss_val a, ss_val b);
+} ss_tab_intern_data;
+
 ss_val
 ss_tab_intern_action (ss_store ss, ss_val node, int hash, void *data)
 {
-  ss_val *objp = (ss_val *)data;
-  ss_val obj = *objp;
+  ss_tab_intern_data *d = (ss_tab_intern_data *)data;
 
   if (node == NULL)
     {
-      obj = ss_store_object (ss, obj);
-      *objp = obj;
-      return ss_new (NULL, TAB_SEARCH_TAG, 2, ss_from_int (hash), obj);
+      d->obj = ss_store_object (ss, d->obj);
+      return ss_new (NULL, TAB_SEARCH_TAG, 2, ss_from_int (hash), d->obj);
     }
   else
     {
@@ -1570,14 +1573,13 @@ ss_tab_intern_action (ss_store ss, ss_val node, int hash, void *data)
       */
       int len = ss_len (node), i;
       for (i = 1; i < len; i++)
-	if (ss_equal (ss_ref (node, i), obj))
+	if (d->equal (ss_ref (node, i), d->obj))
 	  {
-	    *objp = ss_ref (node, i);
+	    d->obj = ss_ref (node, i);
 	    return node;
 	  }
-      obj = ss_store_object (ss, obj);
-      *objp = obj;
-      return ss_insert (NULL, node, len, obj);
+      d->obj = ss_store_object (ss, d->obj);
+      return ss_insert (NULL, node, len, d->obj);
     }
 }
 
@@ -1672,11 +1674,19 @@ ss_tab_finish (ss_tab *ot)
 ss_val 
 ss_tab_intern (ss_tab *ot, ss_val obj)
 {
-  uint32_t h = ss_hash (obj);
+  return ss_tab_intern_x (ot, obj, ss_hash (obj), ss_equal);
+}
+
+ss_val 
+ss_tab_intern_x (ss_tab *ot, ss_val obj,
+                 uint32_t hash, bool (*equal) (ss_val a, ss_val b))
+{
+  ss_tab_intern_data d = { obj, equal };
+  hash &= 0x3FFFFFFF;
   ot->root = ss_hash_node_lookup (TAB_DISPATCH_TAG,
 				  ss_tab_intern_action,
-				  ot->store, ot->root, 0, h, &obj);
-  return obj;
+				  ot->store, ot->root, 0, hash, &d);
+  return d.obj;
 }
 
 ss_val 

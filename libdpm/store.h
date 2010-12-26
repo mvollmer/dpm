@@ -133,6 +133,8 @@ DYN_DECLARE_STRUCT_ITER (ss_val, ss_elts, ss_val rec)
   ss_val elt;
 };
 
+uint32_t ss_hash (ss_val obj);
+
 struct ss_tab;
 typedef struct ss_tab ss_tab;
 
@@ -141,6 +143,8 @@ ss_val ss_tab_finish (ss_tab *tab);
 void ss_tab_abort (ss_tab *tab);
 ss_val ss_tab_store (ss_tab *tab);
 ss_val ss_tab_intern (ss_tab *tab, ss_val v);
+ss_val ss_tab_intern_x (ss_tab *tab, ss_val v,
+                        uint32_t hash, bool (*equal) (ss_val a, ss_val b));
 ss_val ss_tab_intern_blob (ss_tab *ot, int len, void *blob);
 ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
 

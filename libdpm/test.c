@@ -1448,7 +1448,7 @@ DEFTEST (db_simple)
       dpm_db_open ();
 
       dpm_origin o = dpm_db_origin_find ("o");
-      dpm_db_origin_update (o, in, true);
+      dpm_db_origin_update (o, in);
 
       dyn_foreach_iter (p, dpm_db_origin_packages, o)
         {

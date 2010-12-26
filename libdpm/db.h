@@ -91,7 +91,6 @@ typedef ss_val dpm_version;
 #define dpm_ver_tags(v)         ss_ref(v,5)
 #define dpm_ver_shortdesc(v)    ss_ref(v,6)
 #define dpm_ver_fields(v)       ss_ref(v,7)
-#define dpm_ver_origin(v)       ss_ref(v,8)
 
 typedef ss_val dpm_relations;
 
@@ -124,6 +123,13 @@ ss_val dpm_db_version_get (dpm_version ver, const char *field);
 ss_val dpm_db_version_shortdesc (dpm_version ver);
 
 void dpm_db_version_show (dpm_version ver);
+
+DYN_DECLARE_STRUCT_ITER (dpm_version, dpm_db_versions)
+{
+  dpm_db db;
+  ss_tab_entries versions;
+  dpm_version version;
+};
 
 /* Origins
  */

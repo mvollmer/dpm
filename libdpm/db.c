@@ -33,6 +33,7 @@ dyn_var dpm_database_name[1];
    - format              (string, "dpm-0")
    - strings             (string table)
    - packages            (string -> package, weak key)
+   - versions            (version table)
    - installed version   (package -> something, maybe version, strong)
    - origin_available    (origin -> (package -> versions, strong), strong)
    - tags                (tag -> versions)
@@ -96,6 +97,7 @@ struct dpm_db_struct {
   
   ss_tab *strings;
   ss_dict *packages;
+  ss_tab *versions;
   ss_dict *installed;
   ss_dict *origin_available;
   ss_dict *tags;
@@ -109,6 +111,8 @@ dpm_db_abort (struct dpm_db_struct *db)
     ss_tab_abort (db->strings);
   if (db->packages)
     ss_dict_abort (db->packages);
+  if (db->versions)
+    ss_tab_abort (db->versions);
   if (db->installed)
     ss_dict_abort (db->installed);
   if (db->origin_available)
@@ -120,6 +124,7 @@ dpm_db_abort (struct dpm_db_struct *db)
 
   db->strings = NULL;
   db->packages = NULL;
+  db->versions = NULL;
   db->installed = NULL;
   db->origin_available = NULL;
   db->tags = NULL;
@@ -150,6 +155,7 @@ dpm_db_make (ss_store store)
   db->store = dyn_ref (store);
   db->strings = NULL;
   db->packages = NULL;
+  db->versions = NULL;
   db->installed = NULL;
   db->origin_available = NULL;
   db->tags = NULL;
@@ -185,14 +191,16 @@ dpm_db_open ()
     ss_tab_init (db->store, ss_ref_safely (root, 1));
   db->packages =
     ss_dict_init (db->store, ss_ref_safely (root, 2), SS_DICT_WEAK_KEYS);
+  db->versions =
+    ss_tab_init (db->store, ss_ref_safely (root, 3));
   db->installed =
-    ss_dict_init (db->store, ss_ref_safely (root, 3), SS_DICT_STRONG);
-  db->origin_available =
     ss_dict_init (db->store, ss_ref_safely (root, 4), SS_DICT_STRONG);
+  db->origin_available =
+    ss_dict_init (db->store, ss_ref_safely (root, 5), SS_DICT_STRONG);
   db->tags =
-    ss_dict_init (db->store, ss_ref_safely (root, 5), SS_DICT_WEAK_SETS);
-  db->reverse_rels =
     ss_dict_init (db->store, ss_ref_safely (root, 6), SS_DICT_WEAK_SETS);
+  db->reverse_rels =
+    ss_dict_init (db->store, ss_ref_safely (root, 7), SS_DICT_WEAK_SETS);
 }
 
 void
@@ -200,10 +208,11 @@ dpm_db_checkpoint ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_val root = ss_new (db->store, 0, 7,
+  ss_val root = ss_new (db->store, 0, 8,
 			ss_blob_new (db->store, 5, "dpm-0"),
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->packages),
+			ss_tab_store (db->versions),
 			ss_dict_store (db->installed),
 			ss_dict_store (db->origin_available),
 			ss_dict_store (db->tags),
@@ -429,30 +438,53 @@ parse_relations (update_data *ud, const char *value, int value_len)
   return ss_newv (ud->db->store, 0, n_relations, relations);
 }
 
+static uint32_t
+hash_version (dpm_version ver)
+{
+  return (ss_hash (dpm_pkg_name (dpm_ver_package (ver)))
+          + ss_hash (dpm_ver_architecture (ver))
+          + ss_hash (dpm_ver_version (ver)));
+}
+
+static bool
+version_equal (dpm_version a, dpm_version b)
+{
+  return (dpm_ver_package (a) == dpm_ver_package (b)
+          && dpm_ver_version (a) == dpm_ver_version (b)
+          && dpm_ver_architecture (a) == dpm_ver_architecture (b));
+}
+
 static void
 record_version (update_data *ud, dpm_version ver)
 {
+  dpm_version int_ver = ss_tab_intern_x (ud->db->versions, ver,
+                                         hash_version (ver), version_equal);
+
   dpm_package pkg = dpm_ver_package (ver);
-  ss_val rels_rec = dpm_ver_relations (ver);
-  ss_val tags = dpm_ver_tags (ver);
 
-  ss_dict_add (ud->available, pkg, ver);
+  ss_dict_add (ud->available, pkg, int_ver);
 
-  for (int i = 0; i < ss_len (rels_rec); i++)
+  if (int_ver == ver)
     {
-      ss_val rels = ss_ref (rels_rec, i);
-      if (rels)
-	for (int j = 0; j < ss_len (rels); j++)
-	  {
-	    ss_val rel = ss_ref (rels, j);
-	    for (int k = 0; k < ss_len (rel); k += 3)
-	      ss_dict_add (ud->db->reverse_rels, ss_ref (rel, k+1), ver);
-	  }
-    }
+      ss_val rels_rec = dpm_ver_relations (ver);
+      ss_val tags = dpm_ver_tags (ver);
 
-  if (tags)
-    for (int i = 0; i < ss_len (tags); i++)
-      ss_dict_add (ud->db->tags, ss_ref (tags, i), ver);
+      for (int i = 0; i < ss_len (rels_rec); i++)
+        {
+          ss_val rels = ss_ref (rels_rec, i);
+          if (rels)
+            for (int j = 0; j < ss_len (rels); j++)
+              {
+                ss_val rel = ss_ref (rels, j);
+                for (int k = 0; k < ss_len (rel); k += 3)
+                  ss_dict_add (ud->db->reverse_rels, ss_ref (rel, k+1), ver);
+              }
+        }
+
+      if (tags)
+        for (int i = 0; i < ss_len (tags); i++)
+          ss_dict_add (ud->db->tags, ss_ref (tags, i), ver);
+    }
 }
 
 static void
@@ -628,7 +660,7 @@ parse_package_stanza (update_data *ud, dyn_input in)
     dyn_error ("Package without architecture: %r",
 	       dpm_pkg_name (ud->package));
 
-  ss_val ver = ss_new (db->store, 64, 9,
+  ss_val ver = ss_new (db->store, 64, 8,
 		       NULL,
 		       ud->package,
 		       version,
@@ -647,8 +679,7 @@ parse_package_stanza (update_data *ud, dyn_input in)
 				n_tags, tags),
 		       shortdesc,
 		       ss_newv (db->store, 0,
-				n_fields, fields),
-                       ud->origin);
+				n_fields, fields));
   
   record_version (ud, ver);
   return true;
@@ -804,6 +835,40 @@ dpm_db_origin_package_versions_elt (dpm_db_origin_package_versions *iter)
 
 /* Versions
  */
+
+void
+dpm_db_versions_init (dpm_db_versions *iter)
+{
+  iter->db = dyn_ref (dyn_get (cur_db));
+  ss_tab_entries_init (&iter->versions, iter->db->versions);
+  iter->version = iter->versions.cur;
+}
+
+void
+dpm_db_versions_fini (dpm_db_versions *iter)
+{
+  ss_tab_entries_fini (&iter->versions);
+  dyn_unref (iter->db);
+}
+
+void
+dpm_db_versions_step (dpm_db_versions *iter)
+{
+  ss_tab_entries_step (&iter->versions);
+  iter->version = iter->versions.cur;
+}
+
+bool
+dpm_db_versions_done (dpm_db_versions *iter)
+{
+  return ss_tab_entries_done (&iter->versions);
+}
+
+dpm_package
+dpm_db_versions_elt (dpm_db_versions *iter)
+{
+  return iter->version;
+}
 
 // Lifted from apt.
 
@@ -1051,9 +1116,7 @@ dpm_db_version_show (dpm_version ver)
 {
   dyn_print ("Package: %r\n", dpm_pkg_name (dpm_ver_package (ver)));
   dyn_print ("Version: %r\n", dpm_ver_version (ver));
-  dyn_print ("Origin: %r\n", dpm_origin_label (dpm_ver_origin (ver)));
   dyn_print ("Architecture: %r\n", dpm_ver_architecture (ver));
-
 
   ss_val relations = dpm_ver_relations (ver);
 
@@ -1141,11 +1204,10 @@ dpm_db_stats ()
     if (p)
       n_packages++;
 
-  dyn_foreach_ (o, dpm_db_origins)
-    dyn_foreach_iter (p, dpm_db_origin_packages, o)
-      n_versions += ss_len (p.versions);
+  dyn_foreach_ (v, dpm_db_versions)
+    if (v)
+      n_versions++;
 
   fprintf (stderr, "%d packages, %d versions\n",
 	   n_packages, n_versions);
 }
-
