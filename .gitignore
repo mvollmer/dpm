@@ -113,3 +113,5 @@
 /libdpm/testlib.o
 /libdpm/test_coverage-testlib.o
 /libdpm/test-data/test.db
+/libdpm/tool.o
+/libdpm/dpm-tool
