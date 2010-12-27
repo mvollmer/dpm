@@ -675,11 +675,15 @@ parse_package_stanza (update_data *ud, dyn_input in)
 			       recommends,
 			       enhances,
 			       suggests),
-		       ss_newv (db->store, 0,
-				n_tags, tags),
+		       (n_tags > 0
+			? ss_newv (db->store, 0,
+				   n_tags, tags)
+			: NULL),
 		       shortdesc,
-		       ss_newv (db->store, 0,
-				n_fields, fields));
+		       (n_fields > 0
+			? ss_newv (db->store, 0,
+				   n_fields, fields)
+			: NULL));
   
   record_version (ud, ver);
   return true;
