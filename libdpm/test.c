@@ -1440,8 +1440,10 @@ DEFTEST (db_simple)
     {
       dyn_input in = dyn_open_string 
         ("Package: foo\n"
-         "Version: 1\n"
-         "Architecture: all\n",
+         "Version: 1.0\n"
+         "Architecture: all\n"
+	 "Depends: bar (>= 1.0)\n"
+	 "Conflicts: baz (<< 10)\n",
          -1);
 
       dyn_let (dpm_database_name, testdst ("test.db"));
@@ -1452,10 +1454,44 @@ DEFTEST (db_simple)
 
       dyn_foreach_iter (p, dpm_db_origin_packages, o)
         {
-          dyn_print ("%r %d\n", dpm_pkg_name (p.package),
-                     ss_len (p.versions));
           dyn_foreach_ (v, ss_elts, p.versions)
-            dpm_db_version_show (v);
+	    {
+	      EXPECT (ss_streq (dpm_pkg_name (dpm_ver_package (v)), "foo"));
+	      EXPECT (ss_streq (dpm_ver_version (v), "1.0"));
+	      EXPECT (ss_streq (dpm_ver_architecture (v), "all"));
+	      EXPECT (dpm_ver_tags (v) == NULL); 
+	      EXPECT (dpm_ver_shortdesc (v) == NULL); 
+	      EXPECT (dpm_ver_fields (v) == NULL);
+
+	      dpm_relations rels = dpm_ver_relations (v);
+	      EXPECT (dpm_rels_pre_depends (rels) == NULL);
+	      EXPECT (dpm_rels_provides (rels) == NULL);
+	      EXPECT (dpm_rels_replaces (rels) == NULL);
+	      EXPECT (dpm_rels_breaks (rels) == NULL);
+	      EXPECT (dpm_rels_recommends (rels) == NULL);
+	      EXPECT (dpm_rels_enhances (rels) == NULL);
+	      EXPECT (dpm_rels_suggests (rels) == NULL);
+
+	      ss_val deps = dpm_rels_depends (rels);
+	      EXPECT (ss_len (deps) == 1);
+	      
+	      dpm_relation dep = ss_ref (deps, 0);
+	      EXPECT (ss_len (dep) == 3);
+	      EXPECT (dpm_rel_op (dep, 0) == DPM_GREATEREQ);
+	      EXPECT (ss_streq (dpm_pkg_name (dpm_rel_package (dep, 0)),
+				"bar"));
+	      EXPECT (ss_streq (dpm_rel_version (dep, 0), "1.0"));
+
+	      ss_val confs = dpm_rels_conflicts (rels);
+	      EXPECT (ss_len (confs) == 1);
+	      
+	      dpm_relation conf = ss_ref (confs, 0);
+	      EXPECT (ss_len (conf) == 3);
+	      EXPECT (dpm_rel_op (conf, 0) == DPM_LESS);
+	      EXPECT (ss_streq (dpm_pkg_name (dpm_rel_package (conf, 0)),
+				"baz"));
+	      EXPECT (ss_streq (dpm_rel_version (conf, 0), "10"));
+	    }
         }
 
       dpm_db_checkpoint ();
