@@ -354,6 +354,9 @@ typedef struct {
   ss_val architecture_key;
   ss_val description_key;
   ss_val tag_key;
+  ss_val md5sum_key;
+  ss_val sha1_key;
+  ss_val sha256_key;
 
   ss_val pre_depends_key;
   ss_val depends_key;
@@ -441,17 +444,18 @@ parse_relations (update_data *ud, const char *value, int value_len)
 static uint32_t
 hash_version (dpm_version ver)
 {
-  return (ss_hash (dpm_pkg_name (dpm_ver_package (ver)))
-          + ss_hash (dpm_ver_architecture (ver))
-          + ss_hash (dpm_ver_version (ver)));
+  if (dpm_ver_checksum (ver))
+    return ss_hash (dpm_ver_checksum (ver));
+  else
+    return (ss_hash (dpm_pkg_name (dpm_ver_package (ver)))
+	    + ss_hash (dpm_ver_version (ver)));
 }
 
 static bool
 version_equal (dpm_version a, dpm_version b)
 {
-  return (dpm_ver_package (a) == dpm_ver_package (b)
-          && dpm_ver_version (a) == dpm_ver_version (b)
-          && dpm_ver_architecture (a) == dpm_ver_architecture (b));
+  return (dpm_ver_checksum (a) == dpm_ver_checksum (b)
+	  && dpm_ver_checksum (a) != NULL);
 }
 
 static void
@@ -557,6 +561,11 @@ parse_package_stanza (update_data *ud, dyn_input in)
   int n_fields = 0;
   ss_val fields[64];
 
+  ss_val checksum = NULL;
+  enum {
+    none_type, md5sum_type, sha1_type, sha256_type
+  } checksum_type = none_type;
+
   if (dyn_input_looking_at (in, "Remove:"))
     {
       handle_removes (ud, in);
@@ -648,6 +657,22 @@ parse_package_stanza (update_data *ud, dyn_input in)
 	      else
 		shortdesc = val;
 	    }
+
+	  if (key == ud->md5sum_key && checksum_type < md5sum_type)
+	    {
+	      checksum = val;
+	      checksum_type = md5sum_type;
+	    }
+	  else if (key == ud->sha1_key && checksum_type < sha1_type)
+	    {
+	      checksum = val;
+	      checksum_type = sha1_type;
+	    }
+	  else if (key == ud->sha256_key && checksum_type < sha256_type)
+	    {
+	      checksum = val;
+	      checksum_type = sha256_type;
+	    }
 	}
     }
 
@@ -660,7 +685,7 @@ parse_package_stanza (update_data *ud, dyn_input in)
     dyn_error ("Package without architecture: %r",
 	       dpm_pkg_name (ud->package));
 
-  ss_val ver = ss_new (db->store, 64, 8,
+  ss_val ver = ss_new (db->store, 64, 9,
 		       NULL,
 		       ud->package,
 		       version,
@@ -683,7 +708,8 @@ parse_package_stanza (update_data *ud, dyn_input in)
 		       (n_fields > 0
 			? ss_newv (db->store, 0,
 				   n_fields, fields)
-			: NULL));
+			: NULL),
+		       checksum);
   
   record_version (ud, ver);
   return true;
@@ -701,6 +727,9 @@ dpm_db_origin_update (dpm_origin origin,
   ud.architecture_key = intern (ud.db, "Architecture");
   ud.description_key = intern (ud.db, "Description");
   ud.tag_key = intern (ud.db, "Tag");
+  ud.md5sum_key = intern (ud.db, "MD5Sum");
+  ud.sha1_key = intern (ud.db, "SHA1");
+  ud.sha256_key = intern (ud.db, "SHA256");
 
   ud.pre_depends_key = intern (ud.db, "Pre-Depends");
   ud.depends_key = intern (ud.db, "Depends");
@@ -845,7 +874,6 @@ dpm_db_versions_init (dpm_db_versions *iter)
 {
   iter->db = dyn_ref (dyn_get (cur_db));
   ss_tab_entries_init (&iter->versions, iter->db->versions);
-  iter->version = iter->versions.cur;
 }
 
 void
@@ -859,7 +887,6 @@ void
 dpm_db_versions_step (dpm_db_versions *iter)
 {
   ss_tab_entries_step (&iter->versions);
-  iter->version = iter->versions.cur;
 }
 
 bool
@@ -871,7 +898,7 @@ dpm_db_versions_done (dpm_db_versions *iter)
 dpm_package
 dpm_db_versions_elt (dpm_db_versions *iter)
 {
-  return iter->version;
+  return ss_tab_entries_elt (&iter->versions);
 }
 
 // Lifted from apt.

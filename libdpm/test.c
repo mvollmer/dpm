@@ -1498,3 +1498,65 @@ DEFTEST (db_simple)
       dpm_db_done ();
     }
 }
+
+DEFTEST (db_unique_versions)
+{
+  dyn_block
+    {
+      const char *meta = 
+	("Package: foo\n"
+	 "Version: 1.0\n"
+	 "Architecture: all\n"
+	 "SHA1: 1234567890123456789012345678901234567890\n"
+	 "\n"
+	 "Package: bar\n"
+	 "Version: 1.0\n"
+	 "Architecture: all\n");
+
+      dyn_let (dpm_database_name, testdst ("test.db"));
+      dpm_db_open ();
+
+      dyn_input in1 = dyn_open_string (meta, -1);
+      dpm_origin o1 = dpm_db_origin_find ("o1");
+      dpm_db_origin_update (o1, in1);
+
+      dyn_input in2 = dyn_open_string (meta, -1);
+      dpm_origin o2 = dpm_db_origin_find ("o2");
+      dpm_db_origin_update (o2, in2);
+
+      dpm_version foo_ver = NULL;
+      dpm_version bar_ver = NULL;
+
+      dyn_foreach_iter (p, dpm_db_origin_packages, o1)
+	{
+          dyn_foreach_ (v, ss_elts, p.versions)
+	    {
+	      if (ss_streq (dpm_pkg_name (p.package), "foo"))
+		{
+		  EXPECT (foo_ver == NULL);
+		  foo_ver = v;
+		}
+	      else if (ss_streq (dpm_pkg_name (p.package), "bar"))
+		{
+		  EXPECT (bar_ver == NULL);
+		  bar_ver = v;
+		}
+	      else
+		EXPECT (0);
+	    }
+	}
+	    
+      dyn_foreach_iter (p, dpm_db_origin_packages, o2)
+	{
+          dyn_foreach_ (v, ss_elts, p.versions)
+	    {
+	      if (ss_streq (dpm_pkg_name (p.package), "foo"))
+		EXPECT (foo_ver == v);
+	      else if (ss_streq (dpm_pkg_name (p.package), "bar"))
+		EXPECT (bar_ver != v);
+	      else
+		EXPECT (0);
+	    }
+	}
+    }
+}

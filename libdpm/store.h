@@ -151,7 +151,6 @@ ss_val ss_tab_intern_soft (ss_tab *ot, int len, void *blob);
 DYN_DECLARE_STRUCT_ITER (ss_val, ss_tab_entries, ss_tab *t)
 {
   ss_tab *tab;
-  ss_val cur;
 
   int level;
   ss_val node[10];
@@ -208,6 +207,8 @@ ss_val ss_ref_safely (ss_val obj, int i);
 int ss_streq (ss_val obj, const char *str);
 
 int ss_equal_blob (ss_val b, int len, const void *blob);
+
+int ss_strcmp (ss_val a, ss_val b);
 
 /* Debugging
  */

@@ -2497,6 +2497,19 @@ ss_streq (ss_val obj, const char *str)
 	  && memcmp (ss_blob_start (obj), str, len) == 0);
 }
 
+int
+ss_strcmp (ss_val a, ss_val b)
+{
+  int a_len = ss_len (a);
+  int b_len = ss_len (b);
+  int min_len = (a_len < b_len)? a_len : b_len;
+
+  int c = memcmp (ss_blob_start (a), ss_blob_start (b), min_len);
+  if (c == 0)
+    c = a_len - b_len;
+  return c;
+}
+
 /* Debugging
  */
 

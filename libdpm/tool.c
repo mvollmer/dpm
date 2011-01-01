@@ -26,12 +26,67 @@ update_origin (const char *origin, const char *file)
   dpm_db_done ();
 }
 
-static uint32_t
-hash_version (dpm_version ver)
+void
+show_versions (dpm_package pkg)
 {
-  return (ss_hash (dpm_pkg_name (dpm_ver_package (ver)))
-          + ss_hash (dpm_ver_architecture (ver))
-          + ss_hash (dpm_ver_version (ver)));
+  typedef struct {
+    dpm_version ver;
+    dpm_origin org;
+  } verorg;
+
+  verorg vo[100];
+  int n_vo = 0;
+
+  dyn_foreach_ (o, dpm_db_origins)
+    {
+      dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
+	if (n_vo < 100)
+	  {
+	    vo[n_vo].ver = v;
+	    vo[n_vo].org = o;
+	    n_vo++;
+	  }
+    }
+
+  int cmp (const void *_a, const void *_b)
+  {
+    const verorg *a = _a, *b = _b;
+
+    int c = dpm_db_compare_versions (dpm_ver_version (b->ver),
+				     dpm_ver_version (a->ver));
+    if (c == 0)
+      c = b - a;
+
+    return c;
+  }
+
+  qsort (vo, n_vo, sizeof (verorg), cmp);
+
+  int max_version_len = 0;
+  for (int i = 0; i < n_vo; i++)
+    {
+      int l = ss_len (dpm_ver_version (vo[i].ver));
+      if (l > max_version_len)
+	max_version_len = l;
+    }
+
+  static const char padding[] = "                               ";
+
+  for (int i = 0; i < n_vo; i++)
+    {
+      int pad = max_version_len - ss_len (dpm_ver_version (vo[i].ver));
+      dyn_print ("%r %r%ls (%r",
+		 dpm_pkg_name (pkg),
+		 dpm_ver_version (vo[i].ver),
+		 padding, pad,
+		 dpm_origin_label (vo[i].org));
+      while (i+1 < n_vo && vo[i+1].ver == vo[i].ver)
+	{
+	  dyn_print (", %r", dpm_origin_label (vo[i+1].org));
+	  i++;
+	}
+      dyn_print (")\n");
+    }
 }
 
 void
@@ -47,34 +102,29 @@ show (const char *package, const char *version)
   else
     {
       dpm_package pkg = dpm_db_package_find (package);
-      ss_val interned_version = version? dpm_db_intern (version) : NULL;
 
-      dyn_foreach_ (o, dpm_db_origins)
-        {
-          bool origin_shown = false;
-          bool need_blank_line = false;
-          dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
-            {
-              if (version == NULL)
-                {
-                  if (!origin_shown)
-                    dyn_print ("From %r:\n", o);
-                  origin_shown = true;
-                  dyn_print ("  %r %r (id %d, hash %d)\n",
-                             dpm_pkg_name (dpm_ver_package (v)),
-                             dpm_ver_version (v),
-                             dpm_ver_id (v),
-                             hash_version (v));
-                }
-              else if (dpm_ver_version (v) == interned_version)
-                {
-                  if (need_blank_line)
-                    dyn_print ("\n");
-                  dpm_db_version_show (v);
-                  need_blank_line = true;
-                }
-            }
-        }
+      if (version == NULL)
+	show_versions (pkg);
+      else
+	{
+	  ss_val interned_version = dpm_db_intern (version);
+
+	  bool need_blank_line = false;
+	  dyn_foreach_ (o, dpm_db_origins)
+	    {
+	      dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
+		{
+		  if (dpm_ver_version (v) == interned_version)
+		    {
+		      if (need_blank_line)
+			dyn_print ("\n");
+		      dyn_print ("Origin: %r\n", dpm_origin_label (o));
+		      dpm_db_version_show (v);
+		      need_blank_line = true;
+		    }
+		}
+	    }
+	}
     }
 
   dpm_db_done ();
@@ -83,46 +133,50 @@ show (const char *package, const char *version)
 void
 search (const char *pattern)
 {
-#if 0
   int pattern_len = strlen (pattern);
 
-  void package (dpm_package pkg)
-  {
-    ss_val versions = dpm_db_available (pkg);
+  dpm_db_open ();
 
-    if (memmem (ss_blob_start (pkg), ss_len (pkg), pattern, pattern_len))
-      goto found;
+  bool seen[dpm_db_package_max_id()];
+  memset (seen, 0, sizeof(seen));
 
-    if (versions)
-      for (int i = 0; i < ss_len (versions); i++)
-	{
-	  dpm_version ver = ss_ref (versions, i);
-	  ss_val desc = dpm_db_version_get (ver, "Description");
-	  if (desc &&
-	      memmem (ss_blob_start (desc), ss_len (desc),
-		      pattern, pattern_len))
-	    goto found;
-	}
-    
-    return;
-    
-  found:
+  dpm_version hits[dpm_db_version_max_id()];
+  int n_hits = 0;
+
+  dyn_foreach_ (v, dpm_db_versions)
     {
-      ss_val desc = NULL;
-      if (versions && ss_len (versions) > 0)
-	desc = dpm_ver_shortdesc (ss_ref (versions, 0));
+      dpm_package p = dpm_ver_package (v);
+      if (seen[dpm_pkg_id(p)])
+	continue;
       
-      dyn_print ("%r - %r\n", dpm_pkg_name (pkg), desc);
+      seen[dpm_pkg_id(p)] = true;
+      ss_val name = dpm_pkg_name (p);
+      ss_val desc;
+      if (memmem (ss_blob_start (name), ss_len (name), pattern, pattern_len)
+	  || ((desc = dpm_db_version_get (v, "Description"))
+	      && memmem (ss_blob_start (desc), ss_len (desc),
+			 pattern, pattern_len)))
+	hits[n_hits++] = v;
     }
+
+  int cmp (const void *_a, const void *_b)
+  {
+    dpm_version a = *(dpm_version *)_a;
+    dpm_version b = *(dpm_version *)_b;
+    return ss_strcmp (dpm_pkg_name (dpm_ver_package (a)),
+		      dpm_pkg_name (dpm_ver_package (b)));
   }
 
-  if (pattern)
+  qsort (hits, n_hits, sizeof (dpm_version), cmp);
+
+  for (int i = 0; i < n_hits; i++)
     {
-      dpm_db_open ();
-      dpm_db_foreach_package (package);
-      dpm_db_done ();
+      dyn_print ("%r - %r\n",
+		 dpm_pkg_name (dpm_ver_package (hits[i])),
+		 dpm_ver_shortdesc (hits[i]));
     }
-#endif
+
+  dpm_db_done ();
 }
 
 void
