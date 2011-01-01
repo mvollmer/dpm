@@ -10,6 +10,10 @@ usage ()
 {
   fprintf (stderr, "Usage: dpm-tool [OPTIONS] update ORIGIN FILE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] show [PACKAGE [VERSION]]\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] search STRING\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] tags EXPRESSION\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] relations PACKAGE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] provides PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   exit (1);
 }
@@ -131,55 +135,6 @@ show (const char *package, const char *version)
 }
 
 void
-search (const char *pattern)
-{
-  int pattern_len = strlen (pattern);
-
-  dpm_db_open ();
-
-  bool seen[dpm_db_package_max_id()];
-  memset (seen, 0, sizeof(seen));
-
-  dpm_version hits[dpm_db_version_max_id()];
-  int n_hits = 0;
-
-  dyn_foreach_ (v, dpm_db_versions)
-    {
-      dpm_package p = dpm_ver_package (v);
-      if (seen[dpm_pkg_id(p)])
-	continue;
-      
-      seen[dpm_pkg_id(p)] = true;
-      ss_val name = dpm_pkg_name (p);
-      ss_val desc;
-      if (memmem (ss_blob_start (name), ss_len (name), pattern, pattern_len)
-	  || ((desc = dpm_db_version_get (v, "Description"))
-	      && memmem (ss_blob_start (desc), ss_len (desc),
-			 pattern, pattern_len)))
-	hits[n_hits++] = v;
-    }
-
-  int cmp (const void *_a, const void *_b)
-  {
-    dpm_version a = *(dpm_version *)_a;
-    dpm_version b = *(dpm_version *)_b;
-    return ss_strcmp (dpm_pkg_name (dpm_ver_package (a)),
-		      dpm_pkg_name (dpm_ver_package (b)));
-  }
-
-  qsort (hits, n_hits, sizeof (dpm_version), cmp);
-
-  for (int i = 0; i < n_hits; i++)
-    {
-      dyn_print ("%r - %r\n",
-		 dpm_pkg_name (dpm_ver_package (hits[i])),
-		 dpm_ver_shortdesc (hits[i]));
-    }
-
-  dpm_db_done ();
-}
-
-void
 stats ()
 {
   dpm_db_open ();
@@ -242,50 +197,133 @@ show_filtered_relations (const char *field,
 }
 
 static void
-list_versions (ss_val versions, dpm_package rev)
+list_versions (dpm_version *versions, int n_versions,
+	       dpm_package rev)
+{
+  int cmp (const void *_a, const void *_b)
+  {
+    dpm_version a = *(dpm_version *)_a;
+    dpm_version b = *(dpm_version *)_b;
+    return ss_strcmp (dpm_pkg_name (dpm_ver_package (a)),
+		      dpm_pkg_name (dpm_ver_package (b)));
+  }
+
+  qsort (versions, n_versions, sizeof (dpm_version), cmp);
+
+  int max_len = 0;
+  for (int i = 0; i < n_versions; i++)
+    {
+      ss_val name = dpm_pkg_name (dpm_ver_package (versions[i]));
+      if (ss_len (name) < 30 && ss_len (name) > max_len)
+	max_len = ss_len (name);
+    }
+  
+  static const char padding[30] = "                              ";
+
+  for (int i = 0; i < n_versions; i++)
+    {
+      dpm_version ver = versions[i];
+      
+      if (rev == NULL)
+	{
+	  dpm_package pkg = dpm_ver_package (ver);
+	  if (i+1 < n_versions && dpm_ver_package (versions[i+1]) == pkg)
+	    continue;
+
+	  ss_val name = dpm_pkg_name (pkg);
+	  int pad = max_len - ss_len (name);
+	  if (pad < 0)
+	    pad = 0;
+
+	  dyn_print ("%r%ls - %r\n",
+		     name,
+		     padding, pad,
+		     dpm_ver_shortdesc (ver));
+	}
+      else
+	{
+	  dyn_print ("%r %r - %r\n",
+		     dpm_pkg_name (dpm_ver_package (ver)),
+		     dpm_ver_version (ver),
+		     dpm_ver_shortdesc (ver));
+
+	  ss_val rels_rec = dpm_ver_relations (ver);
+	  show_filtered_relations ("Pre-Depends",
+				   dpm_rels_pre_depends (rels_rec), rev);
+	  show_filtered_relations ("Depends",
+				   dpm_rels_depends (rels_rec), rev);
+	  show_filtered_relations ("Conflicts",
+				   dpm_rels_conflicts (rels_rec), rev);
+	  show_filtered_relations ("Provides",
+				   dpm_rels_provides (rels_rec), rev);
+	  show_filtered_relations ("Replaces",
+				   dpm_rels_replaces (rels_rec), rev);
+	  show_filtered_relations ("Breaks",
+				   dpm_rels_breaks (rels_rec), rev);
+	  show_filtered_relations ("Recommends",
+				   dpm_rels_recommends (rels_rec), rev);
+	  show_filtered_relations ("Enhances",
+				   dpm_rels_enhances (rels_rec), rev);
+	  show_filtered_relations ("Suggests",
+				   dpm_rels_suggests (rels_rec), rev);
+	}
+    }
+}
+
+static void
+list_ss_versions (ss_val versions, dpm_package rev)
 {
   if (versions)
-    for (int i = 0; i < ss_len (versions); i++)
-      {
-	dpm_version ver = ss_ref (versions, i);
-
-	dyn_print ("%r %r (%r) - %r\n",
-		   dpm_pkg_name (dpm_ver_package (ver)),
-		   dpm_ver_version (ver),
-		   dpm_ver_architecture (ver),
-		   dpm_ver_shortdesc (ver));
-	if (rev)
-	  {
-	    ss_val rels_rec = dpm_ver_relations (ver);
-	    show_filtered_relations ("Pre-Depends",
-				     dpm_rels_pre_depends (rels_rec), rev);
-	    show_filtered_relations ("Depends",
-				     dpm_rels_depends (rels_rec), rev);
-	    show_filtered_relations ("Conflicts",
-				     dpm_rels_conflicts (rels_rec), rev);
-	    show_filtered_relations ("Provides",
-				     dpm_rels_provides (rels_rec), rev);
-	    show_filtered_relations ("Replaces",
-				     dpm_rels_replaces (rels_rec), rev);
-	    show_filtered_relations ("Breaks",
-				     dpm_rels_breaks (rels_rec), rev);
-	    show_filtered_relations ("Recommends",
-				     dpm_rels_recommends (rels_rec), rev);
-	    show_filtered_relations ("Enhances",
-				     dpm_rels_enhances (rels_rec), rev);
-	    show_filtered_relations ("Suggests",
-				     dpm_rels_suggests (rels_rec), rev);
-	  }
-      }
+    {
+      int n = ss_len(versions);
+      dpm_version v[n];
+      for (int i = 0; i < n; i++)
+	v[i] = ss_ref (versions, i);
+      list_versions (v, n, rev);
+    }
 }
 
 void
-query (const char *exp)
+search (const char *pattern)
+{
+  int pattern_len = strlen (pattern);
+
+  dpm_db_open ();
+
+  bool seen[dpm_db_package_max_id()];
+  memset (seen, 0, sizeof(seen));
+
+  dpm_version hits[dpm_db_version_max_id()];
+  int n_hits = 0;
+
+  dyn_foreach_ (v, dpm_db_versions)
+    {
+      dpm_package p = dpm_ver_package (v);
+      if (seen[dpm_pkg_id(p)])
+	continue;
+      
+      seen[dpm_pkg_id(p)] = true;
+      ss_val name = dpm_pkg_name (p);
+      ss_val desc;
+      if (memmem (ss_blob_start (name), ss_len (name), pattern, pattern_len)
+	  || ((desc = dpm_db_version_get (v, "Description"))
+	      && memmem (ss_blob_start (desc), ss_len (desc),
+			 pattern, pattern_len)))
+	hits[n_hits++] = v;
+    }
+  
+  list_versions (hits, n_hits, NULL);
+
+  dpm_db_done ();
+}
+
+void
+tags (const char *exp)
 {
   if (exp)
     {
       dpm_db_open ();
-      list_versions (dpm_db_query_tag (exp), NULL);
+      list_ss_versions (dpm_db_query_tag (exp), NULL);
       dpm_db_done ();
     }
 }
@@ -299,8 +337,7 @@ list_reverse_relations (const char *package)
 
       dpm_package pkg = dpm_db_package_find (package);
       ss_val versions = dpm_db_reverse_relations (pkg);
-      if (versions)
-	list_versions (versions, pkg);
+      list_ss_versions (versions, pkg);
       dpm_db_done ();
     }
 }
@@ -369,9 +406,9 @@ main (int argc, char **argv)
     stats ();
   else if (strcmp (argv[1], "search") == 0)
     search (argv[2]);
-  else if (strcmp (argv[1], "query") == 0)
-    query (argv[2]);
-  else if (strcmp (argv[1], "reverse") == 0)
+  else if (strcmp (argv[1], "tags") == 0)
+    tags (argv[2]);
+  else if (strcmp (argv[1], "relations") == 0)
     list_reverse_relations (argv[2]);
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
