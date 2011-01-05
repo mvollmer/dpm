@@ -2070,6 +2070,13 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 		dyn_write_string (out, str, len);
 	      }
 	      break;
+	    case 'L':
+	      {
+		const char *sub_fmt = va_arg (ap, const char *);
+		va_list sub_ap = va_arg (ap, va_list);
+		dyn_writev (out, sub_fmt, sub_ap);
+	      }
+	      break;
 	    case '%':
 	      {
 		dyn_write_string (out, "%", 1);
