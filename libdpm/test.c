@@ -26,8 +26,18 @@
 
 // Utilities
 
-#define S(x) dyn_from_string(x)
-#define Q(x) dyn_read_string(#x)
+#define S(x) dyn_from_string (x)
+#define Q(x) dyn_read_string (#x)
+#define I(x) dyn_open_string (x, -1)
+#define L(x) #x "\n"
+
+static void
+failure_printer (const char *file, int line, const char *fmt, va_list ap)
+{
+  dyn_print ("%s:%d: %L\n", file, line, fmt, ap);
+}
+
+SET_FAILURE_PRINTER (failure_printer);
 
 dyn_val
 testsrc (const char *name)
@@ -1434,23 +1444,22 @@ DEFTEST (db_init)
     }
 }
 
+#define UPDATE (o, x) dyn_db_origin_update (o, I(x))
+
 DEFTEST (db_simple)
 {
   dyn_block
     {
-      dyn_input in = dyn_open_string 
-        ("Package: foo\n"
-         "Version: 1.0\n"
-         "Architecture: all\n"
-	 "Depends: bar (>= 1.0)\n"
-	 "Conflicts: baz (<< 10)\n",
-         -1);
-
       dyn_let (dpm_database_name, testdst ("test.db"));
       dpm_db_open ();
 
       dpm_origin o = dpm_db_origin_find ("o");
-      dpm_db_origin_update (o, in);
+      dpm_db_origin_update 
+	(o, I(L(Package: foo           )
+	      L(Version: 1.0           )
+	      L(Architecture: all      )
+	      L(Depends: bar (>= 1.0)  )
+	      L(Conflicts: baz (<< 10) )));
 
       dyn_foreach_iter (p, dpm_db_origin_packages, o)
         {
@@ -1499,30 +1508,78 @@ DEFTEST (db_simple)
     }
 }
 
+void
+check_packages (dpm_origin origin, const char *pkg, ...)
+{
+  struct {
+    const char *name;
+    const char *version;
+    bool seen;
+  } packages[20];
+  int n_packages = 0;
+
+  va_list ap;
+  va_start (ap, pkg);
+  while (pkg)
+    {
+      packages[n_packages].name = pkg;
+      packages[n_packages].version = va_arg (ap, const char *);
+      packages[n_packages].seen = false;
+      n_packages++;
+      pkg = va_arg (ap, const char *);
+    }
+  va_end (ap);
+
+  dyn_foreach_iter (p, dpm_db_origin_packages, origin)
+    {
+      dyn_foreach_ (v, ss_elts, p.versions)
+	{
+	  int i;
+	  for (i = 0; i < n_packages; i++)
+	    {
+	      if (ss_streq (dpm_pkg_name (p.package),
+			    packages[i].name)
+		  && ss_streq (dpm_ver_version (v),
+			       packages[i].version))
+		{
+		  EXPECT (packages[i].seen == false,
+			  "%s seen twice", packages[i].name);
+		  packages[i].seen = true;
+		  break;
+		}
+	    }
+	  EXPECT (i < n_packages, "unexpected package %r",
+		  dpm_pkg_name (p.package));
+	}
+    }
+
+  for (int i = 0; i < n_packages; i++)
+    EXPECT (packages[i].seen,
+	    "package %s not seen", packages[i].seen);
+}
+
 DEFTEST (db_unique_versions)
 {
   dyn_block
     {
       const char *meta = 
-	("Package: foo\n"
-	 "Version: 1.0\n"
-	 "Architecture: all\n"
-	 "SHA1: 1234567890123456789012345678901234567890\n"
-	 "\n"
-	 "Package: bar\n"
-	 "Version: 1.0\n"
-	 "Architecture: all\n");
+	L(Package: foo                                  )
+	L(Version: 1.0                                  )
+	L(Architecture: all                             )
+	L(SHA1: 1234567890123456789012345678901234567890)
+	L(                                              )
+	L(Package: bar                                  )
+	L(Version: 1.0                                  )
+	L(Architecture: all                             );
 
       dyn_let (dpm_database_name, testdst ("test.db"));
       dpm_db_open ();
 
-      dyn_input in1 = dyn_open_string (meta, -1);
       dpm_origin o1 = dpm_db_origin_find ("o1");
-      dpm_db_origin_update (o1, in1);
+      dpm_db_origin_update (o1, I(meta));
 
-      dyn_input in2 = dyn_open_string (meta, -1);
       dpm_origin o2 = dpm_db_origin_find ("o2");
-      dpm_db_origin_update (o2, in2);
+      dpm_db_origin_update (o2, I(meta));
 
       dpm_version foo_ver = NULL;
       dpm_version bar_ver = NULL;
@@ -1558,5 +1615,64 @@ DEFTEST (db_unique_versions)
 		EXPECT (0);
 	    }
 	}
+    }
+}
+
+DEFTEST (db_remove)
+{
+  dyn_block
+    {
+      const char *meta = 
+	L(Package: foo                                  )
+	L(Version: 1.0                                  )
+	L(Architecture: all                             )
+	L(                                              )
+	L(Package: foo                                  )
+	L(Version: 2.0                                  )
+	L(Architecture: all                             )
+	L(                                              )
+	L(Package: bar                                  )
+	L(Version: 1.0                                  )
+	L(Architecture: all                             )
+	L(                                              )
+	L(Package: bar                                  )
+	L(Version: 2.0                                  )
+	L(Architecture: all                             )
+	L(                                              )
+	L(Package: baz                                  )
+	L(Version: 1.0                                  )
+	L(Architecture: all                             );
+
+      dyn_let (dpm_database_name, testdst ("test.db"));
+      dpm_db_open ();
+
+      dpm_origin o = dpm_db_origin_find ("o");
+
+      dpm_db_origin_update (o, I(meta));
+      check_packages (o,
+		      "foo", "1.0",
+		      "foo", "2.0",
+		      "bar", "1.0",
+		      "bar", "2.0",
+		      "baz", "1.0",
+		      NULL);
+
+      dpm_db_origin_update (o, I(L(Remove: foo 1.0)));
+      check_packages (o,
+		      "foo", "2.0",
+		      "bar", "1.0",
+		      "bar", "2.0",
+		      "baz", "1.0",
+		      NULL);
+
+      dpm_db_origin_update (o, I(L(Remove: bar)));
+      check_packages (o,
+		      "foo", "2.0",
+		      "baz", "1.0",
+		      NULL);
+
+      dpm_db_origin_update (o, I(L(Remove:)));
+      check_packages (o,
+		      NULL);
     }
 }
