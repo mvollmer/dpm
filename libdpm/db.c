@@ -510,6 +510,9 @@ handle_removes (update_data *ud, dyn_input in)
 
       const char *name = dyn_input_mark (in);
       const char *version = name + version_off;
+      ss_val n, v;
+      dpm_package p;
+
       if (name_len == 0)
         {
           ss_dict_finish (ud->available);
@@ -517,16 +520,19 @@ handle_removes (update_data *ud, dyn_input in)
                                         NULL,
                                         SS_DICT_STRONG);
         }
-      else if (version_len == 0)
-        {
-          ss_val i = intern_softn (ud->db, name, name_len);
-          dpm_package p = ss_dict_get (ud->db->packages, i);
-          if (p)
-            ss_dict_set (ud->available, p, NULL);
+      else if ((n = intern_softn (ud->db, name, name_len))
+	       && (p = ss_dict_get (ud->db->packages, n)))
+	{
+	  if (version_len == 0)
+	    ss_dict_set (ud->available, p, NULL);
+	  else if ((v = intern_softn (ud->db, version, version_len)))
+	    {
+	      ss_val vs = ss_dict_get (ud->available, p);
+	      for (int i = 0; i < ss_len (vs); i++)
+		if (dpm_ver_version (ss_ref (vs, i)) == v)
+		  ss_dict_del (ud->available, p, ss_ref (vs, i));
+	    }
         }
-      else
-        dyn_print ("remove %ls %ls\n",
-                   name, name_len, version, version_len);
 
       dyn_input_find (in, "\n");
       dyn_input_advance (in, 1);
