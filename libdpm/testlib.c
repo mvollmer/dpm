@@ -30,12 +30,41 @@
 #include <errno.h>
 #include <dlfcn.h>
 
+static void
+default_failure_printer (const char *file, int line, 
+			 const char *fmt, va_list ap)
+{
+  fprintf (stderr, "%s:%d: ", file, line);
+  vfprintf (stderr, fmt, ap);
+  fprintf (stderr, "\n");
+}
+
+static void (*failure_printer) (const char *file, int line,
+				const char *fmt, va_list ap) =
+  default_failure_printer;
+
 void
-expect (int b, char *msg, char *file, int line)
+set_failure_printer (void (*printer) (const char *file, int line,
+				      const char *fmt, va_list ap))
+{
+  failure_printer = printer;
+}
+
+void
+expect (int b, char *expr, char *file, int line,
+	const char *fmt, ...)
 {
   if (!b)
     {
-      fprintf (stderr, "%s:%d: Expected %s\n", file, line, msg);
+      if (fmt)
+	{
+	  va_list ap;
+	  va_start (ap, fmt);
+	  failure_printer (file, line, fmt, ap);
+	  va_end (ap);
+	}
+      else
+	failure_printer (file, line, "Expected %s", expr);
       exit (1);
     }
 }

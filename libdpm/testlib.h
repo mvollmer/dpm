@@ -22,7 +22,8 @@
 #include <stdbool.h>
 
 #define DEFTEST(x) void test_##x ()
-#define EXPECT(expr) expect((expr), #expr, __FILE__, __LINE__)
+#define EXPECT(expr,msg...)					\
+  expect((expr), #expr, __FILE__, __LINE__, ##msg, NULL)
 #define EXPECT_CHILD(check, args...)			\
   if(expect_child (check, __FILE__, __LINE__, ##args))	\
     for (; true; exit(0))
@@ -31,7 +32,18 @@
 #define EXPECT_EXIT          EXPECT_CHILD (check_status_exit, 1, "")
 #define EXPECT_STDERR(c, t)  EXPECT_CHILD (check_status_exit, c, t)
 
-void expect (int b, char *msg, char *file, int line);
+void set_failure_printer (void (*printer) (const char *file, int line,
+					   const char *fmt, va_list ap));
+
+#define SET_FAILURE_PRINTER(x)		     \
+  __attribute__ ((constructor))              \
+  static void init_printer ()		     \
+  {					     \
+    set_failure_printer (x);		     \
+  }
+
+void expect (int b, char *expr, char *file, int line,
+	     const char *fmt, ...);
 
 bool expect_child (void (*check) (int status,
 				  char *stdout_text, int stdout_len,
