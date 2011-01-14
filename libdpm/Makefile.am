@@ -12,8 +12,8 @@ libdpm_la_SOURCES = dyn.h     \
                     parse.c   \
                     db.h      \
                     db.c      \
-		    inst.h    \
-	            inst.c
+		    ws.h      \
+		    ws.c
 
 libdpm_la_LIBADD = -lz # -lbz2
 

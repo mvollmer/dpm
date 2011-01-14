@@ -1676,3 +1676,67 @@ DEFTEST (db_remove)
 		      NULL);
     }
 }
+
+void
+setup_db (const char *origin, ...)
+{
+  va_list ap;
+  va_start (ap, origin);
+
+  dyn_let (dpm_database_name, testdst ("test.db"));
+
+  dpm_db_open ();
+  while (origin)
+    {
+      const char *meta = va_arg (ap, const char *);
+      dyn_block
+	{
+	  dpm_origin o = dpm_db_origin_find (origin);
+	  dpm_db_origin_update (o, I(meta));
+	}
+      origin = va_arg (ap, const char *);
+    }
+  dpm_db_checkpoint ();
+}
+
+DEFTEST (ws_cands)
+{
+  dyn_block
+    {
+      setup_db ("origin",
+		L(Package: foo            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L()
+		L(Package: foo            )
+		L(Version: 1.1            )
+		L(Architecture: all       ),
+		L(),
+		L(Package: bar            )
+		L(Version: 1.0            )
+		L(Architecture: all       ),
+		NULL);
+		
+      dpm_ws_create ();
+
+      dpm_origin o = dpm_db_origin_find ("origin");
+      dpm_package p = dpm_db_package_find ("foo");
+      dpm_ws_add_null_cand (p);
+      dyn_foreach_ (v, dpm_db_origin_package_versions, o, p)
+	dpm_ws_add_cand (v);
+      dpm_ws_compute_deps_and_cfls ();
+
+      int n = 0;
+      dyn_foreach_ (c, dpm_ws_cands, p)
+	{
+	  dpm_package pp = dpm_cand_package (c);
+	  EXPECT (p == pp);
+	  dpm_version v = dpm_cand_version (c);
+	  if (v)
+	    EXPECT (ss_streq (dpm_ver_version (v), "1.0")
+		    || ss_streq (dpm_ver_version (v), "1.1"));
+	  n++;
+	}
+      EXPECT (n == 3);
+    }
+}

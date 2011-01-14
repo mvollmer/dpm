@@ -115,3 +115,5 @@
 /libdpm/test-data/test.db
 /libdpm/tool.o
 /libdpm/dpm-tool
+/libdpm/ws.lo
+/libdpm/ws.o

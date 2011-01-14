@@ -22,5 +22,6 @@
 #include "parse.h"
 #include "store.h"
 #include "db.h"
+#include "ws.h"
 
 #endif /* !DPM_H */
