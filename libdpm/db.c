@@ -1185,6 +1185,36 @@ dpm_db_version_show (dpm_version ver)
     }
 }
 
+void
+dpm_db_alternatives_init (dpm_db_alternatives *iter, dpm_relation rel)
+{
+  iter->rel = rel;
+  iter->i = 0;
+  iter->op = dpm_rel_op (iter->rel, iter->i);
+  iter->package = dpm_rel_package (iter->rel, iter->i);
+  iter->version = dpm_rel_version (iter->rel, iter->i);
+}
+
+void
+dpm_db_alternatives_fini (dpm_db_alternatives *iter)
+{
+}
+
+void
+dpm_db_alternatives_step (dpm_db_alternatives *iter)
+{
+  iter->i += 3;
+  iter->op = dpm_rel_op (iter->rel, iter->i);
+  iter->package = dpm_rel_package (iter->rel, iter->i);
+  iter->version = dpm_rel_version (iter->rel, iter->i);
+}
+
+bool
+dpm_db_alternatives_done (dpm_db_alternatives *iter)
+{
+  return iter->i >= ss_len (iter->rel);
+}
+
 /* Status
  */
 

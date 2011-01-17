@@ -1699,6 +1699,30 @@ setup_db (const char *origin, ...)
   dpm_db_checkpoint ();
 }
 
+void
+setup_ws (const char *meta)
+{
+  dyn_let (dpm_database_name, testdst ("test.db"));
+
+  dpm_db_open ();
+  dpm_origin o = dpm_db_origin_find ("origin");
+
+  dyn_block
+    {
+      dpm_db_origin_update (o, I(meta));
+      dpm_db_checkpoint ();
+    }
+
+  dpm_ws_create ();
+  dyn_foreach_iter (p, dpm_db_origin_packages, o)
+    {
+      dpm_ws_add_null_cand (p.package);
+      dyn_foreach_ (v, ss_elts, p.versions)
+	dpm_ws_add_cand (v);
+    }
+  dpm_ws_start ();
+}
+
 DEFTEST (ws_cands)
 {
   dyn_block
@@ -1710,8 +1734,8 @@ DEFTEST (ws_cands)
 		L()
 		L(Package: foo            )
 		L(Version: 1.1            )
-		L(Architecture: all       ),
-		L(),
+		L(Architecture: all       )
+		L()
 		L(Package: bar            )
 		L(Version: 1.0            )
 		L(Architecture: all       ),
@@ -1724,7 +1748,7 @@ DEFTEST (ws_cands)
       dpm_ws_add_null_cand (p);
       dyn_foreach_ (v, dpm_db_origin_package_versions, o, p)
 	dpm_ws_add_cand (v);
-      dpm_ws_compute_deps_and_cfls ();
+      dpm_ws_start ();
 
       int n = 0;
       dyn_foreach_ (c, dpm_ws_cands, p)
@@ -1738,5 +1762,36 @@ DEFTEST (ws_cands)
 	  n++;
 	}
       EXPECT (n == 3);
+    }
+}
+
+DEFTEST (ws_deps)
+{
+  dyn_block
+    {
+      setup_ws (L(Package: foo            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L(Depends: bar (>= 1.1)   )
+		L()
+		L(Package: bar            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L()
+		L(Package: bar            )
+		L(Version: 1.1            )
+		L(Architecture: all       )
+		L()
+		L(Package: baz            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L(Provides: bar           ));
+
+      dyn_foreach_ (c, dpm_ws_cands, dpm_db_package_find ("foo"))
+	dyn_foreach_ (d, dpm_cand_deps, c)
+	  dyn_foreach_ (a, dpm_dep_alts, d)
+	    dyn_print ("%r\n", dpm_pkg_name (dpm_cand_package (a)));
+
+      dpm_ws_dump ();
     }
 }

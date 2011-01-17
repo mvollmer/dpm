@@ -31,8 +31,8 @@
    their relations.
 
    For each package in the database, a workspace maintains a list of
-   its versions, called the "candidates" of that package.  You can
-   control which versions of package are among its candidates.
+   some of its versions, called the "candidates" of that package.  You
+   can control which versions of a package are among its candidates.
 
    There is one special candidate per package, the "null candidate".
    This null candidate is used to represent the absence of that
@@ -72,7 +72,7 @@
    "foo_2.0", "foo_1.3", and "foo_1.0", respectively.  Then a field
    like "Depends: foo (>= 1.2)" will be translated into the dep
    (foo_2.0, foo_1.3).  As you can see, for a Depends field, the
-   corresponding dep will simply list all candidates that fulill it.
+   corresponding dep will simply list all candidates that fulfill it.
 
    This is also done for things like "Depends: foo | bar" and
    Provides.  Any candidate of any package that can satisfy the
@@ -81,7 +81,7 @@
    Consequently, a dependency that can not be satisfied by any
    candidate has a empty list of alternatives.
 
-   A relation like "Conflict: foo (<< 1.2)" is also translated into a
+   A relation like "Conflicts: foo (<< 1.2)" is also translated into a
    dep by collecting all candidates of foo that satisfy the relation.
    Continuing the example above, these are foo_2.0, foo_1.3, and
    foo_null, the null candidate of foo.
@@ -129,7 +129,8 @@ DYN_DECLARE_TYPE (dpm_ws);
 void dpm_ws_create ();
 dpm_ws dpm_ws_current ();
 
-void dpm_ws_report (const char *title);
+void dpm_ws_dump ();
+void dpm_ws_dump_pkg (dpm_package p);
 
 /* Adding candidates to the current workspace.
 */
@@ -147,19 +148,37 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
 dpm_package dpm_cand_package (dpm_cand);
 dpm_version dpm_cand_version (dpm_cand);
 
+void dpm_ws_start ();
+
 /* Deps and cfls.
  */
 
 typedef struct dpm_dep_struct *dpm_dep;
 typedef struct dpm_cfl_struct *dpm_cfl;
 
-void dpm_ws_compute_deps_and_cfls ();
+typedef struct dpm_cand_node_struct {
+  struct dpm_cand_node_struct *next;
+  dpm_cand elt;
+} *dpm_cand_node;
+
+typedef struct dpm_dep_node_struct {
+  struct dpm_dep_node_struct *next;
+  dpm_dep elt;
+} *dpm_dep_node;
 
 dpm_cand dpm_ws_cand (dpm_version ver);
 dpm_cand dpm_ws_null_cand (dpm_package pkg);
 
-DYN_DECLARE_STRUCT_ITER (dpm_dep, dpm_cand_deps, dpm_cand cand);
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep);
+DYN_DECLARE_STRUCT_ITER (dpm_dep, dpm_cand_deps, dpm_cand cand)
+{
+  dpm_dep_node n;
+};
+
+DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
+{
+  dpm_dep d;
+  int i;
+};
 
 DYN_DECLARE_STRUCT_ITER (dpm_cfl, dpm_cand_cfls, dpm_cand cand);
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_cfl_peers, dpm_cfl cfl);

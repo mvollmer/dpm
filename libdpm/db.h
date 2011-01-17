@@ -111,6 +111,16 @@ typedef ss_val dpm_relation;
 #define dpm_rel_package(r,i)    ss_ref((r),(i)+1)
 #define dpm_rel_version(r,i)    ss_ref((r),(i)+2)
 
+DYN_DECLARE_STRUCT_ITER (void, dpm_db_alternatives, dpm_relation rel)
+{
+  ss_val rel;
+  int i;
+
+  int op;
+  dpm_package package;
+  ss_val version;
+};
+
 enum {
   DPM_ANY,
   DPM_EQ,
