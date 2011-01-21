@@ -46,6 +46,15 @@ cons_cand (dpm_ws ws, dpm_cand c, dpm_cand_node next)
   return n;
 }
 
+static dpm_cand_node
+cons_cand_1 (dpm_ws ws, dpm_cand c, dpm_cand_node next)
+{
+  for (dpm_cand_node n = next; n; n = n->next)
+    if (n->elt == c)
+      return next;
+  return cons_cand (ws, c, next);
+}
+
 static dpm_dep_node
 cons_dep (dpm_ws ws, dpm_dep d, dpm_dep_node next)
 {
@@ -78,6 +87,7 @@ struct dpm_cand_struct {
   dpm_version ver;
   
   dpm_dep_node deps;
+  dpm_cand_node revdeps;
 };
 
 static dpm_cand
@@ -85,6 +95,8 @@ cand_new (dpm_ws ws)
 {
   dpm_cand c = obstack_alloc (&ws->mem, sizeof (struct dpm_cand_struct));
   c->next = NULL;
+  c->deps = NULL;
+  c->revdeps = NULL;
   return c;
 }
 
@@ -293,18 +305,27 @@ find_providers (dpm_ws ws)
 }
 
 static bool
-satisfies_dep (dpm_cand c, int op, ss_val version)
+satisfies_rel (dpm_cand c, bool conf, int op, ss_val version)
 {
-  return (c->ver
-	  && dpm_db_check_versions (dpm_ver_version (c->ver),
-				    op,
-				    version));
+  bool res = (c->ver
+	      && dpm_db_check_versions (dpm_ver_version (c->ver),
+					op,
+					version));
+  if (conf)
+    return !res;
+  else
+    return res;
 }
 
 static bool
-provides_dep (dpm_cand c, int op, ss_val version)
+provides_rel (dpm_cand c, bool conf, int op, ss_val version)
 {
-  return c->ver;
+  bool res = c->ver != NULL;
+
+  if (conf)
+    return !res;
+  else
+    return res;
 }
 
 static void
@@ -315,24 +336,24 @@ compute_deps (dpm_ws ws)
       dpm_cand c = ws->ver_cands[i];
       if (c && c->ver)
 	{
-	  void do_deps (ss_val deps)
+	  void do_rels (ss_val rels, bool conf)
 	  {
-	    dyn_foreach_ (dep, ss_elts, deps)
+	    dyn_foreach_ (rel, ss_elts, rels)
 	      {
 		int n_alts = 0;
 		obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
 		
-		dyn_foreach_iter (alt, dpm_db_alternatives, dep)
+		dyn_foreach_iter (alt, dpm_db_alternatives, rel)
 		  {
 		    dpm_pkg p = get_pkg (ws, alt.package);
 		    dyn_foreach_ (pc, dpm_pkg_cands, p)
-		      if (satisfies_dep (pc, alt.op, alt.version))
+		      if (satisfies_rel (pc, conf, alt.op, alt.version))
 			{
 			  obstack_ptr_grow (&ws->mem, pc);
 			  n_alts++;
 			}
 		    for (dpm_cand_node n = p->providers; n; n = n->next)
-		      if (provides_dep (n->elt, alt.op, alt.version))
+		      if (provides_rel (n->elt, conf, alt.op, alt.version))
 			{
 			  obstack_ptr_grow (&ws->mem, n->elt);
 			  n_alts++;
@@ -343,11 +364,17 @@ compute_deps (dpm_ws ws)
 		d->n_alts = n_alts;
 		
 		c->deps = cons_dep (ws, d, c->deps);
+
+		for (int i = 0; i < n_alts; i++)
+		  d->alts[i]->revdeps =
+		    cons_cand_1 (ws, c, d->alts[i]->revdeps);
 	      }
 	  }
 	  
-	  do_deps (dpm_rels_pre_depends (dpm_ver_relations (c->ver)));
-	  do_deps (dpm_rels_depends (dpm_ver_relations (c->ver)));
+	  do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)), false);
+	  do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)), false);
+	  do_rels (dpm_rels_conflicts (dpm_ver_relations (c->ver)), true);
+	  do_rels (dpm_rels_breaks (dpm_ver_relations (c->ver)), true);
 	}
     }
 }
@@ -411,6 +438,35 @@ dpm_dep_alts_elt (dpm_dep_alts *iter)
   return iter->d->alts[iter->i];
 }
 
+void
+dpm_cand_revdeps_init (dpm_cand_revdeps *iter, dpm_cand c)
+{
+  iter->n = c->revdeps;
+}
+
+void
+dpm_cand_revdeps_fini (dpm_cand_revdeps *iter)
+{
+}
+
+void
+dpm_cand_revdeps_step (dpm_cand_revdeps *iter)
+{
+  iter->n = iter->n->next;
+}
+
+bool
+dpm_cand_revdeps_done (dpm_cand_revdeps *iter)
+{
+  return iter->n == NULL;
+}
+
+dpm_cand
+dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
+{
+  return iter->n->elt;
+}
+
 /* Cfls
  */
 
@@ -457,12 +513,18 @@ dump_pkg (dpm_pkg p)
 	dyn_print (" null\n");
       dyn_foreach_ (d, dpm_cand_deps, c)
 	{
-	  dyn_print ("  ->");
+	  dyn_print ("  >");
 	  dyn_foreach_ (a, dpm_dep_alts, d)
 	    {
 	      dyn_print (" ");
 	      dump_cand_hint (a);
 	    }
+	  dyn_print ("\n");
+	}
+      dyn_foreach_ (r, dpm_cand_revdeps, c)
+	{
+	  dyn_print ("  < ");
+	  dump_cand_hint (r);
 	  dyn_print ("\n");
 	}
     }

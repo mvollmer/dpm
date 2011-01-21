@@ -174,6 +174,11 @@ DYN_DECLARE_STRUCT_ITER (dpm_dep, dpm_cand_deps, dpm_cand cand)
   dpm_dep_node n;
 };
 
+DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_cand_revdeps, dpm_cand cand)
+{
+  dpm_cand_node n;
+};
+
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
 {
   dpm_dep d;
