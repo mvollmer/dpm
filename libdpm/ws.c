@@ -31,10 +31,10 @@ struct dpm_ws_struct {
   struct obstack mem;
 
   int n_pkgs;
-  dpm_pkg *pkgs;
+  struct dpm_pkg_struct *pkgs;
 
   int n_vers;
-  dpm_cand *ver_cands;
+  struct dpm_cand_struct *ver_cands;
 };
 
 static dpm_cand_node
@@ -64,49 +64,37 @@ cons_dep (dpm_ws ws, dpm_dep d, dpm_dep_node next)
   return n;
 }
 
-struct dpm_pkg_struct {
-  dpm_package pkg;
-  dpm_cand cands;
-  dpm_cand null_cand;
-  dpm_cand_node providers;
-};
-
-static dpm_pkg
-pkg_new (dpm_ws ws)
-{
-  dpm_pkg p = obstack_alloc (&ws->mem, sizeof (struct dpm_pkg_struct));
-  p->cands = NULL;
-  p->null_cand = NULL;
-  p->providers = NULL;
-  return p;
-}
-
 struct dpm_cand_struct {
   dpm_cand next;
   dpm_pkg pkg;
   dpm_version ver;
   
   dpm_dep_node deps;
-  dpm_cand_node revdeps;
+  dpm_dep_node revdeps;
 };
 
-static dpm_cand
-cand_new (dpm_ws ws)
-{
-  dpm_cand c = obstack_alloc (&ws->mem, sizeof (struct dpm_cand_struct));
-  c->next = NULL;
-  c->deps = NULL;
-  c->revdeps = NULL;
-  return c;
-}
+struct dpm_pkg_struct {
+  dpm_package pkg;
+  dpm_cand cands;
+  dpm_cand_node providers;
+  struct dpm_cand_struct null_cand;
+};
 
 struct dpm_dep_struct {
+  dpm_cand cand;
+  dpm_relation rel;
   int n_alts;
   dpm_cand alts[0];
 };
 
 struct dpm_cfl_struct {
 };
+
+static dpm_pkg
+get_pkg (dpm_ws ws, dpm_package pkg)
+{
+  return ws->pkgs + dpm_pkg_id(pkg);
+}
 
 static void
 dpm_ws_unref (dyn_type *type, void *object)
@@ -133,12 +121,22 @@ dpm_ws_create ()
   obstack_init (&ws->mem);
 
   ws->n_pkgs = dpm_db_package_max_id ();
-  ws->pkgs = obstack_alloc (&ws->mem, ws->n_pkgs*sizeof(dpm_pkg));
-  memset (ws->pkgs, 0, ws->n_pkgs*sizeof(dpm_pkg));
+  ws->pkgs = obstack_alloc (&ws->mem, ws->n_pkgs*sizeof(struct dpm_pkg_struct));
+  memset (ws->pkgs, 0, ws->n_pkgs*sizeof(struct dpm_pkg_struct));
 
   ws->n_vers = dpm_db_version_max_id ();
-  ws->ver_cands = obstack_alloc (&ws->mem, ws->n_vers*sizeof(dpm_cand));
-  memset (ws->ver_cands, 0, ws->n_vers*sizeof(dpm_cand));
+  ws->ver_cands =
+    obstack_alloc (&ws->mem, ws->n_vers*sizeof(struct dpm_cand_struct));
+  memset (ws->ver_cands, 0, ws->n_vers*sizeof(struct dpm_cand_struct));
+
+  dyn_foreach_ (pkg, dpm_db_packages)
+    {
+      dpm_pkg p = get_pkg (ws, pkg);
+      dpm_cand n = &(p->null_cand);
+      p->pkg = pkg;
+      n->pkg = p;
+      p->cands = n;
+    }
 
   dyn_let (cur_ws, ws);
 }
@@ -152,56 +150,18 @@ dpm_ws_current ()
 /* Adding candidates
  */
 
-static dpm_pkg
-get_pkg (dpm_ws ws, dpm_package pkg)
-{
-  dpm_pkg p = ws->pkgs[dpm_pkg_id(pkg)];
-  if (p == NULL)
-    {
-      p = pkg_new (ws);
-      p->pkg = pkg;
-      ws->pkgs[dpm_pkg_id(pkg)] = p;
-    }
-  return p;
-}
-
-static void
-cand_add (dpm_pkg p, dpm_cand c)
-{
-  c->pkg = p;
-  c->next = p->cands;
-  p->cands = c;
-}
-
 dpm_cand
 dpm_ws_add_cand (dpm_version ver)
 {
   dpm_ws ws = dpm_ws_current ();
 
-  dpm_cand c = ws->ver_cands[dpm_ver_id(ver)];
-  if (c == NULL)
+  dpm_cand c = ws->ver_cands + dpm_ver_id(ver);
+  if (c->pkg == NULL)
     {
-      c = cand_new (ws);
+      c->pkg = get_pkg (ws, dpm_ver_package (ver));
       c->ver = ver;
-      cand_add (get_pkg (ws, dpm_ver_package (ver)), c);
-      ws->ver_cands[dpm_ver_id(ver)] = c;
-    }
-  return c;
-}
-
-dpm_cand
-dpm_ws_add_null_cand (dpm_package pkg)
-{
-  dpm_ws ws = dpm_ws_current ();
-
-  dpm_pkg p = get_pkg (ws, pkg);
-  dpm_cand c = p->null_cand;
-  if (c == NULL)
-    {
-      c = cand_new (ws);
-      c->ver = NULL;
-      cand_add (p, c);
-      p->null_cand = c;
+      c->next = c->pkg->cands;
+      c->pkg->cands = c;
     }
   return c;
 }
@@ -291,8 +251,8 @@ find_providers (dpm_ws ws)
 {
   for (int i = 0; i < ws->n_vers; i++)
     {
-      dpm_cand c = ws->ver_cands[i];
-      if (c && c->ver)
+      dpm_cand c = ws->ver_cands + i;
+      if (c->ver)
 	{
 	  dyn_foreach_ (prv, ss_elts,
 			dpm_rels_provides (dpm_ver_relations (c->ver)))
@@ -333,41 +293,68 @@ compute_deps (dpm_ws ws)
 {
   for (int i = 0; i < ws->n_vers; i++)
     {
-      dpm_cand c = ws->ver_cands[i];
-      if (c && c->ver)
+      dpm_cand c = ws->ver_cands + i;
+      if (c->ver)
 	{
 	  void do_rels (ss_val rels, bool conf)
 	  {
 	    dyn_foreach_ (rel, ss_elts, rels)
 	      {
-		int n_alts = 0;
+ 		int n_alts = 0;
 		obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
-		
+
 		dyn_foreach_iter (alt, dpm_db_alternatives, rel)
 		  {
 		    dpm_pkg p = get_pkg (ws, alt.package);
+
+		    bool all_satisfy = true;
 		    dyn_foreach_ (pc, dpm_pkg_cands, p)
 		      if (satisfies_rel (pc, conf, alt.op, alt.version))
 			{
+			  if (pc == NULL)
+			    abort ();
 			  obstack_ptr_grow (&ws->mem, pc);
 			  n_alts++;
 			}
+		      else
+			all_satisfy = false;
+		    
+		    if (all_satisfy)
+		      {
+			// This dependency does not need to be
+			// recorded since it is always satisfied, no
+			// matter with candidate of of
+			// P is selected.
+			//
+			n_alts = -1;
+			break;
+		      }
+		    
 		    for (dpm_cand_node n = p->providers; n; n = n->next)
 		      if (provides_rel (n->elt, conf, alt.op, alt.version))
 			{
+			  if (n->elt == NULL)
+			    abort ();
 			  obstack_ptr_grow (&ws->mem, n->elt);
 			  n_alts++;
 			}
 		  }
 
 		dpm_dep d = obstack_finish (&ws->mem);
-		d->n_alts = n_alts;
+		if (n_alts < 0)
+		  obstack_free (&ws->mem, d);
+		else
+		  {
+		    d->cand = c;
+		    d->rel = rel;
+		    d->n_alts = n_alts;
 		
-		c->deps = cons_dep (ws, d, c->deps);
-
-		for (int i = 0; i < n_alts; i++)
-		  d->alts[i]->revdeps =
-		    cons_cand_1 (ws, c, d->alts[i]->revdeps);
+		    c->deps = cons_dep (ws, d, c->deps);
+		    
+		    for (int i = 0; i < n_alts; i++)
+		      d->alts[i]->revdeps =
+			cons_dep (ws, d, d->alts[i]->revdeps);
+		  }
 	      }
 	  }
 	  
@@ -461,7 +448,7 @@ dpm_cand_revdeps_done (dpm_cand_revdeps *iter)
   return iter->n == NULL;
 }
 
-dpm_cand
+dpm_dep
 dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
 {
   return iter->n->elt;
@@ -482,7 +469,7 @@ void
 dpm_ws_start ()
 {
   dpm_ws ws = dpm_ws_current ();
-
+  
   find_providers (ws);
   compute_deps (ws);
   compute_cfls (ws);
@@ -520,11 +507,14 @@ dump_pkg (dpm_pkg p)
 	      dump_cand_hint (a);
 	    }
 	  dyn_print ("\n");
+	  dyn_print ("    ");
+	  dpm_dump_relation (d->rel);
+	  dyn_print ("\n");
 	}
       dyn_foreach_ (r, dpm_cand_revdeps, c)
 	{
 	  dyn_print ("  < ");
-	  dump_cand_hint (r);
+	  dump_cand_hint (r->cand);
 	  dyn_print ("\n");
 	}
     }
@@ -537,7 +527,7 @@ dpm_ws_dump ()
 
   for (int i = 0; i < ws->n_pkgs; i++)
     {
-      dpm_pkg p = ws->pkgs[i];
+      dpm_pkg p = ws->pkgs + i;
       if (p)
 	{
 	  dump_pkg (p);

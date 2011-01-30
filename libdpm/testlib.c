@@ -50,6 +50,16 @@ set_failure_printer (void (*printer) (const char *file, int line,
   failure_printer = printer;
 }
 
+static void
+call_failure_printer (const char *file, int line,
+		      const char *fmt, ...)
+{
+  va_list ap;
+  va_start (ap, fmt);
+  failure_printer (file, line, fmt, ap);
+  va_end (ap);
+}
+
 void
 expect (int b, char *expr, char *file, int line,
 	const char *fmt, ...)
@@ -64,7 +74,7 @@ expect (int b, char *expr, char *file, int line,
 	  va_end (ap);
 	}
       else
-	failure_printer (file, line, "Expected %s", expr);
+	call_failure_printer (file, line, "Expected %s", expr);
       exit (1);
     }
 }

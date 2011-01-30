@@ -188,4 +188,10 @@ ss_val dpm_db_reverse_relations (dpm_package pkg);
 void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
 dpm_version dpm_db_installed (dpm_package pkg);
 
+/* Dumping
+ */
+
+void dpm_dump_relation (dpm_relation rel);
+
+
 #endif /* !DPM_DB_H */

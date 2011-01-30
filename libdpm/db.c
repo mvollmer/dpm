@@ -1132,6 +1132,12 @@ show_relation (ss_val rel)
     }
 }
 
+void
+dpm_dump_relation (dpm_relation rel)
+{
+  show_relation (rel);
+}
+
 static void
 show_relations (const char *field, ss_val rels)
 {

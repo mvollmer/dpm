@@ -138,7 +138,6 @@ void dpm_ws_dump_pkg (dpm_package p);
 typedef struct dpm_cand_struct *dpm_cand;
 
 dpm_cand dpm_ws_add_cand (dpm_version ver);
-dpm_cand dpm_ws_add_null_cand (dpm_package pkg);
 
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
 {
@@ -174,9 +173,9 @@ DYN_DECLARE_STRUCT_ITER (dpm_dep, dpm_cand_deps, dpm_cand cand)
   dpm_dep_node n;
 };
 
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_cand_revdeps, dpm_cand cand)
+DYN_DECLARE_STRUCT_ITER (dpm_dep, dpm_cand_revdeps, dpm_cand cand)
 {
-  dpm_cand_node n;
+  dpm_dep_node n;
 };
 
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)

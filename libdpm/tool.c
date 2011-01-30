@@ -15,6 +15,7 @@ usage ()
   fprintf (stderr, "       dpm-tool [OPTIONS] relations PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] provides PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] dump\n");
   exit (1);
 }
 
@@ -381,6 +382,22 @@ list_provides (const char *package)
     }
 }
 
+void
+dump (const char *origin)
+{
+  dpm_db_open ();
+  dpm_ws_create ();
+
+  dyn_foreach_iter (p, dpm_db_origin_packages, dpm_db_origin_find (origin))
+    {
+      dyn_foreach_ (v, ss_elts, p.versions)
+	dpm_ws_add_cand (v);
+    }
+
+  dpm_ws_start ();
+  dpm_ws_dump ();
+}
+
 int
 main (int argc, char **argv)
 {
@@ -412,6 +429,8 @@ main (int argc, char **argv)
     list_reverse_relations (argv[2]);
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
+  else if (strcmp (argv[1], "dump") == 0)
+    dump (argv[2]);
   else
     usage ();
 

@@ -1716,19 +1716,89 @@ setup_ws (const char *meta)
   dpm_ws_create ();
   dyn_foreach_iter (p, dpm_db_origin_packages, o)
     {
-      dpm_ws_add_null_cand (p.package);
       dyn_foreach_ (v, ss_elts, p.versions)
 	dpm_ws_add_cand (v);
     }
   dpm_ws_start ();
 }
 
+dpm_cand
+find_cand (const char *id)
+{
+  char p[200];
+  strcpy (p, id);
+  char *v = strchr (p, '_');
+  if (v)
+    {
+      *v++ = '\0';
+      
+      dpm_package pkg = dpm_db_package_find (p);
+      if (pkg)
+	dyn_foreach_ (c, dpm_ws_cands, pkg)
+	  {
+	    dpm_version ver = dpm_cand_version (c);
+	    if ((ver && ss_streq (dpm_ver_version (ver), v))
+		|| (!ver && strcmp (v, "null") == 0))
+	      return c;
+	  }
+    }
+
+  EXPECT (false, "cand %s not found", id);
+  return NULL;
+}
+
+void
+check_deps (const char *from, ...)
+{
+  dpm_cand deps[10][20];
+  bool dep_found[10] = { 0, };
+  int n_deps = 0;
+
+  va_list ap;
+  va_start (ap, from);
+  const char *to = va_arg (ap, const char *);
+  while (to)
+    {
+      int i = 0;
+      while (to)
+	{
+	  deps[n_deps][i++] = find_cand (to);
+	  to = va_arg (ap, const char *);
+	}
+      deps[n_deps++][i] = NULL;
+      to = va_arg (ap, const char *);
+    }
+
+  dpm_cand f = find_cand (from);
+  dyn_foreach_ (d, dpm_cand_deps, f)
+    {
+      int i;
+      for (i = 0; i < n_deps; i++)
+	{
+	  dyn_foreach_ (a, dpm_dep_alts, d)
+	    {
+	      for (int j = 0; deps[i][j]; j++)
+		if (deps[i][j] == a)
+		  goto found;
+	      goto not_found;
+	    found:
+	      ;
+	    }
+	  break;
+	not_found:
+	  ;
+	}
+      EXPECT (i < n_deps, "dep not found");
+      dep_found[i] = true;
+    }
+}
+
+
 DEFTEST (ws_cands)
 {
   dyn_block
     {
-      setup_db ("origin",
-		L(Package: foo            )
+      setup_ws (L(Package: foo            )
 		L(Version: 1.0            )
 		L(Architecture: all       )
 		L()
@@ -1738,17 +1808,9 @@ DEFTEST (ws_cands)
 		L()
 		L(Package: bar            )
 		L(Version: 1.0            )
-		L(Architecture: all       ),
-		NULL);
+		L(Architecture: all       ));
 		
-      dpm_ws_create ();
-
-      dpm_origin o = dpm_db_origin_find ("origin");
       dpm_package p = dpm_db_package_find ("foo");
-      dpm_ws_add_null_cand (p);
-      dyn_foreach_ (v, dpm_db_origin_package_versions, o, p)
-	dpm_ws_add_cand (v);
-      dpm_ws_start ();
 
       int n = 0;
       dyn_foreach_ (c, dpm_ws_cands, p)
@@ -1788,10 +1850,13 @@ DEFTEST (ws_deps)
 		L(Architecture: all       )
 		L(Provides: bar           ));
 
-      dyn_foreach_ (c, dpm_ws_cands, dpm_db_package_find ("foo"))
-	dyn_foreach_ (d, dpm_cand_deps, c)
-	  dyn_foreach_ (a, dpm_dep_alts, d)
-	    dyn_print ("%r\n", dpm_pkg_name (dpm_cand_package (a)));
+      check_deps ("foo_1.0",
+		  "bar_1.1", "baz_1.0", NULL,
+		  NULL);
+
+      check_deps ("bar_1.1",
+		  "baz_null", NULL,
+		  NULL);
 
       dpm_ws_dump ();
     }
