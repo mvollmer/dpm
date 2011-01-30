@@ -1751,8 +1751,10 @@ void
 check_deps (const char *from, ...)
 {
   dpm_cand deps[10][20];
-  bool dep_found[10] = { 0, };
+  int n_alts[10];
   int n_deps = 0;
+
+  bool dep_found[10] = { 0, };
 
   va_list ap;
   va_start (ap, from);
@@ -1765,34 +1767,42 @@ check_deps (const char *from, ...)
 	  deps[n_deps][i++] = find_cand (to);
 	  to = va_arg (ap, const char *);
 	}
-      deps[n_deps++][i] = NULL;
+      n_alts[n_deps++] = i;
       to = va_arg (ap, const char *);
     }
 
+  bool dep_eq (dpm_dep d, int i)
+  {
+    int n_alts_found = 0;
+    dyn_foreach_ (a, dpm_dep_alts, d)
+      for (int j = 0; deps[i][j]; j++)
+	if (deps[i][j] == a)
+	  {
+	    n_alts_found++;
+	    break;
+	  }
+    return n_alts_found == n_alts[i];
+  }
+
+  bool find_dep (dpm_dep d)
+  {
+    for (int i = 0; i < n_deps; i++)
+      if (dep_eq (d, i))
+	{
+	  dep_found[i] = true;
+	  return true;
+	}
+    EXPECT (false, "unexpected dep");
+    return false;
+  }
+
   dpm_cand f = find_cand (from);
   dyn_foreach_ (d, dpm_cand_deps, f)
-    {
-      int i;
-      for (i = 0; i < n_deps; i++)
-	{
-	  dyn_foreach_ (a, dpm_dep_alts, d)
-	    {
-	      for (int j = 0; deps[i][j]; j++)
-		if (deps[i][j] == a)
-		  goto found;
-	      goto not_found;
-	    found:
-	      ;
-	    }
-	  break;
-	not_found:
-	  ;
-	}
-      EXPECT (i < n_deps, "dep not found");
-      dep_found[i] = true;
-    }
-}
+    find_dep (d);
 
+  for (int i = 0; i < n_deps; i++)
+    EXPECT (dep_found[i], "expected dep not there");
+}
 
 DEFTEST (ws_cands)
 {
@@ -1835,6 +1845,7 @@ DEFTEST (ws_deps)
 		L(Version: 1.0            )
 		L(Architecture: all       )
 		L(Depends: bar (>= 1.1)   )
+		L(Conflicts: not-there    )
 		L()
 		L(Package: bar            )
 		L(Version: 1.0            )
@@ -1857,7 +1868,5 @@ DEFTEST (ws_deps)
       check_deps ("bar_1.1",
 		  "baz_null", NULL,
 		  NULL);
-
-      dpm_ws_dump ();
     }
 }

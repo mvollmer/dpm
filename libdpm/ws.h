@@ -197,7 +197,6 @@ void dpm_ws_unselect (dpm_package pkg);
 dpm_cand dpm_ws_selected (dpm_package pkg);
 
 bool dpm_ws_is_selected (dpm_cand cand);
-bool dpm_ws_is_selectable (dpm_cand cand);
 
 DYN_DECLARE_STRUCT_ITER (dpm_cfl, dpm_ws_violations);
 

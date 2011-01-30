@@ -76,6 +76,7 @@ struct dpm_cand_struct {
 struct dpm_pkg_struct {
   dpm_package pkg;
   dpm_cand cands;
+  dpm_cand selected;
   dpm_cand_node providers;
   struct dpm_cand_struct null_cand;
 };
@@ -84,6 +85,7 @@ struct dpm_dep_struct {
   dpm_cand cand;
   dpm_relation rel;
   int n_alts;
+  int n_selected;
   dpm_cand alts[0];
 };
 
@@ -347,6 +349,7 @@ compute_deps (dpm_ws ws)
 		  {
 		    d->cand = c;
 		    d->rel = rel;
+		    d->n_selected = 0;
 		    d->n_alts = n_alts;
 		
 		    c->deps = cons_dep (ws, d, c->deps);
@@ -473,6 +476,54 @@ dpm_ws_start ()
   find_providers (ws);
   compute_deps (ws);
   compute_cfls (ws);
+}
+
+/* Selecting
+ */
+
+static void
+pkg_unselect (dpm_pkg p)
+{
+  if (p->selected)
+    dyn_foreach_ (d, dpm_cand_revdeps, p->selected)
+      d->n_selected--;
+  p->selected = NULL;
+}
+
+void
+dpm_ws_select (dpm_cand c)
+{
+  dpm_pkg p = c->pkg;
+  
+  if (p->selected == c)
+    return;
+
+  pkg_unselect (p);
+  p->selected = c;
+  dyn_foreach_ (d, dpm_cand_revdeps, c)
+    d->n_selected++;
+}
+
+void
+dpm_ws_unselect (dpm_package pkg)
+{
+  dpm_ws ws = dpm_ws_current ();
+  dpm_pkg p = get_pkg (ws, pkg);
+  pkg_unselect (p);
+}
+
+dpm_cand
+dpm_ws_selected (dpm_package pkg)
+{
+  dpm_ws ws = dpm_ws_current ();
+  dpm_pkg p = get_pkg (ws, pkg);
+  return p->selected;
+}
+
+bool
+dpm_ws_is_selected (dpm_cand cand)
+{
+  return cand->pkg->selected == cand;
 }
 
 /* Dumping
