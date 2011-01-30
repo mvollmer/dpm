@@ -35,6 +35,8 @@ struct dpm_ws_struct {
 
   int n_vers;
   struct dpm_cand_struct *ver_cands;
+
+  int next_id;
 };
 
 static dpm_cand_node
@@ -44,15 +46,6 @@ cons_cand (dpm_ws ws, dpm_cand c, dpm_cand_node next)
   n->next = next;
   n->elt = c;
   return n;
-}
-
-static dpm_cand_node
-cons_cand_1 (dpm_ws ws, dpm_cand c, dpm_cand_node next)
-{
-  for (dpm_cand_node n = next; n; n = n->next)
-    if (n->elt == c)
-      return next;
-  return cons_cand (ws, c, next);
 }
 
 static dpm_dep_node
@@ -68,7 +61,8 @@ struct dpm_cand_struct {
   dpm_cand next;
   dpm_pkg pkg;
   dpm_version ver;
-  
+  int id;
+
   dpm_dep_node deps;
   dpm_dep_node revdeps;
 };
@@ -131,14 +125,19 @@ dpm_ws_create ()
     obstack_alloc (&ws->mem, ws->n_vers*sizeof(struct dpm_cand_struct));
   memset (ws->ver_cands, 0, ws->n_vers*sizeof(struct dpm_cand_struct));
 
+  int id = 0;
+
   dyn_foreach_ (pkg, dpm_db_packages)
     {
       dpm_pkg p = get_pkg (ws, pkg);
       dpm_cand n = &(p->null_cand);
       p->pkg = pkg;
       n->pkg = p;
+      n->id = id++;
       p->cands = n;
     }
+
+  ws->next_id = id;
 
   dyn_let (cur_ws, ws);
 }
@@ -164,6 +163,7 @@ dpm_ws_add_cand (dpm_version ver)
       c->ver = ver;
       c->next = c->pkg->cands;
       c->pkg->cands = c;
+      c->id = ws->next_id++;
     }
   return c;
 }
@@ -293,6 +293,9 @@ provides_rel (dpm_cand c, bool conf, int op, ss_val version)
 static void
 compute_deps (dpm_ws ws)
 {
+  int *cand_tag = calloc (ws->next_id, sizeof(int));
+  int tag = 0;
+
   for (int i = 0; i < ws->n_vers; i++)
     {
       dpm_cand c = ws->ver_cands + i;
@@ -305,6 +308,18 @@ compute_deps (dpm_ws ws)
  		int n_alts = 0;
 		obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
 
+		tag++;
+
+		void add_alt (dpm_cand c)
+		{
+		  if (cand_tag[c->id] != tag)
+		    {
+		      cand_tag[c->id] = tag;
+		      obstack_ptr_grow (&ws->mem, c);
+		      n_alts++;
+		    }
+		}
+
 		dyn_foreach_iter (alt, dpm_db_alternatives, rel)
 		  {
 		    dpm_pkg p = get_pkg (ws, alt.package);
@@ -312,12 +327,7 @@ compute_deps (dpm_ws ws)
 		    bool all_satisfy = true;
 		    dyn_foreach_ (pc, dpm_pkg_cands, p)
 		      if (satisfies_rel (pc, conf, alt.op, alt.version))
-			{
-			  if (pc == NULL)
-			    abort ();
-			  obstack_ptr_grow (&ws->mem, pc);
-			  n_alts++;
-			}
+			add_alt (pc);
 		      else
 			all_satisfy = false;
 		    
@@ -334,12 +344,7 @@ compute_deps (dpm_ws ws)
 		    
 		    for (dpm_cand_node n = p->providers; n; n = n->next)
 		      if (provides_rel (n->elt, conf, alt.op, alt.version))
-			{
-			  if (n->elt == NULL)
-			    abort ();
-			  obstack_ptr_grow (&ws->mem, n->elt);
-			  n_alts++;
-			}
+			add_alt (n->elt);
 		  }
 
 		dpm_dep d = obstack_finish (&ws->mem);
