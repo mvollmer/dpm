@@ -293,83 +293,89 @@ provides_rel (dpm_cand c, bool conf, int op, ss_val version)
 static void
 compute_deps (dpm_ws ws)
 {
-  int *cand_tag = calloc (ws->next_id, sizeof(int));
-  int tag = 0;
-
-  for (int i = 0; i < ws->n_vers; i++)
+  dyn_block
     {
-      dpm_cand c = ws->ver_cands + i;
-      if (c->ver)
+      dpm_candset alt_set = dpm_candset_new ();
+
+      for (int i = 0; i < ws->n_vers; i++)
 	{
-	  void do_rels (ss_val rels, bool conf)
-	  {
-	    dyn_foreach_ (rel, ss_elts, rels)
+	  dpm_cand c = ws->ver_cands + i;
+	  if (c->ver)
+	    {
+	      void do_rels (ss_val rels, bool conf)
 	      {
- 		int n_alts = 0;
-		obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
-
-		tag++;
-
-		void add_alt (dpm_cand c)
-		{
-		  if (cand_tag[c->id] != tag)
-		    {
-		      cand_tag[c->id] = tag;
-		      obstack_ptr_grow (&ws->mem, c);
-		      n_alts++;
-		    }
-		}
-
-		dyn_foreach_iter (alt, dpm_db_alternatives, rel)
+		dyn_foreach_ (rel, ss_elts, rels)
 		  {
-		    dpm_pkg p = get_pkg (ws, alt.package);
-
-		    bool all_satisfy = true;
-		    dyn_foreach_ (pc, dpm_pkg_cands, p)
-		      if (satisfies_rel (pc, conf, alt.op, alt.version))
-			add_alt (pc);
-		      else
-			all_satisfy = false;
+		    int n_alts = 0;
+		    obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
 		    
-		    if (all_satisfy)
+		    void add_alt (dpm_cand c)
+		    {
+		      if (!dpm_candset_has (alt_set, c))
+			{
+			  dpm_candset_add (alt_set, c);
+			  obstack_ptr_grow (&ws->mem, c);
+			  n_alts++;
+			}
+		    }
+
+		    dyn_foreach_iter (alt, dpm_db_alternatives, rel)
 		      {
-			// This dependency does not need to be
-			// recorded since it is always satisfied, no
-			// matter with candidate of of
-			// P is selected.
-			//
-			n_alts = -1;
-			break;
+			dpm_pkg p = get_pkg (ws, alt.package);
+			
+			bool all_satisfy = true;
+			dyn_foreach_ (pc, dpm_pkg_cands, p)
+			  if (satisfies_rel (pc, conf, alt.op, alt.version))
+			    add_alt (pc);
+			  else
+			    all_satisfy = false;
+		    
+			if (all_satisfy)
+			  {
+			    // This dependency does not need to be
+			    // recorded since it is always satisfied, no
+			    // matter with candidate of of
+			    // P is selected.
+			    //
+			    n_alts = -1;
+			    break;
+			  }
+		    
+			for (dpm_cand_node n = p->providers; n; n = n->next)
+			  if (provides_rel (n->elt, conf, alt.op, alt.version))
+			    add_alt (n->elt);
+		      }
+
+		    dpm_dep d = obstack_finish (&ws->mem);
+		    if (n_alts < 0)
+		      obstack_free (&ws->mem, d);
+		    else
+		      {
+			d->cand = c;
+			d->rel = rel;
+			d->n_selected = 0;
+			d->n_alts = n_alts;
+			
+			c->deps = cons_dep (ws, d, c->deps);
+		    
+			for (int i = 0; i < n_alts; i++)
+			  d->alts[i]->revdeps =
+			    cons_dep (ws, d, d->alts[i]->revdeps);
 		      }
 		    
-		    for (dpm_cand_node n = p->providers; n; n = n->next)
-		      if (provides_rel (n->elt, conf, alt.op, alt.version))
-			add_alt (n->elt);
-		  }
-
-		dpm_dep d = obstack_finish (&ws->mem);
-		if (n_alts < 0)
-		  obstack_free (&ws->mem, d);
-		else
-		  {
-		    d->cand = c;
-		    d->rel = rel;
-		    d->n_selected = 0;
-		    d->n_alts = n_alts;
-		
-		    c->deps = cons_dep (ws, d, c->deps);
-		    
-		    for (int i = 0; i < n_alts; i++)
-		      d->alts[i]->revdeps =
-			cons_dep (ws, d, d->alts[i]->revdeps);
+		    dpm_candset_reset (alt_set);
 		  }
 	      }
-	  }
 	  
-	  do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)), false);
-	  do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)), false);
-	  do_rels (dpm_rels_conflicts (dpm_ver_relations (c->ver)), true);
-	  do_rels (dpm_rels_breaks (dpm_ver_relations (c->ver)), true);
+	      do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)),
+		       false);
+	      do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)),
+		       false);
+	      do_rels (dpm_rels_conflicts (dpm_ver_relations (c->ver)),
+		       true);
+	      do_rels (dpm_rels_breaks (dpm_ver_relations (c->ver)),
+		       true);
+	    }
 	}
     }
 }
@@ -597,4 +603,63 @@ dpm_ws_dump_pkg (dpm_package p)
 {
   dpm_ws ws = dpm_ws_current ();
   dump_pkg (get_pkg (ws, p));
+}
+
+/* Cand sets
+ */
+
+struct dpm_candset_struct {
+  int *tags;
+  int tag;
+};
+
+static void
+dpm_candset_unref (dyn_type *type, void *object)
+{
+  dpm_candset s = object;
+  free (s->tags);
+}
+
+static int
+dpm_candset_equal (void *a, void *b)
+{
+  return 0;
+}
+
+DYN_DEFINE_TYPE (dpm_candset, "candset");
+
+dpm_candset
+dpm_candset_new ()
+{
+  dpm_ws ws = dpm_ws_current ();
+  dpm_candset s = dyn_new (dpm_candset);
+  s->tags = calloc (ws->next_id, sizeof (int));
+  s->tag = 1;
+  return s;
+}
+
+void
+dpm_candset_reset (dpm_candset s)
+{
+  s->tag++;
+  if (s->tag == 0)
+    abort ();
+}
+
+void
+dpm_candset_add (dpm_candset s, dpm_cand c)
+{
+  s->tags[c->id] = s->tag;
+}
+
+void
+dpm_candset_rem (dpm_candset s, dpm_cand c)
+{
+  s->tags[c->id] = 0;
+}
+
+bool
+dpm_candset_has (dpm_candset s, dpm_cand c)
+{
+  return s->tags[c->id] == s->tag;
 }

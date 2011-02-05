@@ -202,4 +202,24 @@ bool dpm_ws_is_selected (dpm_cand cand);
 
 DYN_DECLARE_STRUCT_ITER (dpm_cfl, dpm_ws_violations);
 
+/* Cand sets
+
+   A 'candset' can efficiently maintain a set of candidates.  Adding,
+   removing, resetting, and testing membership are all guaranteed to
+   be O(1) operations.
+
+   Creating a candset is relatively expensive, but resetting it is
+   dirt cheap.  Thus, the idea is that a given candset is reused very
+   often.
+ */
+
+DYN_DECLARE_TYPE (dpm_candset);
+
+dpm_candset dpm_candset_new ();
+
+void dpm_candset_reset (dpm_candset s);
+void dpm_candset_add (dpm_candset s, dpm_cand c);
+void dpm_candset_rem (dpm_candset s, dpm_cand c);
+bool dpm_candset_has (dpm_candset s, dpm_cand c);
+
 #endif /* !DPM_ALG_H */
