@@ -19,7 +19,7 @@ libdpm_la_SOURCES = dyn.h     \
 
 libdpm_la_LIBADD = -lz # -lbz2
 
-pkginclude_HEADERS = dpm.h dyn.h parse.h conf.h
+pkginclude_HEADERS = dpm.h dyn.h store.h parse.h db.h ws.h alg.h
 
 bin_PROGRAMS = dpm-tool
 
@@ -67,4 +67,5 @@ EXTRA_DIST = run-test 				\
              test-data/src.tar
 
 DISTCLEANFILES = test-data/output.txt \
-	 	 test-data/store.db
+	 	 test-data/store.db   \
+                 test-data/test.db

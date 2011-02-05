@@ -24,7 +24,6 @@
 #include "store.h"
 #include "db.h"
 #include "parse.h"
-#include "acq.h"
 
 dyn_var dpm_database_name[1];
 
