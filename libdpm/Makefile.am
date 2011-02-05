@@ -13,7 +13,9 @@ libdpm_la_SOURCES = dyn.h     \
                     db.h      \
                     db.c      \
 		    ws.h      \
-		    ws.c
+		    ws.c      \
+                    alg.h     \
+                    alg.c
 
 libdpm_la_LIBADD = -lz # -lbz2
 
