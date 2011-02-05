@@ -117,3 +117,5 @@
 /libdpm/dpm-tool
 /libdpm/ws.lo
 /libdpm/ws.o
+/libdpm/test.db
+/libdpm/dpm-script
