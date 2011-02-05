@@ -6,4 +6,11 @@ if [ -z "$TESTPROG" ]; then
   TESTPROG=test
 fi
 
-./$TESTPROG $(basename $1 | sed s/-/_/g)
+if [ "$1" = -g ]; then
+  gdb="libtool --mode=execute gdb --args"
+  shift
+else
+  gdb=""
+fi
+
+$gdb ./$TESTPROG $(basename $1 | sed s/-/_/g)
