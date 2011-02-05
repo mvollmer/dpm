@@ -149,6 +149,8 @@ dpm_version dpm_cand_version (dpm_cand);
 
 void dpm_ws_start ();
 
+void dpm_cand_print_id (dpm_cand c);
+
 /* Deps and cfls.
  */
 

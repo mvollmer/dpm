@@ -1792,16 +1792,44 @@ check_deps (const char *from, ...)
 	  dep_found[i] = true;
 	  return true;
 	}
-    EXPECT (false, "unexpected dep");
     return false;
   }
 
   dpm_cand f = find_cand (from);
   dyn_foreach_ (d, dpm_cand_deps, f)
-    find_dep (d);
+    if (!find_dep (d))
+      goto wrong;
 
   for (int i = 0; i < n_deps; i++)
-    EXPECT (dep_found[i], "expected dep not there");
+    if (!dep_found[i])
+      goto wrong;
+
+  return;
+
+ wrong:
+  dyn_print ("expected deps:\n");
+  for (int i = 0; i < n_deps; i++)
+    {
+      for (int j = 0; j < n_alts[i]; j++)
+	{
+	  dyn_print (" ");
+	  dpm_cand_print_id (deps[i][j]);
+	}
+      dyn_print ("\n");
+    }
+
+  dyn_print ("actual deps:\n");
+  dyn_foreach_ (d, dpm_cand_deps, f)
+    {
+      dyn_foreach_ (a, dpm_dep_alts, d)
+	{
+	  dyn_print (" ");
+	  dpm_cand_print_id (a);
+	}
+      dyn_print ("\n");
+    }
+
+  EXPECT (false, "unexpected deps");
 }
 
 DEFTEST (ws_cands)

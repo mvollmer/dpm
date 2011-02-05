@@ -534,8 +534,8 @@ dpm_ws_is_selected (dpm_cand cand)
 /* Dumping
  */
 
-static void
-dump_cand_hint (dpm_cand c)
+void
+dpm_cand_print_id (dpm_cand c)
 {
   ss_val n = dpm_pkg_name (c->pkg->pkg);
   if (c->ver)
@@ -560,7 +560,7 @@ dump_pkg (dpm_pkg p)
 	  dyn_foreach_ (a, dpm_dep_alts, d)
 	    {
 	      dyn_print (" ");
-	      dump_cand_hint (a);
+	      dpm_cand_print_id (a);
 	    }
 	  dyn_print ("\n");
 	  dyn_print ("    ");
@@ -570,7 +570,7 @@ dump_pkg (dpm_pkg p)
       dyn_foreach_ (r, dpm_cand_revdeps, c)
 	{
 	  dyn_print ("  < ");
-	  dump_cand_hint (r->cand);
+	  dpm_cand_print_id (r->cand);
 	  dyn_print ("\n");
 	}
     }
