@@ -30,9 +30,8 @@
    A workspace is a place where one can play with package versions and
    their relations.
 
-   For each package in the database, a workspace maintains a list of
-   some of its versions, called the "candidates" of that package.  You
-   can control which versions of a package are among its candidates.
+   For each package in the database, a workspace stores a list of some
+   of its versions, called the "candidates" of that package.
 
    There is one special candidate per package, the "null candidate".
    This null candidate is used to represent the absence of that
@@ -54,17 +53,9 @@
    "complete".
 
    For each candidate, the workspace maintains the state of its
-   relation with other candidates.  It does this in two complementary
-   forms: as dependencies ("deps" for short) and as conflicts
-   ("cfls").
-
-   These two forms each contain the same information: It is enough to
-   look at only one of them to know about all relations.  A workspace
-   provides both forms since some algorithms are easier to express
-   with one, while others are easier with the other.
-
-   Each candidate has a list of deps.  Each dep is a list of
-   candidates, which are the alternatives ("alts") of that dep.
+   dependencies on other candidates.  Each candidate has a list of
+   dependencies ("deps" for short).  Each dep is a list of candidates,
+   which are the alternatives ("alts") of that dep.
 
    Note that deps refer to other concrete candidates, not to things
    like "version 1.2 of foo or later".  For example, say versions 2.0,
@@ -86,39 +77,11 @@
    Continuing the example above, these are foo_2.0, foo_1.3, and
    foo_null, the null candidate of foo.
 
-   A dep is "satisfied" when one of its alternatives is selected.
+   A dep is called "satisfied" when one of its alts is selected.
 
-   A complete workspace is called "non-broken" when all deps of all
-   selected candidates are satisfied.  (Otherwise it is called
-   "broken".)
+   A cand is called "satisfied" when all of its deps are satisfied.
 
-   Thus, to get a complete, non-broken workspace, one has to select
-   candidates in such a way that all their deps are satisfied.
-
-   The same information as contained in the deps is expressed a second
-   time with conflicts, called "cfls".  A cfl is a set of candidates
-   that can't be all selected at the same time, called the "peers" of
-   the cfl.
-
-   For example, if package bar has candidates bar_2, bar_1, and
-   bar_null, and candidate foo_1 has a dep with alternatives bar_2 and
-   bar_1, then there is also a cfl with peers foo_1 and bar_null, with
-   the meaning that bar_null can not be selected when foo_1 is, and
-   foo_1 can not be selected when bar_null is.
-
-   Thus, cfls are not associated with a specific candidate, like deps
-   are.  However, a workspace can efficiently list all cfls that have
-   a given candidate as their member.
-
-   A cfl is "violated" when all of its candidates are selected.
-
-   If a workspace is complete and none of its cfls are violated, then
-   it is also not broken.
-
-   Thus, a second way to get a complete, non-broken workspace is to
-   select candidates such that no cfl is violated.  The workspace can
-   tell you efficiently which cfls would become violated if a given
-   candidate would be selected.
+   A cand is "broken" when it is selected but not satisfied.
 */
 
 DYN_DECLARE_TYPE (dpm_ws);
@@ -147,15 +110,17 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
 dpm_package dpm_cand_package (dpm_cand);
 dpm_version dpm_cand_version (dpm_cand);
 
+dpm_cand dpm_ws_cand (dpm_version ver);
+dpm_cand dpm_ws_null_cand (dpm_package pkg);
+
 void dpm_ws_start ();
 
 void dpm_cand_print_id (dpm_cand c);
 
-/* Deps and cfls.
+/* Deps.
  */
 
 typedef struct dpm_dep_struct *dpm_dep;
-typedef struct dpm_cfl_struct *dpm_cfl;
 
 typedef struct dpm_cand_node_struct {
   struct dpm_cand_node_struct *next;
@@ -166,9 +131,6 @@ typedef struct dpm_dep_node_struct {
   struct dpm_dep_node_struct *next;
   dpm_dep elt;
 } *dpm_dep_node;
-
-dpm_cand dpm_ws_cand (dpm_version ver);
-dpm_cand dpm_ws_null_cand (dpm_package pkg);
 
 DYN_DECLARE_STRUCT_ITER (dpm_dep, dpm_cand_deps, dpm_cand cand)
 {
@@ -186,12 +148,7 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
   int i;
 };
 
-DYN_DECLARE_STRUCT_ITER (dpm_cfl, dpm_cand_cfls, dpm_cand cand);
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_cfl_peers, dpm_cfl cfl);
-
 /* Selecting cands.
-
-   Deps and cfls have to be setup before selecting candidates.
  */
 
 void dpm_ws_select (dpm_cand cand);
@@ -200,7 +157,10 @@ dpm_cand dpm_ws_selected (dpm_package pkg);
 
 bool dpm_ws_is_selected (dpm_cand cand);
 
-DYN_DECLARE_STRUCT_ITER (dpm_cfl, dpm_ws_violations);
+bool dpm_dep_satisfied (dpm_dep d);
+bool dpm_cand_satisfied (dpm_cand c);
+
+DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_broken);
 
 /* Cand sets
 

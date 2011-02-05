@@ -65,6 +65,7 @@ struct dpm_cand_struct {
 
   dpm_dep_node deps;
   dpm_dep_node revdeps;
+  int n_unsatisfied;
 };
 
 struct dpm_pkg_struct {
@@ -81,9 +82,6 @@ struct dpm_dep_struct {
   int n_alts;
   int n_selected;
   dpm_cand alts[0];
-};
-
-struct dpm_cfl_struct {
 };
 
 static dpm_pkg
@@ -357,7 +355,8 @@ compute_deps (dpm_ws ws)
 			d->n_alts = n_alts;
 			
 			c->deps = cons_dep (ws, d, c->deps);
-		    
+			c->n_unsatisfied++;
+
 			for (int i = 0; i < n_alts; i++)
 			  d->alts[i]->revdeps =
 			    cons_dep (ws, d, d->alts[i]->revdeps);
@@ -468,14 +467,6 @@ dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
   return iter->n->elt;
 }
 
-/* Cfls
- */
-
-static void
-compute_cfls ()
-{
-}
-
 /* Starting
  */
 
@@ -486,7 +477,6 @@ dpm_ws_start ()
   
   find_providers (ws);
   compute_deps (ws);
-  compute_cfls (ws);
 }
 
 /* Selecting
@@ -497,7 +487,11 @@ pkg_unselect (dpm_pkg p)
 {
   if (p->selected)
     dyn_foreach_ (d, dpm_cand_revdeps, p->selected)
-      d->n_selected--;
+      {
+	d->n_selected--;
+	if (d->n_selected == 0)
+	  d->cand->n_unsatisfied++;
+      }
   p->selected = NULL;
 }
 
@@ -512,7 +506,11 @@ dpm_ws_select (dpm_cand c)
   pkg_unselect (p);
   p->selected = c;
   dyn_foreach_ (d, dpm_cand_revdeps, c)
-    d->n_selected++;
+    {
+      if (d->n_selected == 0)
+	d->cand->n_unsatisfied--;
+      d->n_selected++;
+    }
 }
 
 void
@@ -535,6 +533,45 @@ bool
 dpm_ws_is_selected (dpm_cand cand)
 {
   return cand->pkg->selected == cand;
+}
+
+bool
+dpm_dep_satisfied (dpm_dep d)
+{
+  return d->n_selected > 0;
+}
+
+bool
+dpm_cand_satisfied (dpm_cand c)
+{
+  return c->n_unsatisfied == 0;
+}
+
+void
+dpm_ws_broken_cands_init (dpm_ws_broken_cand *iter)
+{
+  dpm_ws ws = dpm_ws_current ();
+  iter->cur = ws->broken_cands;
+}
+
+void
+dpm_ws_broken_cands_fini (dpm_ws_broken_cand *iter)
+{
+}
+
+void
+dpm_ws_broken_cands_step (dpm_ws_broken_cand *iter)
+{
+}
+
+bool
+dpm_ws_broken_cands_done (dpm_ws_broken_cand *iter)
+{
+}
+
+dpm_cand
+dpm_ws_broken_cands_elt (dpm_ws_broken_cand *iter)
+{
 }
 
 /* Dumping

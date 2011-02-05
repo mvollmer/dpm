@@ -1898,3 +1898,60 @@ DEFTEST (ws_deps)
 		  NULL);
     }
 }
+
+DEFTEST (ws_select)
+{
+  dyn_block
+    {
+      setup_ws (L(Package: foo            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L(Depends: bar (>= 1.1)   )
+		L(Conflicts: not-there    )
+		L()
+		L(Package: bar            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L()
+		L(Package: bar            )
+		L(Version: 1.1            )
+		L(Architecture: all       )
+		L(Conflicts: baz          )
+		L()
+		L(Package: baz            )
+		L(Version: 1.0            )
+		L(Architecture: all       )
+		L(Provides: bar           ));
+
+      dpm_cand foo_10 = find_cand ("foo_1.0");
+      dpm_cand foo_null = find_cand ("foo_null");
+      dpm_cand bar_10 = find_cand ("bar_1.0");
+      dpm_cand bar_11 = find_cand ("bar_1.1");
+      dpm_cand bar_null = find_cand ("bar_null");
+      dpm_cand baz_10 = find_cand ("baz_1.0");
+      dpm_cand baz_null = find_cand ("baz_null");
+
+      dpm_ws_select (foo_null);
+      dpm_ws_select (bar_null);
+      dpm_ws_select (baz_null);
+
+      EXPECT (!dpm_cand_satisfied (foo_10));
+      EXPECT (dpm_cand_satisfied (bar_11));
+      EXPECT (dpm_cand_satisfied (bar_10));
+      EXPECT (dpm_cand_satisfied (baz_10));
+
+      dpm_ws_select (bar_11);
+      EXPECT (dpm_cand_satisfied (foo_10));
+      dpm_ws_select (bar_10);
+      EXPECT (!dpm_cand_satisfied (foo_10));
+      dpm_ws_select (bar_null);
+      EXPECT (!dpm_cand_satisfied (foo_10));
+
+      dpm_ws_select (baz_10);
+      EXPECT (dpm_cand_satisfied (foo_10));
+      EXPECT (!dpm_cand_satisfied (bar_11));
+      dpm_ws_select (baz_null);
+      EXPECT (!dpm_cand_satisfied (foo_10));
+      EXPECT (dpm_cand_satisfied (bar_11));
+    }
+}
