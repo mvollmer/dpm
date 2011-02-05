@@ -160,8 +160,6 @@ bool dpm_ws_is_selected (dpm_cand cand);
 bool dpm_dep_satisfied (dpm_dep d);
 bool dpm_cand_satisfied (dpm_cand c);
 
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_broken);
-
 /* Cand sets
 
    A 'candset' can efficiently maintain a set of candidates.  Adding,

@@ -547,33 +547,6 @@ dpm_cand_satisfied (dpm_cand c)
   return c->n_unsatisfied == 0;
 }
 
-void
-dpm_ws_broken_cands_init (dpm_ws_broken_cand *iter)
-{
-  dpm_ws ws = dpm_ws_current ();
-  iter->cur = ws->broken_cands;
-}
-
-void
-dpm_ws_broken_cands_fini (dpm_ws_broken_cand *iter)
-{
-}
-
-void
-dpm_ws_broken_cands_step (dpm_ws_broken_cand *iter)
-{
-}
-
-bool
-dpm_ws_broken_cands_done (dpm_ws_broken_cand *iter)
-{
-}
-
-dpm_cand
-dpm_ws_broken_cands_elt (dpm_ws_broken_cand *iter)
-{
-}
-
 /* Dumping
  */
 
