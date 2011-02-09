@@ -1436,8 +1436,8 @@ DEFTEST (db_init)
       dyn_let (dpm_database_name, testdst ("test.db"));
       dpm_db_open ();
       EXPECT (dpm_db_current () != NULL);
-      EXPECT (dpm_db_package_max_id () == 0);
-      EXPECT (dpm_db_version_max_id () == 0);
+      EXPECT (dpm_db_package_id_limit () == 0);
+      EXPECT (dpm_db_version_id_limit () == 0);
       dpm_db_done ();
 
       EXPECT (dpm_db_current () == NULL);

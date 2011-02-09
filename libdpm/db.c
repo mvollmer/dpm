@@ -233,14 +233,14 @@ dpm_db_done ()
 }
 
 int
-dpm_db_package_max_id ()
+dpm_db_package_id_limit ()
 {
   dpm_db db = dyn_get (cur_db);
   return ss_tag_count (db->store, 65);
 }
 
 int
-dpm_db_version_max_id ()
+dpm_db_version_id_limit ()
 {
   dpm_db db = dyn_get (cur_db);
   return ss_tag_count (db->store, 64);

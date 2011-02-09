@@ -115,6 +115,9 @@ dpm_cand dpm_ws_null_cand (dpm_package pkg);
 
 void dpm_ws_start ();
 
+int dpm_ws_cand_id_limit ();
+int dpm_cand_id (dpm_cand c);
+
 void dpm_cand_print_id (dpm_cand c);
 
 /* Deps.
@@ -160,24 +163,4 @@ bool dpm_ws_is_selected (dpm_cand cand);
 bool dpm_dep_satisfied (dpm_dep d);
 bool dpm_cand_satisfied (dpm_cand c);
 
-/* Cand sets
-
-   A 'candset' can efficiently maintain a set of candidates.  Adding,
-   removing, resetting, and testing membership are all guaranteed to
-   be O(1) operations.
-
-   Creating a candset is relatively expensive, but resetting it is
-   dirt cheap.  Thus, the idea is that a given candset is reused very
-   often.
- */
-
-DYN_DECLARE_TYPE (dpm_candset);
-
-dpm_candset dpm_candset_new ();
-
-void dpm_candset_reset (dpm_candset s);
-void dpm_candset_add (dpm_candset s, dpm_cand c);
-void dpm_candset_rem (dpm_candset s, dpm_cand c);
-bool dpm_candset_has (dpm_candset s, dpm_cand c);
-
-#endif /* !DPM_ALG_H */
+#endif /* !DPM_WS_H */

@@ -54,8 +54,8 @@ void dpm_db_open ();
 void dpm_db_checkpoint ();
 void dpm_db_done ();
 
-int dpm_db_package_max_id ();
-int dpm_db_version_max_id ();
+int dpm_db_package_id_limit ();
+int dpm_db_version_id_limit ();
 
 ss_val dpm_db_intern (const char *string);
 

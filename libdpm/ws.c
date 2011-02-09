@@ -21,6 +21,7 @@
 #include <obstack.h>
 
 #include "ws.h"
+#include "alg.h"
 
 #define obstack_chunk_alloc dyn_malloc
 #define obstack_chunk_free free
@@ -114,11 +115,11 @@ dpm_ws_create ()
 
   obstack_init (&ws->mem);
 
-  ws->n_pkgs = dpm_db_package_max_id ();
+  ws->n_pkgs = dpm_db_package_id_limit ();
   ws->pkgs = obstack_alloc (&ws->mem, ws->n_pkgs*sizeof(struct dpm_pkg_struct));
   memset (ws->pkgs, 0, ws->n_pkgs*sizeof(struct dpm_pkg_struct));
 
-  ws->n_vers = dpm_db_version_max_id ();
+  ws->n_vers = dpm_db_version_id_limit ();
   ws->ver_cands =
     obstack_alloc (&ws->mem, ws->n_vers*sizeof(struct dpm_cand_struct));
   memset (ws->ver_cands, 0, ws->n_vers*sizeof(struct dpm_cand_struct));
@@ -241,6 +242,19 @@ dpm_version
 dpm_cand_version (dpm_cand c)
 {
   return c->ver;
+}
+
+int
+dpm_cand_id (dpm_cand c)
+{
+  return c->id;
+}
+
+int
+dpm_ws_cand_id_limit ()
+{
+  dpm_ws ws = dpm_ws_current ();
+  return ws->next_id;
 }
 
 /* Deps
@@ -613,63 +627,4 @@ dpm_ws_dump_pkg (dpm_package p)
 {
   dpm_ws ws = dpm_ws_current ();
   dump_pkg (get_pkg (ws, p));
-}
-
-/* Cand sets
- */
-
-struct dpm_candset_struct {
-  int *tags;
-  int tag;
-};
-
-static void
-dpm_candset_unref (dyn_type *type, void *object)
-{
-  dpm_candset s = object;
-  free (s->tags);
-}
-
-static int
-dpm_candset_equal (void *a, void *b)
-{
-  return 0;
-}
-
-DYN_DEFINE_TYPE (dpm_candset, "candset");
-
-dpm_candset
-dpm_candset_new ()
-{
-  dpm_ws ws = dpm_ws_current ();
-  dpm_candset s = dyn_new (dpm_candset);
-  s->tags = calloc (ws->next_id, sizeof (int));
-  s->tag = 1;
-  return s;
-}
-
-void
-dpm_candset_reset (dpm_candset s)
-{
-  s->tag++;
-  if (s->tag == 0)
-    abort ();
-}
-
-void
-dpm_candset_add (dpm_candset s, dpm_cand c)
-{
-  s->tags[c->id] = s->tag;
-}
-
-void
-dpm_candset_rem (dpm_candset s, dpm_cand c)
-{
-  s->tags[c->id] = 0;
-}
-
-bool
-dpm_candset_has (dpm_candset s, dpm_cand c)
-{
-  return s->tags[c->id] == s->tag;
 }

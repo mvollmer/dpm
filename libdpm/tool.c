@@ -291,10 +291,10 @@ search (const char *pattern)
 
   dpm_db_open ();
 
-  bool seen[dpm_db_package_max_id()];
+  bool seen[dpm_db_package_id_limit()];
   memset (seen, 0, sizeof(seen));
 
-  dpm_version hits[dpm_db_version_max_id()];
+  dpm_version hits[dpm_db_version_id_limit()];
   int n_hits = 0;
 
   dyn_foreach_ (v, dpm_db_versions)
