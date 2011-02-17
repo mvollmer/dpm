@@ -57,6 +57,15 @@ dyn_malloc (size_t size)
 }
 
 void *
+dyn_calloc (size_t size)
+{
+  void *mem = calloc (size, 1);
+  if (mem == NULL)
+    dyn_oom ();
+  return mem;
+}
+
+void *
 dyn_realloc (void *old, size_t size)
 {
   void *mem = realloc (old, size);
