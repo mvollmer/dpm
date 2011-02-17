@@ -1955,3 +1955,84 @@ DEFTEST (ws_select)
       EXPECT (dpm_cand_satisfied (bar_11));
     }
 }
+
+void
+next_permutation (int *p, int n)
+{
+  int j = n-1;
+  while (p[j] >= p[j+1])
+    j--;
+  if (j == 0)
+    return;
+  int l = n;
+  while (p[j] >= p[l])
+    l--;
+  int t = p[j]; p[j] = p[l]; p[l] = t;
+  int k = j+1;
+  l = n;
+  while (k < l)
+    {
+      int t = p[k]; p[k] = p[l]; p[l] = t;
+      l -= 1;
+      k += 1;
+    }
+}
+
+DEFTEST (alg_queue)
+{
+  dyn_block
+    {
+      setup_ws (L(Package: foo          )
+		L(Version: 1            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 2            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 3            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 4            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 5            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 6            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 7            )
+		L(Architecture: all     )
+		L()
+		L(Package: foo          )
+		L(Version: 8            )
+		L(Architecture: all     )
+		L());
+
+      dpm_candpq q = dpm_candpq_new ();
+
+      dpm_cand c[9];
+      for (int i = 1; i < 9; i++)
+	c[i] = find_cand (dyn_format ("foo_%d", i));
+
+      int p[9] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+
+      for (int m = 0; m < 1000; m++)
+	{
+	  for (int i = 1; i < 9; i++)
+	    dpm_candpq_push (q, c[p[i]], p[i]);
+
+	  for (int i = 8; i > 0; i--)
+	    EXPECT (dpm_candpq_pop (q) == c[i]);
+	  
+	  for (int i = 0; i < 37; i++)
+	    next_permutation (p, 8);
+	}
+    }
+}

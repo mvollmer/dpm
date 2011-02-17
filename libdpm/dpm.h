@@ -23,5 +23,6 @@
 #include "store.h"
 #include "db.h"
 #include "ws.h"
+#include "alg.h"
 
 #endif /* !DPM_H */

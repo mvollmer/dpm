@@ -46,7 +46,7 @@ dpm_candset
 dpm_candset_new ()
 {
   dpm_candset s = dyn_new (dpm_candset);
-  s->tags = calloc (dpm_ws_cand_id_limit (), sizeof (int));
+  s->tags = dyn_calloc (dpm_ws_cand_id_limit()*sizeof(int));
   s->tag = 1;
   return s;
 }
@@ -75,4 +75,111 @@ bool
 dpm_candset_has (dpm_candset s, dpm_cand c)
 {
   return s->tags[dpm_cand_id(c)] == s->tag;
+}
+
+/* Cand priority queues
+
+   XXX - don't allow candidates to be in the queue more than once.
+*/
+
+struct dpm_candpq_struct {
+  int *prio;
+  dpm_cand *cand;
+  int n;
+};
+
+static void
+dpm_candpq_unref (dyn_type *type, void *object)
+{
+  dpm_candpq q = object;
+  free (q->prio);
+  free (q->cand);
+}
+
+static int
+dpm_candpq_equal (void *a, void *b)
+{
+  return 0;
+}
+
+DYN_DEFINE_TYPE (dpm_candpq, "candpq");
+
+dpm_candpq
+dpm_candpq_new ()
+{
+  dpm_candpq q = dyn_new (dpm_candpq);
+  q->prio = dyn_malloc (dpm_ws_cand_id_limit()*sizeof(int));
+  q->cand = dyn_malloc (dpm_ws_cand_id_limit()*sizeof(dpm_cand));
+  q->n = 0;
+  return q;
+}
+
+void
+dpm_candpq_push (dpm_candpq q, dpm_cand c, int prio)
+{
+  int j = q->n;
+  while (true)
+    {
+      int i = (j-1)/2;
+      if (j == 0 || q->prio[i] >= prio)
+	{
+	  q->prio[j] = prio;
+	  q->cand[j] = c;
+	  break;
+	}
+      q->prio[j] = q->prio[i];
+      q->cand[j] = q->cand[i];
+      j = i;
+    }
+  q->n += 1;
+}
+
+dpm_cand
+dpm_candpq_pop (dpm_candpq q)
+{
+  dpm_cand ret = q->cand[0];
+
+  q->n -= 1;
+  if (q->n > 0)
+    {
+      dpm_cand cand = q->cand[q->n];
+      int prio = q->prio[q->n];
+
+      int i = 0;
+      while (true)
+	{
+	  int j = 2*i+1;
+	  if (j+1 < q->n && q->prio[j+1] > q->prio[j])
+	    j = j+1;
+	  if (j >= q->n || prio >= q->prio[j])
+	    {
+	      q->prio[i] = prio;
+	      q->cand[i] = cand;
+	      break;
+	    }
+	  q->prio[i] = q->prio[j];
+	  q->cand[i] = q->cand[j];
+	  i = j;
+	}
+    }
+
+  return ret;
+}
+
+dpm_cand
+dpm_candpq_peek (dpm_candpq q)
+{
+  if (q->n > 0)
+    return q->cand[0];
+  else
+    return NULL;
+}
+
+int
+dpm_candpq_peek_prio (dpm_candpq q)
+{
+  if (q->n > 0)
+    return q->prio[0];
+  else
+    return 0;
 }
