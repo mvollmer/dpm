@@ -114,55 +114,49 @@ dpm_candpq_new ()
   return q;
 }
 
-void
-dpm_candpq_push (dpm_candpq q, dpm_cand c, int prio)
+static void
+dpm_candpq_reheap (dpm_candpq q, int j, dpm_cand cand, int prio)
 {
-  int j = q->n;
   while (true)
     {
       int i = (j-1)/2;
       if (j == 0 || q->prio[i] >= prio)
-	{
-	  q->prio[j] = prio;
-	  q->cand[j] = c;
-	  break;
-	}
+	break;
       q->prio[j] = q->prio[i];
       q->cand[j] = q->cand[i];
       j = i;
     }
+  
+  while (true)
+    {
+      int i = 2*j+1;
+      if (i+1 < q->n && q->prio[i+1] > q->prio[i])
+	i = i+1;
+      if (i >= q->n || prio >= q->prio[i])
+	break;
+      q->prio[j] = q->prio[i];
+      q->cand[j] = q->cand[i];
+      j = i;
+    }
+
+  q->prio[j] = prio;
+  q->cand[j] = cand;
+}
+
+void
+dpm_candpq_push (dpm_candpq q, dpm_cand c, int prio)
+{
   q->n += 1;
+  dpm_candpq_reheap (q, q->n-1, c, prio);
 }
 
 dpm_cand
 dpm_candpq_pop (dpm_candpq q)
 {
   dpm_cand ret = q->cand[0];
-
   q->n -= 1;
   if (q->n > 0)
-    {
-      dpm_cand cand = q->cand[q->n];
-      int prio = q->prio[q->n];
-
-      int i = 0;
-      while (true)
-	{
-	  int j = 2*i+1;
-	  if (j+1 < q->n && q->prio[j+1] > q->prio[j])
-	    j = j+1;
-	  if (j >= q->n || prio >= q->prio[j])
-	    {
-	      q->prio[i] = prio;
-	      q->cand[i] = cand;
-	      break;
-	    }
-	  q->prio[i] = q->prio[j];
-	  q->cand[i] = q->cand[j];
-	  i = j;
-	}
-    }
-
+    dpm_candpq_reheap (q, 0, q->cand[q->n], q->prio[q->n]);
   return ret;
 }
 

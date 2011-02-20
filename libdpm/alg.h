@@ -48,12 +48,9 @@ bool dpm_candset_has (dpm_candset s, dpm_cand c);
 
 /* Cand priority queues
 
-   A 'candpq' maintains a priority queue of candidates.  When
-   adding a cand, you can specify a priority for it, and the candpq
-   can give you the highest priority item at any time.
-
-   Cands that are pushed on the queue with the same priority are
-   returned in the same order as they have been added.
+   A 'candpq' maintains a priority queue of candidates.  You can set
+   priorities for candidates, and the candpq can efficiently give you
+   the highest priority item at any time.
 */
 
 DYN_DECLARE_TYPE (dpm_candpq);
