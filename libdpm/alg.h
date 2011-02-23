@@ -57,9 +57,13 @@ DYN_DECLARE_TYPE (dpm_candpq);
 
 dpm_candpq dpm_candpq_new ();
 
-void dpm_candpq_push (dpm_candpq q, dpm_cand c, int prio);
+void dpm_candpq_set (dpm_candpq q, dpm_cand c, int prio);
+
 dpm_cand dpm_candpq_pop (dpm_candpq q);
 dpm_cand dpm_candpq_peek (dpm_candpq q);
+
+bool dpm_candpq_pop_x (dpm_candpq q, dpm_cand *candp, int *priop);
+bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 
 /* Find the shortest path from A to B and print it.
  */

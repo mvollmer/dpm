@@ -82,18 +82,24 @@ dpm_candset_has (dpm_candset s, dpm_cand c)
    XXX - don't allow candidates to be in the queue more than once.
 */
 
+struct cand_prio {
+  dpm_cand cand;
+  int prio;
+};
+
 struct dpm_candpq_struct {
-  int *prio;
-  dpm_cand *cand;
+  struct cand_prio *cp;
+  int cp_capacity;
   int n;
+  int *pos;
 };
 
 static void
 dpm_candpq_unref (dyn_type *type, void *object)
 {
   dpm_candpq q = object;
-  free (q->prio);
-  free (q->cand);
+  free (q->cp);
+  free (q->pos);
 }
 
 static int
@@ -108,72 +114,106 @@ dpm_candpq
 dpm_candpq_new ()
 {
   dpm_candpq q = dyn_new (dpm_candpq);
-  q->prio = dyn_malloc (dpm_ws_cand_id_limit()*sizeof(int));
-  q->cand = dyn_malloc (dpm_ws_cand_id_limit()*sizeof(dpm_cand));
+  q->cp = NULL;
+  q->cp_capacity = 0;
   q->n = 0;
+  q->pos = dyn_calloc (dpm_ws_cand_id_limit()*sizeof(int));
   return q;
 }
 
 static void
-dpm_candpq_reheap (dpm_candpq q, int j, dpm_cand cand, int prio)
+dpm_candpq_reheap (dpm_candpq q, int j, struct cand_prio cp)
 {
   while (true)
     {
       int i = (j-1)/2;
-      if (j == 0 || q->prio[i] >= prio)
+      if (j == 0 || q->cp[i].prio >= cp.prio)
 	break;
-      q->prio[j] = q->prio[i];
-      q->cand[j] = q->cand[i];
+      q->cp[j] = q->cp[i];
+      q->pos[dpm_cand_id(q->cp[j].cand)] = j+1;
       j = i;
     }
   
   while (true)
     {
       int i = 2*j+1;
-      if (i+1 < q->n && q->prio[i+1] > q->prio[i])
+      if (i+1 < q->n && q->cp[i+1].prio > q->cp[i].prio)
 	i = i+1;
-      if (i >= q->n || prio >= q->prio[i])
+      if (i >= q->n || cp.prio >= q->cp[i].prio)
 	break;
-      q->prio[j] = q->prio[i];
-      q->cand[j] = q->cand[i];
+      q->cp[j] = q->cp[i];
+      q->pos[dpm_cand_id(q->cp[j].cand)] = j+1;
       j = i;
     }
 
-  q->prio[j] = prio;
-  q->cand[j] = cand;
+  q->cp[j] = cp;
+  q->pos[dpm_cand_id(q->cp[j].cand)] = j+1;
 }
 
 void
-dpm_candpq_push (dpm_candpq q, dpm_cand c, int prio)
+dpm_candpq_set (dpm_candpq q, dpm_cand cand, int prio)
 {
-  q->n += 1;
-  dpm_candpq_reheap (q, q->n-1, c, prio);
+  int j = q->pos[dpm_cand_id(cand)];
+  if (j == 0)
+    {
+      q->n += 1;
+      j = q->n;
+      dyn_mgrow (&q->cp, &q->cp_capacity, sizeof (struct cand_prio), q->n);
+    }
+
+  struct cand_prio cp;
+  cp.prio = prio;
+  cp.cand = cand;
+  dpm_candpq_reheap (q, j-1, cp);
+}
+
+bool
+dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop)
+{
+  if (q->n > 0)
+    {
+      if (candp)
+	*candp = q->cp[0].cand;
+      if (priop)
+	*priop = q->cp[0].prio;
+      
+      return true;
+    }
+  else
+    return false;
+}
+
+bool
+dpm_candpq_pop_x (dpm_candpq q, dpm_cand *candp, int *priop)
+{
+  if (dpm_candpq_peek_x (q, candp, priop))
+    {
+      q->n -= 1;
+      q->pos[dpm_cand_id(q->cp[0].cand)] = 0;
+      if (q->n > 0)
+	dpm_candpq_reheap (q, 0, q->cp[q->n]);
+      return true;
+    }
+  else
+    return false;
 }
 
 dpm_cand
 dpm_candpq_pop (dpm_candpq q)
 {
-  dpm_cand ret = q->cand[0];
-  q->n -= 1;
-  if (q->n > 0)
-    dpm_candpq_reheap (q, 0, q->cand[q->n], q->prio[q->n]);
-  return ret;
+  dpm_cand c;
+  if (dpm_candpq_pop_x (q, &c, NULL))
+    return c;
+  else
+    return NULL;
 }
 
 dpm_cand
 dpm_candpq_peek (dpm_candpq q)
 {
-  if (q->n > 0)
-    return q->cand[0];
+  dpm_cand c;
+  if (dpm_candpq_peek_x (q, &c, NULL))
+    return c;
   else
     return NULL;
-}
-
-int
-dpm_candpq_peek_prio (dpm_candpq q)
-{
-  if (q->n > 0)
-    return q->prio[0];
-  else
-    return 0;
 }

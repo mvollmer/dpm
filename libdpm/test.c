@@ -2026,13 +2026,37 @@ DEFTEST (alg_queue)
       for (int m = 0; m < 1000; m++)
 	{
 	  for (int i = 1; i < 9; i++)
-	    dpm_candpq_push (q, c[p[i]], p[i]);
+	    dpm_candpq_set (q, c[p[i]], p[i]);
 
 	  for (int i = 8; i > 0; i--)
-	    EXPECT (dpm_candpq_pop (q) == c[i]);
+	    {
+	      dpm_cand cand;
+	      int prio;
+	      EXPECT (dpm_candpq_pop_x (q, &cand, &prio));
+	      EXPECT (cand == c[i]);
+	      EXPECT (prio == i);
+	    }
 	  
 	  for (int i = 0; i < 37; i++)
 	    next_permutation (p, 8);
+	}
+
+      for (int m = 0; m < 1000; m++)
+	{
+	  for (int i = 1; i < 9; i++)
+	    dpm_candpq_set (q, c[p[i]], p[i] + m*10);
+
+	  for (int i = 0; i < 37; i++)
+	    next_permutation (p, 8);
+	}
+
+      for (int i = 8; i > 0; i--)
+	{
+	  dpm_cand cand;
+	  int prio;
+	  EXPECT (dpm_candpq_pop_x (q, &cand, &prio));
+	  EXPECT (cand == c[i]);
+	  EXPECT (prio == i + 9990);
 	}
     }
 }
