@@ -56,6 +56,32 @@ dyn_malloc (size_t size)
   return mem;
 }
 
+static int
+grow_capacity (int c)
+{
+  if (c == 0)
+    return 10;
+  else if (c < 10000)
+    return c * 2;
+  else
+    return c += 10000;
+}
+
+void
+dyn_mgrow (void **ptrp, int *capacityp, size_t size, int min_capacity)
+{
+  int capacity = *capacityp;
+  if (capacity < min_capacity)
+    {
+      while (capacity < min_capacity)
+	capacity = grow_capacity (capacity);
+      *ptrp = realloc (*ptrp, capacity*size);
+      if (*ptrp == NULL)
+	dyn_oom ();
+      *capacityp = capacity;
+    }
+}
+
 void *
 dyn_calloc (size_t size)
 {
