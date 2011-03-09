@@ -167,6 +167,30 @@ dpm_candpq_set (dpm_candpq q, dpm_cand cand, int prio)
   dpm_candpq_reheap (q, j-1, cp);
 }
 
+int
+dpm_candpq_set_max (dpm_candpq q, dpm_cand cand, int prio)
+{
+  int j = q->pos[dpm_cand_id(cand)];
+  int old_prio = (j > 0? q->cp[j-1].prio : 0);
+  if (j == 0 || old_prio < prio)
+    {
+      dpm_candpq_set (q, cand, prio);
+      return prio;
+    }
+  else
+    return old_prio;
+}
+
+int
+dpm_candpq_get (dpm_candpq q, dpm_cand cand)
+{
+  int j = q->pos[dpm_cand_id(cand)];
+  if (j == 0)
+    return 0;
+  else
+    return q->cp[j-1].prio;
+}
+
 bool
 dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop)
 {
@@ -216,4 +240,22 @@ dpm_candpq_peek (dpm_candpq q)
     return c;
   else
     return NULL;
+}
+
+/* Shortest paths
+ */
+
+void
+dpm_alg_print_relation (dpm_cand a, dpm_cand b)
+{
+  dyn_block
+    {
+      dpm_candset visited = dpm_candset_new ();
+      dpm_candpq queue = dpm_candpq_new ();
+
+      dpm_cand cur = a;
+      dpm_candpq_set (queue, a, 0);
+      {
+      }
+    }
 }

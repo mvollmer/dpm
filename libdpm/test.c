@@ -1722,8 +1722,32 @@ setup_ws (const char *meta)
   dpm_ws_start ();
 }
 
+void
+setup_ws_1 (const char *meta, const char *cand)
+{
+  dyn_let (dpm_database_name, testdst ("test.db"));
+
+  dpm_db_open ();
+  dpm_origin o = dpm_db_origin_find ("origin");
+
+  dyn_block
+    {
+      dpm_db_origin_update (o, I(meta));
+      dpm_db_checkpoint ();
+    }
+
+  dpm_ws_create ();
+  dyn_foreach_iter (p, dpm_db_origin_packages, o)
+    {
+      if (ss_streq (dpm_pkg_name (p.package), cand))
+	dyn_foreach_ (v, ss_elts, p.versions)
+	  dpm_ws_add_cand_and_deps (v);
+    }
+  dpm_ws_start ();
+}
+
 dpm_cand
-find_cand (const char *id)
+try_cand (const char *id)
 {
   char p[200];
   strcpy (p, id);
@@ -1743,8 +1767,15 @@ find_cand (const char *id)
 	  }
     }
 
-  EXPECT (false, "cand %s not found", id);
   return NULL;
+}
+
+dpm_cand
+find_cand (const char *id)
+{
+  dpm_cand c = try_cand (id);
+  EXPECT (c != NULL, "cand %s not found", id);
+  return c;
 }
 
 void
@@ -1899,6 +1930,38 @@ DEFTEST (ws_deps)
     }
 }
 
+DEFTEST (ws_cands_and_deps)
+{
+  dyn_block
+    {
+      setup_ws_1 (L(Package: foo            )
+		  L(Version: 1.0            )
+		  L(Architecture: all       )
+		  L(Depends: bar (>= 1.0)   )
+		  L(Conflicts: not-there    )
+		  L()
+		  L(Package: bar            )
+		  L(Version: 1.0            )
+		  L(Architecture: all       )
+		  L()
+		  L(Package: bar            )
+		  L(Version: 1.1            )
+		  L(Architecture: all       )
+		  L(Conflicts: baz          )
+		  L()
+		  L(Package: baz            )
+		  L(Version: 1.0            )
+		  L(Architecture: all       )
+		  L(Provides: bar           ),
+		  "foo");
+
+      EXPECT (try_cand ("foo_1.0") != NULL);
+      EXPECT (try_cand ("bar_1.1") != NULL);
+      EXPECT (try_cand ("bar_1.0") == NULL);
+      EXPECT (try_cand ("baz_1.0") != NULL);
+    }
+}
+
 DEFTEST (ws_select)
 {
   dyn_block
@@ -1924,16 +1987,11 @@ DEFTEST (ws_select)
 		L(Provides: bar           ));
 
       dpm_cand foo_10 = find_cand ("foo_1.0");
-      dpm_cand foo_null = find_cand ("foo_null");
       dpm_cand bar_10 = find_cand ("bar_1.0");
       dpm_cand bar_11 = find_cand ("bar_1.1");
       dpm_cand bar_null = find_cand ("bar_null");
       dpm_cand baz_10 = find_cand ("baz_1.0");
       dpm_cand baz_null = find_cand ("baz_null");
-
-      dpm_ws_select (foo_null);
-      dpm_ws_select (bar_null);
-      dpm_ws_select (baz_null);
 
       EXPECT (!dpm_cand_satisfied (foo_10));
       EXPECT (dpm_cand_satisfied (bar_11));

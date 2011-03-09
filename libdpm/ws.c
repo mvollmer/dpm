@@ -22,6 +22,7 @@
 
 #include "ws.h"
 #include "alg.h"
+#include "pol.h"
 
 #define obstack_chunk_alloc dyn_malloc
 #define obstack_chunk_free free
@@ -67,6 +68,8 @@ struct dpm_cand_struct {
   dpm_dep_node deps;
   dpm_dep_node revdeps;
   int n_unsatisfied;
+
+  bool deps_added;
 };
 
 struct dpm_pkg_struct {
@@ -75,6 +78,7 @@ struct dpm_pkg_struct {
   dpm_cand selected;
   dpm_cand_node providers;
   struct dpm_cand_struct null_cand;
+  bool providers_added;
 };
 
 struct dpm_dep_struct {
@@ -134,6 +138,7 @@ dpm_ws_create ()
       n->pkg = p;
       n->id = id++;
       p->cands = n;
+      p->selected = n;
     }
 
   ws->next_id = id;
@@ -156,14 +161,77 @@ dpm_ws_add_cand (dpm_version ver)
   dpm_ws ws = dpm_ws_current ();
 
   dpm_cand c = ws->ver_cands + dpm_ver_id(ver);
-  if (c->pkg == NULL)
+  if (c->pkg)
+    return c;
+  
+  c->pkg = get_pkg (ws, dpm_ver_package (ver));
+  c->ver = ver;
+  c->next = c->pkg->cands;
+  c->pkg->cands = c;
+  c->id = ws->next_id++;
+  return c;
+}
+
+void
+add_relation_cands (dpm_ws ws, dpm_relation rel)
+{
+  dyn_foreach_iter (a, dpm_db_alternatives, rel)
     {
-      c->pkg = get_pkg (ws, dpm_ver_package (ver));
-      c->ver = ver;
-      c->next = c->pkg->cands;
-      c->pkg->cands = c;
-      c->id = ws->next_id++;
+      bool accept_by_rel (dpm_version ver)
+      {
+	return dpm_db_check_versions (dpm_ver_version (ver),
+				      a.op,
+				      a.version);
+      }
+
+      dpm_version ver = dpm_pol_get_best_version (a.package, accept_by_rel);
+      if (ver)
+	dpm_ws_add_cand_and_deps (ver);
+
+      dpm_pkg p = get_pkg (ws, a.package);
+      if (!p->providers_added)
+	{
+	  bool accept_providers (dpm_version ver)
+	  {
+	    dyn_foreach_ (r, ss_elts,
+			  dpm_rels_provides (dpm_ver_relations (ver)))
+	      if (dpm_rel_package (r, 0) == a.package)
+		return true;
+	    return false;
+	  }
+
+	  p->providers_added = true;
+	  dyn_foreach_ (r, ss_elts, dpm_db_reverse_relations (a.package))
+	    {
+	      dpm_version ver =
+		dpm_pol_get_best_version (dpm_ver_package (r),
+					  accept_providers);
+	      if (ver)
+		dpm_ws_add_cand_and_deps (ver);
+	    }
+	}
     }
+}
+
+dpm_cand
+dpm_ws_add_cand_and_deps (dpm_version ver)
+{
+  dpm_ws ws = dpm_ws_current ();
+
+  dpm_cand c = dpm_ws_add_cand (ver);
+  if (c->deps_added)
+    return c;
+
+  c->deps_added = true;
+
+  void do_rels (ss_val rels)
+  {
+    dyn_foreach_ (rel, ss_elts, rels)
+      add_relation_cands (ws, rel);
+  }
+  do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)));
+  do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)));
+
   return c;
 }
 
@@ -369,7 +437,13 @@ compute_deps (dpm_ws ws)
 			d->n_alts = n_alts;
 			
 			c->deps = cons_dep (ws, d, c->deps);
-			c->n_unsatisfied++;
+
+			for (int i = 0; i < n_alts; i++)
+			  if (d->alts[i]->pkg->selected == d->alts[i])
+			    d->n_selected++;
+
+			if (d->n_selected == 0)
+			  c->n_unsatisfied++;
 
 			for (int i = 0; i < n_alts; i++)
 			  d->alts[i]->revdeps =
@@ -496,19 +570,6 @@ dpm_ws_start ()
 /* Selecting
  */
 
-static void
-pkg_unselect (dpm_pkg p)
-{
-  if (p->selected)
-    dyn_foreach_ (d, dpm_cand_revdeps, p->selected)
-      {
-	d->n_selected--;
-	if (d->n_selected == 0)
-	  d->cand->n_unsatisfied++;
-      }
-  p->selected = NULL;
-}
-
 void
 dpm_ws_select (dpm_cand c)
 {
@@ -517,8 +578,15 @@ dpm_ws_select (dpm_cand c)
   if (p->selected == c)
     return;
 
-  pkg_unselect (p);
+  dyn_foreach_ (d, dpm_cand_revdeps, p->selected)
+    {
+      d->n_selected--;
+      if (d->n_selected == 0)
+	d->cand->n_unsatisfied++;
+    }
+
   p->selected = c;
+
   dyn_foreach_ (d, dpm_cand_revdeps, c)
     {
       if (d->n_selected == 0)
@@ -527,26 +595,12 @@ dpm_ws_select (dpm_cand c)
     }
 }
 
-void
-dpm_ws_unselect (dpm_package pkg)
-{
-  dpm_ws ws = dpm_ws_current ();
-  dpm_pkg p = get_pkg (ws, pkg);
-  pkg_unselect (p);
-}
-
 dpm_cand
 dpm_ws_selected (dpm_package pkg)
 {
   dpm_ws ws = dpm_ws_current ();
   dpm_pkg p = get_pkg (ws, pkg);
   return p->selected;
-}
-
-bool
-dpm_ws_is_selected (dpm_cand cand)
-{
-  return cand->pkg->selected == cand;
 }
 
 bool
@@ -559,6 +613,12 @@ bool
 dpm_cand_satisfied (dpm_cand c)
 {
   return c->n_unsatisfied == 0;
+}
+
+bool
+dpm_cand_selected (dpm_cand cand)
+{
+  return cand->pkg->selected == cand;
 }
 
 /* Dumping

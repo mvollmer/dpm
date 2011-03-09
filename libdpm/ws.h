@@ -38,19 +38,7 @@
    package.  For example, installing the null candidate of a package
    means that this package will be removed from the system.
 
-   Of all the candidates of a package, one might be "selected".  For
-   example, if you use the workspace to plan the installation of new
-   packages, the selected candidate will be the one that is currently
-   planned to be installed.
-
-   Note that selecting the null candidate is different from not
-   selecting any candidate.  Selecting no candidate means that no
-   decision has been made yet about this package, while selecting the
-   null candidate means that it has been decided to remove this
-   package.
-
-   If every package has a selected candidate, the workspace is called
-   "complete".
+   Of all the candidates of a package, exactly one is "selected".
 
    For each candidate, the workspace maintains the state of its
    dependencies on other candidates.  Each candidate has a list of
@@ -68,9 +56,6 @@
    This is also done for things like "Depends: foo | bar" and
    Provides.  Any candidate of any package that can satisfy the
    Depends relation is included in the alternatives.
-
-   Consequently, a dependency that can not be satisfied by any
-   candidate has a empty list of alternatives.
 
    A relation like "Conflicts: foo (<< 1.2)" is also translated into a
    dep by collecting all candidates of foo that satisfy the relation.
@@ -101,6 +86,7 @@ void dpm_ws_dump_pkg (dpm_package p);
 typedef struct dpm_cand_struct *dpm_cand;
 
 dpm_cand dpm_ws_add_cand (dpm_version ver);
+dpm_cand dpm_ws_add_cand_and_deps (dpm_version ver);
 
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
 {
@@ -155,12 +141,10 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
  */
 
 void dpm_ws_select (dpm_cand cand);
-void dpm_ws_unselect (dpm_package pkg);
 dpm_cand dpm_ws_selected (dpm_package pkg);
-
-bool dpm_ws_is_selected (dpm_cand cand);
 
 bool dpm_dep_satisfied (dpm_dep d);
 bool dpm_cand_satisfied (dpm_cand c);
+bool dpm_cand_selected (dpm_cand c);
 
 #endif /* !DPM_WS_H */

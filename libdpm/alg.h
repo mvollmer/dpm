@@ -58,6 +58,8 @@ DYN_DECLARE_TYPE (dpm_candpq);
 dpm_candpq dpm_candpq_new ();
 
 void dpm_candpq_set (dpm_candpq q, dpm_cand c, int prio);
+int dpm_candpq_get (dpm_candpq q, dpm_cand c);
+int dpm_candpq_set_max (dpm_candpq q, dpm_cand c, int prio);
 
 dpm_cand dpm_candpq_pop (dpm_candpq q);
 dpm_cand dpm_candpq_peek (dpm_candpq q);
