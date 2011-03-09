@@ -92,7 +92,14 @@ struct dpm_dep_struct {
 static dpm_pkg
 get_pkg (dpm_ws ws, dpm_package pkg)
 {
-  return ws->pkgs + dpm_pkg_id(pkg);
+  dpm_pkg p = ws->pkgs + dpm_pkg_id(pkg);
+  if (p->cands == NULL)
+    {
+      dpm_cand n = &(p->null_cand);
+      p->cands = n;
+      p->selected = n;
+    }
+  return p;
 }
 
 static void
@@ -132,13 +139,11 @@ dpm_ws_create ()
 
   dyn_foreach_ (pkg, dpm_db_packages)
     {
-      dpm_pkg p = get_pkg (ws, pkg);
+      dpm_pkg p = ws->pkgs + dpm_pkg_id (pkg);
       dpm_cand n = &(p->null_cand);
       p->pkg = pkg;
       n->pkg = p;
       n->id = id++;
-      p->cands = n;
-      p->selected = n;
     }
 
   ws->next_id = id;
@@ -674,7 +679,7 @@ dpm_ws_dump ()
   for (int i = 0; i < ws->n_pkgs; i++)
     {
       dpm_pkg p = ws->pkgs + i;
-      if (p)
+      if (p->cands)
 	{
 	  dump_pkg (p);
 	  dyn_print ("\n");

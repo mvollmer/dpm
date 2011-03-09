@@ -14,6 +14,7 @@ usage ()
   fprintf (stderr, "       dpm-tool [OPTIONS] tags EXPRESSION\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] relations PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] provides PACKAGE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] install PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] dump\n");
   exit (1);
@@ -398,6 +399,29 @@ dump (const char *origin)
   dpm_ws_dump ();
 }
 
+void
+install (const char *package)
+{
+  dpm_package pkg;
+  dpm_version ver;
+
+  dpm_db_open ();
+  dpm_ws_create ();
+
+  pkg = dpm_db_package_find (package);
+  if (pkg == NULL)
+    dyn_error ("No such package: %s", package);
+  
+  ver = dpm_pol_get_best_version (pkg, NULL);
+  if (ver == NULL)
+    dyn_error ("Not available: %s", package);
+  
+  dpm_ws_add_cand_and_deps (ver);
+
+  dpm_ws_start ();
+  dpm_ws_dump ();
+}
+
 int
 main (int argc, char **argv)
 {
@@ -429,6 +453,8 @@ main (int argc, char **argv)
     list_reverse_relations (argv[2]);
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
+  else if (strcmp (argv[1], "install") == 0)
+    install (argv[2]);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else

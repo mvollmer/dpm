@@ -24,5 +24,6 @@
 #include "db.h"
 #include "ws.h"
 #include "alg.h"
+#include "pol.h"
 
 #endif /* !DPM_H */
