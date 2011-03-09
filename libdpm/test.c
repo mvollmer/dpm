@@ -1937,7 +1937,7 @@ DEFTEST (ws_cands_and_deps)
       setup_ws_1 (L(Package: foo            )
 		  L(Version: 1.0            )
 		  L(Architecture: all       )
-		  L(Depends: bar (>= 1.0)   )
+		  "Depends: bar (>= 1.1), two (= 1.0)\n"
 		  L(Conflicts: not-there    )
 		  L()
 		  L(Package: bar            )
@@ -1952,13 +1952,23 @@ DEFTEST (ws_cands_and_deps)
 		  L(Package: baz            )
 		  L(Version: 1.0            )
 		  L(Architecture: all       )
-		  L(Provides: bar           ),
+		  L(Provides: bar           )
+		  L()
+		  L(Package: two            )
+		  L(Version: 1.0            )
+		  L(Architecture: all       )
+		  L()
+		  L(Package: two            )
+		  L(Version: 2.0            )
+		  L(Architecture: all       ),
 		  "foo");
 
       EXPECT (try_cand ("foo_1.0") != NULL);
       EXPECT (try_cand ("bar_1.1") != NULL);
       EXPECT (try_cand ("bar_1.0") == NULL);
       EXPECT (try_cand ("baz_1.0") != NULL);
+      EXPECT (try_cand ("two_1.0") != NULL);
+      EXPECT (try_cand ("two_2.0") == NULL);
     }
 }
 
