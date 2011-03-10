@@ -208,11 +208,14 @@ add_relation_cands (dpm_ws ws, dpm_relation rel)
 	  p->providers_added = true;
 	  dyn_foreach_ (r, ss_elts, dpm_db_reverse_relations (a.package))
 	    {
-	      dpm_version ver =
-		dpm_pol_get_best_version (dpm_ver_package (r),
-					  accept_providers);
-	      if (ver)
-		dpm_ws_add_cand_and_deps (ver);
+	      if (accept_providers (r))
+		{
+		  dpm_version ver =
+		    dpm_pol_get_best_version (dpm_ver_package (r),
+					      accept_providers);
+		  if (ver)
+		    dpm_ws_add_cand_and_deps (ver);
+		}
 	    }
 	}
     }
