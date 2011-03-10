@@ -181,6 +181,7 @@ void dpm_db_origin_update (dpm_origin origin,
 
 ss_val dpm_db_query_tag (const char *tag);
 ss_val dpm_db_reverse_relations (dpm_package pkg);
+ss_val dpm_db_provides (dpm_package pkg);
 
 /* Status
  */

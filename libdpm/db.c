@@ -37,6 +37,7 @@ dyn_var dpm_database_name[1];
    - origin_available    (origin -> (package -> versions, strong), strong)
    - tags                (tag -> versions)
    - reverse_relations   (package -> list of versions, weak sets)
+   - provides            (package -> list of versions, weak sets)
 
    A package:
 
@@ -101,6 +102,7 @@ struct dpm_db_struct {
   ss_dict *origin_available;
   ss_dict *tags;
   ss_dict *reverse_rels;
+  ss_dict *provides;
 };
 
 static void
@@ -120,6 +122,8 @@ dpm_db_abort (struct dpm_db_struct *db)
     ss_dict_abort (db->tags);
   if (db->reverse_rels)
     ss_dict_abort (db->reverse_rels);
+  if (db->provides)
+    ss_dict_abort (db->provides);
 
   db->strings = NULL;
   db->packages = NULL;
@@ -128,6 +132,7 @@ dpm_db_abort (struct dpm_db_struct *db)
   db->origin_available = NULL;
   db->tags = NULL;
   db->reverse_rels = NULL;
+  db->provides = NULL;
 }
 
 static void
@@ -159,6 +164,7 @@ dpm_db_make (ss_store store)
   db->origin_available = NULL;
   db->tags = NULL;
   db->reverse_rels = NULL;
+  db->provides = NULL;
   return db;
 }
 
@@ -200,6 +206,8 @@ dpm_db_open ()
     ss_dict_init (db->store, ss_ref_safely (root, 6), SS_DICT_WEAK_SETS);
   db->reverse_rels =
     ss_dict_init (db->store, ss_ref_safely (root, 7), SS_DICT_WEAK_SETS);
+  db->provides =
+    ss_dict_init (db->store, ss_ref_safely (root, 8), SS_DICT_WEAK_SETS);
 }
 
 void
@@ -207,7 +215,7 @@ dpm_db_checkpoint ()
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_val root = ss_new (db->store, 0, 8,
+  ss_val root = ss_new (db->store, 0, 9,
 			ss_blob_new (db->store, 5, "dpm-0"),
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->packages),
@@ -215,7 +223,8 @@ dpm_db_checkpoint ()
 			ss_dict_store (db->installed),
 			ss_dict_store (db->origin_available),
 			ss_dict_store (db->tags),
-			ss_dict_store (db->reverse_rels));
+			ss_dict_store (db->reverse_rels),
+			ss_dict_store (db->provides));
   ss_set_root (db->store, root);
 }
 
@@ -472,17 +481,21 @@ record_version (update_data *ud, dpm_version ver)
       ss_val rels_rec = dpm_ver_relations (ver);
       ss_val tags = dpm_ver_tags (ver);
 
+      void add_rev_rels (ss_dict *dict, ss_val rels)
+      {
+	if (rels)
+	  for (int j = 0; j < ss_len (rels); j++)
+	    {
+	      ss_val rel = ss_ref (rels, j);
+	      for (int k = 0; k < ss_len (rel); k += 3)
+		ss_dict_add (dict, ss_ref (rel, k+1), ver);
+	    }
+      }
+
       for (int i = 0; i < ss_len (rels_rec); i++)
-        {
-          ss_val rels = ss_ref (rels_rec, i);
-          if (rels)
-            for (int j = 0; j < ss_len (rels); j++)
-              {
-                ss_val rel = ss_ref (rels, j);
-                for (int k = 0; k < ss_len (rel); k += 3)
-                  ss_dict_add (ud->db->reverse_rels, ss_ref (rel, k+1), ver);
-              }
-        }
+	add_rev_rels (ud->db->reverse_rels, ss_ref (rels_rec, i));
+
+      add_rev_rels (ud->db->provides, dpm_rels_provides (rels_rec));
 
       if (tags)
         for (int i = 0; i < ss_len (tags); i++)
@@ -1260,6 +1273,14 @@ dpm_db_reverse_relations (dpm_package pkg)
   dpm_db db = dyn_get (cur_db);
 
   return ss_dict_get (db->reverse_rels, pkg);
+}
+
+ss_val
+dpm_db_provides (dpm_package pkg)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  return ss_dict_get (db->provides, pkg);
 }
 
 
