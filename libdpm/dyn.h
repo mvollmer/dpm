@@ -100,9 +100,9 @@
  */
 
 void *dyn_malloc (size_t size);
-void dyn_mgrow (void **ptrp, int *capacityp, size_t size, int min_capacity);
 void *dyn_calloc (size_t size);
 void *dyn_realloc (void *old, size_t size);
+void *dyn_mgrow (void *ptr, int *capacityp, size_t size, int min_capacity);
 void *dyn_strdup (const char *str);
 void *dyn_strndup (const char *str, int n);
 void *dyn_memdup (void *mem, int n);

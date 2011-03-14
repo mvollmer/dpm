@@ -158,7 +158,7 @@ dpm_candpq_set (dpm_candpq q, dpm_cand cand, int prio)
     {
       q->n += 1;
       j = q->n;
-      dyn_mgrow (&q->cp, &q->cp_capacity, sizeof (struct cand_prio), q->n);
+      q->cp = dyn_mgrow (q->cp, &q->cp_capacity, sizeof (struct cand_prio), q->n);
     }
 
   struct cand_prio cp;

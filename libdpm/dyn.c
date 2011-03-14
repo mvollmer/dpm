@@ -67,21 +67,6 @@ grow_capacity (int c)
     return c += 10000;
 }
 
-void
-dyn_mgrow (void **ptrp, int *capacityp, size_t size, int min_capacity)
-{
-  int capacity = *capacityp;
-  if (capacity < min_capacity)
-    {
-      while (capacity < min_capacity)
-	capacity = grow_capacity (capacity);
-      *ptrp = realloc (*ptrp, capacity*size);
-      if (*ptrp == NULL)
-	dyn_oom ();
-      *capacityp = capacity;
-    }
-}
-
 void *
 dyn_calloc (size_t size)
 {
@@ -98,6 +83,22 @@ dyn_realloc (void *old, size_t size)
   if (mem == NULL)
     dyn_oom ();
   return mem;
+}
+
+void *
+dyn_mgrow (void *ptr, int *capacityp, size_t size, int min_capacity)
+{
+  int capacity = *capacityp;
+  if (capacity < min_capacity)
+    {
+      while (capacity < min_capacity)
+	capacity = grow_capacity (capacity);
+      ptr = realloc (ptr, capacity*size);
+      if (ptr == NULL)
+	dyn_oom ();
+      *capacityp = capacity;
+    }
+  return ptr;
 }
 
 void *
