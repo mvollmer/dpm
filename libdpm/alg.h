@@ -46,6 +46,24 @@ void dpm_candset_add (dpm_candset s, dpm_cand c);
 void dpm_candset_rem (dpm_candset s, dpm_cand c);
 bool dpm_candset_has (dpm_candset s, dpm_cand c);
 
+/* Cand lists
+
+   A 'candlist' is a ordered list of candidates.  It differs from a
+   candset in that addition, removal, and membership test are
+   expensive, but creating a list is cheap.
+*/
+
+DYN_DECLARE_TYPE (dpm_candlist);
+
+dpm_candlist dpm_candlist_new ();
+void dpm_candlist_append (dpm_candlist cl, dpm_cand c);
+
+DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_candlist_elts, dpm_candlist)
+{
+  dpm_candlist cl;
+  int i;
+};
+
 /* Cand priority queues
 
    A 'candpq' maintains a priority queue of candidates.  You can set
@@ -67,8 +85,26 @@ dpm_cand dpm_candpq_peek (dpm_candpq q);
 bool dpm_candpq_pop_x (dpm_candpq q, dpm_cand *candp, int *priop);
 bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 
-/* Find the shortest path from A to B and print it.
+/* Planning and executing operations
+
+   The goal of an operation is represented by a candlist of all those
+   cands that should be selected.
+
  */
-void dpm_alg_print_relation (dpm_cand a, dpm_cand b);
+
+/* Plan the installation of a set of packages in the current workspace
+   in a naive way, without any back tracking or SAT solving.
+ 
+   It returns a candset with all cands that are part of the operation.
+
+   More sophisticated methods might come later.
+*/
+
+dpm_candset dpm_alg_install_naively (dpm_candlist cands);
+
+/* Explain the current workspace, restricted to the given subset.
+ */
+
+void dpm_alg_explain (dpm_candlist user, dpm_candset all);
 
 #endif /* !DPM_ALG_H */

@@ -67,6 +67,22 @@
    A cand is called "satisfied" when all of its deps are satisfied.
 
    A cand is "broken" when it is selected but not satisfied.
+
+
+   A workspace has some special cands that do not belong to any
+   package.
+
+   One is the 'goal' candidate.  It represents a desired goal state
+   via its dependencies.  For example, installing a number of packages
+   is represented by creating a goal candidate that depends on all of
+   those packages.  Likewise, the desired removal a package is
+   represented by a goal candidate that conflicts with that package.
+
+   Another one is the 'ugly' candidate.  Using the ugly cand to
+   satisfy a dep has higher cost than other cands and this makes it
+   useful to represent optional dependencies.  For example a
+   Recommends relation is represented by a dep with two alternatives:
+   the recommended package and the ugly cand.
 */
 
 DYN_DECLARE_TYPE (dpm_ws);
