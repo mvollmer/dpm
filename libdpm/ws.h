@@ -103,6 +103,9 @@ typedef struct dpm_cand_struct *dpm_cand;
 
 dpm_cand dpm_ws_add_cand (dpm_version ver);
 dpm_cand dpm_ws_add_cand_and_deps (dpm_version ver);
+void dpm_ws_add_cand_deps (dpm_cand cand);
+
+dpm_cand dpm_ws_add_goal_cand_from_control (const char *control);
 
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
 {

@@ -218,25 +218,30 @@ add_relation_cands (dpm_ws ws, dpm_relation rel)
     }
 }
 
-dpm_cand
-dpm_ws_add_cand_and_deps (dpm_version ver)
+void
+dpm_ws_add_cand_deps (dpm_cand cand)
 {
   dpm_ws ws = dpm_ws_current ();
 
-  dpm_cand c = dpm_ws_add_cand (ver);
-  if (c->deps_added)
-    return c;
+  if (cand->deps_added)
+    return;
 
-  c->deps_added = true;
+  cand->deps_added = true;
 
   void do_rels (ss_val rels)
   {
     dyn_foreach_ (rel, ss_elts, rels)
       add_relation_cands (ws, rel);
   }
-  do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)));
-  do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)));
+  do_rels (dpm_rels_pre_depends (dpm_ver_relations (cand->ver)));
+  do_rels (dpm_rels_depends (dpm_ver_relations (cand->ver)));
+}
 
+dpm_cand
+dpm_ws_add_cand_and_deps (dpm_version ver)
+{
+  dpm_cand c = dpm_ws_add_cand (ver);
+  dpm_ws_add_cand_deps (c);
   return c;
 }
 
