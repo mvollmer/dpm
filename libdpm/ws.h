@@ -105,7 +105,19 @@ dpm_cand dpm_ws_add_cand (dpm_version ver);
 dpm_cand dpm_ws_add_cand_and_deps (dpm_version ver);
 void dpm_ws_add_cand_deps (dpm_cand cand);
 
-dpm_cand dpm_ws_add_goal_cand_from_control (const char *control);
+/* A 'candspec' contains the parameters for a virtual candidate, such
+   as the goal cadidate.
+*/
+
+DYN_DECLARE_TYPE (dpm_candspec);
+
+dpm_candspec dpm_candspec_new ();
+void dpm_candspec_begin_rel (dpm_candspec spec, bool conf);
+void dpm_candspec_add_alt (dpm_candspec spec,
+			   dpm_package pkg, int op, const char *ver);
+
+void dpm_ws_set_goal_candspec (dpm_candspec spec);
+dpm_cand dpm_ws_get_goal_cand ();
 
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
 {

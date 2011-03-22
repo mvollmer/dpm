@@ -242,20 +242,3 @@ dpm_candpq_peek (dpm_candpq q)
     return NULL;
 }
 
-/* Shortest paths
- */
-
-void
-dpm_alg_print_relation (dpm_cand a, dpm_cand b)
-{
-  dyn_block
-    {
-      dpm_candset visited = dpm_candset_new ();
-      dpm_candpq queue = dpm_candpq_new ();
-
-      dpm_cand cur = a;
-      dpm_candpq_set (queue, a, 0);
-      {
-      }
-    }
-}

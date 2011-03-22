@@ -1012,12 +1012,12 @@ compare_fragment (const char *A, const char *AEnd,
 }
 									/*}}}*/
 int
-dpm_db_compare_versions (ss_val a, ss_val b)
+dpm_db_compare_versions_str (ss_val a, const char *b, int b_len)
 {
   const char *A = ss_blob_start (a);
   const char *AEnd = A + ss_len (a);
-  const char *B = ss_blob_start (b);
-  const char *BEnd = B + ss_len (b);
+  const char *B = b;
+  const char *BEnd = B + b_len;
 
   // Strip off the epoch and compare it 
   const char *lhs = A;
@@ -1086,6 +1086,12 @@ dpm_db_compare_versions (ss_val a, ss_val b)
   return compare_fragment(dlhs,AEnd,drhs,BEnd);
 }
 
+int
+dpm_db_compare_versions (ss_val a, ss_val b)
+{
+  return dpm_db_compare_versions_str (a, ss_blob_start (b), ss_len (b));
+}
+
 static const char *relname[] = {
   [DPM_EQ] = "=",
   [DPM_LESS] = "<<",
@@ -1095,13 +1101,12 @@ static const char *relname[] = {
 };
 
 int
-dpm_db_check_versions (ss_val a, int op, ss_val b)
+dpm_db_check_versions_str (ss_val a, int op, const char *b, int b_len)
 {
   if (op == DPM_ANY)
     return a != NULL;
 
-  int r = dpm_db_compare_versions (a, b);
-  // dyn_print ("Comparing %r %s %r == %d\n", a, relname[op], b, r);
+  int r = dpm_db_compare_versions_str (a, b, b_len);
 
   switch (op) {
   case DPM_EQ:
@@ -1117,6 +1122,15 @@ dpm_db_check_versions (ss_val a, int op, ss_val b)
   default:
     abort ();
   }
+}
+
+int
+dpm_db_check_versions (ss_val a, int op, ss_val b)
+{
+  if (op == DPM_ANY)
+    return a != NULL;
+
+  return dpm_db_check_versions_str (a, op, ss_blob_start (b), ss_len (b));
 }
 
 ss_val

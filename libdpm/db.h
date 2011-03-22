@@ -48,7 +48,9 @@ DYN_DECLARE_TYPE (dpm_db);
 dpm_db dpm_db_current ();
 
 int dpm_db_compare_versions (ss_val a, ss_val b);
+int dpm_db_compare_versions_str (ss_val a, const char *b, int b_len);
 int dpm_db_check_versions (ss_val a, int op, ss_val b);
+int dpm_db_check_versions_str (ss_val a, int op, const char *b, int b_len);
 
 void dpm_db_open ();
 void dpm_db_checkpoint ();

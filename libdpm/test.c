@@ -2024,6 +2024,65 @@ DEFTEST (ws_select)
     }
 }
 
+DEFTEST (ws_goal_cand)
+{
+  dyn_block
+    {
+      const char *meta =
+	L(Package: foo            )
+	L(Version: 1.0            )
+	L(Architecture: all       )
+	"Depends: bar (>= 1.1), two (= 1.0)\n"
+	L(Conflicts: not-there    )
+	L()
+	L(Package: bar            )
+	L(Version: 1.0            )
+	L(Architecture: all       )
+	L()
+	L(Package: bar            )
+	L(Version: 1.1            )
+	L(Architecture: all       )
+	L(Conflicts: baz          )
+	L()
+	L(Package: baz            )
+	L(Version: 1.0            )
+	L(Architecture: all       )
+	L(Provides: bar           )
+	L()
+	L(Package: two            )
+	L(Version: 1.0            )
+	L(Architecture: all       )
+	L()
+	L(Package: two            )
+	L(Version: 2.0            )
+	L(Architecture: all       );
+
+      dyn_let (dpm_database_name, testdst ("test.db"));
+
+      dpm_db_open ();
+      dpm_origin o = dpm_db_origin_find ("origin");
+      
+      dyn_block
+	{
+	  dpm_db_origin_update (o, I(meta));
+	  dpm_db_checkpoint ();
+	}
+
+      dpm_ws_create ();
+
+      dpm_candspec spec = dpm_candspec_new ();
+      dpm_candspec_begin_rel (spec, false);
+      dpm_candspec_add_alt (spec,
+			    dpm_db_package_find ("foo"),
+			    DPM_ANY, NULL);
+      dpm_ws_set_goal_candspec (spec);
+      
+      dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
+      dpm_ws_start ();
+      dpm_ws_dump ();
+    }
+}
+
 void
 next_permutation (int *p, int n)
 {

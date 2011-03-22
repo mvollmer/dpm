@@ -86,25 +86,14 @@ bool dpm_candpq_pop_x (dpm_candpq q, dpm_cand *candp, int *priop);
 bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 
 /* Planning and executing operations
-
-   The goal of an operation is represented by a candlist of all those
-   cands that should be selected.
-
  */
 
-/* Plan the installation of a set of packages in the current workspace
-   in a naive way, without any back tracking or SAT solving.
+/* Plan the installation of the goal candidate in the current
+   workspace in a naive way, without any back tracking or SAT solving.
  
-   It returns a candset with all cands that are part of the operation.
-
    More sophisticated methods might come later.
 */
 
-dpm_candset dpm_alg_install_naively (dpm_candlist cands);
-
-/* Explain the current workspace, restricted to the given subset.
- */
-
-void dpm_alg_explain (dpm_candlist user, dpm_candset all);
+bool dpm_alg_install_naively ();
 
 #endif /* !DPM_ALG_H */

@@ -166,7 +166,7 @@ dyn_alloc (dyn_type *type, size_t size)
   if (type->tag == 0)
     abort();
 
-  uint32_t *mem = dyn_malloc (size + sizeof (uint32_t));
+  uint32_t *mem = dyn_calloc (size + sizeof (uint32_t));
   dyn_val val = (dyn_val)(mem + 1);
   mem[0] = (type->tag << 24) | 1;
   // fprintf (stderr, "%p * %s\n", val, type->name);

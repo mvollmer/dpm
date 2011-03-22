@@ -119,3 +119,5 @@
 /libdpm/ws.o
 /libdpm/test.db
 /libdpm/dpm-script
+/libdpm/pol.lo
+/libdpm/pol.o
