@@ -43,9 +43,9 @@ show_versions (dpm_package pkg)
   verorg vo[100];
   int n_vo = 0;
 
-  dyn_foreach_ (o, dpm_db_origins)
+  dyn_foreach (o, dpm_db_origins)
     {
-      dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
+      dyn_foreach (v, dpm_db_origin_package_versions, o, pkg)
 	if (n_vo < 100)
 	  {
 	    vo[n_vo].ver = v;
@@ -102,7 +102,7 @@ show (const char *package, const char *version)
 
   if (package == NULL)
     {
-      dyn_foreach_ (p, dpm_db_packages)
+      dyn_foreach (p, dpm_db_packages)
         dyn_print ("%r\n", dpm_pkg_name (p));
     }
   else
@@ -116,9 +116,9 @@ show (const char *package, const char *version)
 	  ss_val interned_version = dpm_db_intern (version);
 
 	  bool need_blank_line = false;
-	  dyn_foreach_ (o, dpm_db_origins)
+	  dyn_foreach (o, dpm_db_origins)
 	    {
-	      dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
+	      dyn_foreach (v, dpm_db_origin_package_versions, o, pkg)
 		{
 		  if (dpm_ver_version (v) == interned_version)
 		    {
@@ -298,7 +298,7 @@ search (const char *pattern)
   dpm_version hits[dpm_db_version_id_limit()];
   int n_hits = 0;
 
-  dyn_foreach_ (v, dpm_db_versions)
+  dyn_foreach (v, dpm_db_versions)
     {
       dpm_package p = dpm_ver_package (v);
       if (seen[dpm_pkg_id(p)])
@@ -351,7 +351,7 @@ list_provides (const char *package)
     {
       dpm_db_open ();
       dpm_package pkg = dpm_db_package_find (package);
-      dyn_foreach_ (ver, ss_elts, dpm_db_provides (pkg))
+      dyn_foreach (ver, ss_elts, dpm_db_provides (pkg))
 	dyn_print ("%r %r\n",
 		   dpm_pkg_name (dpm_ver_package (ver)),
 		   dpm_ver_version (ver));
@@ -367,7 +367,7 @@ dump (const char *origin)
 
   dyn_foreach_iter (p, dpm_db_origin_packages, dpm_db_origin_find (origin))
     {
-      dyn_foreach_ (v, ss_elts, p.versions)
+      dyn_foreach (v, ss_elts, p.versions)
 	dpm_ws_add_cand (v);
     }
 

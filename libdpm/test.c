@@ -160,7 +160,7 @@ int range_elt (range *iter) { return iter->cur; }
 DEFTEST (dyn_iter)
 {
   int sum = 0;
-  dyn_foreach_ (x, range, 0, 10)
+  dyn_foreach (x, range, 0, 10)
     sum += x;
   EXPECT (sum == 0+1+2+3+4+5+6+7+8+9);
 
@@ -803,7 +803,7 @@ DEFTEST (store_blob_vector)
       ss_val v = ss_new (NULL, 0, 0);
       int i = 0;
 
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_blob_new (s, strlen (w), (void *)w);
 	  EXPECT (ss_is_blob (b));
@@ -819,7 +819,7 @@ DEFTEST (store_blob_vector)
       v = ss_get_root (s);
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  EXPECT (ss_len (v) > i);
 
@@ -844,7 +844,7 @@ DEFTEST (store_table)
       // Put all words into the table.
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_blob (t, strlen (w), (void *)w);
 
@@ -859,7 +859,7 @@ DEFTEST (store_table)
       // Check that they are in it.
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_soft (t, strlen (w), (void *)w);
 	  EXPECT (blobs[i] == b);
@@ -874,7 +874,7 @@ DEFTEST (store_table)
       t = ss_tab_init (s, ss_get_root (s));
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_soft (t, strlen (w), (void *)w);
 	  EXPECT (b == NULL);
@@ -884,7 +884,7 @@ DEFTEST (store_table)
       // Store the words again.
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_blob (t, strlen (w), (void *)w);
 	  blobs[i++] = b;
@@ -908,7 +908,7 @@ DEFTEST (store_table)
       // disappeared.
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_soft (t, strlen (w), (void *)w);
 	  if (i < 200)
@@ -928,7 +928,7 @@ DEFTEST (store_table_foreach)
       ss_tab *t = ss_tab_init (s, NULL);
 
       int count = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_tab_intern_blob (t, strlen (w), (void*)w);
 	  count++;
@@ -937,7 +937,7 @@ DEFTEST (store_table_foreach)
       ss_val tt = ss_tab_finish (t);
       t = ss_tab_init (s, tt);
 
-      dyn_foreach_ (w, ss_tab_entries, t)
+      dyn_foreach (w, ss_tab_entries, t)
 	{
 	  EXPECT (ss_len (w) == 5);
 	  count--;
@@ -957,7 +957,7 @@ DEFTEST (store_dict_strong)
       ss_dict *d = ss_dict_init (s, NULL, SS_DICT_STRONG);
       
       int i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_blob (t, strlen(w), (void *)w);
 	  ss_dict_set (d, b, ss_from_int (i));
@@ -973,7 +973,7 @@ DEFTEST (store_dict_strong)
       d = ss_dict_init (s, ss_ref (r, 1), SS_DICT_STRONG);
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_soft (t, strlen(w), (void *)w);
 	  EXPECT (b != NULL);
@@ -1046,7 +1046,7 @@ DEFTEST (store_dict_weak)
       ss_dict *d = ss_dict_init (s, NULL, SS_DICT_WEAK_KEYS);
       
       int i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_blob (t, strlen(w), (void *)w);
 	  ss_dict_set (d, b, ss_from_int (i));
@@ -1067,7 +1067,7 @@ DEFTEST (store_dict_weak)
       ss_val v[20];
 
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_blob (t, strlen(w), (void *)w);
 	  ss_dict_set (d, b, ss_from_int (i));
@@ -1091,7 +1091,7 @@ DEFTEST (store_dict_weak)
       d = ss_dict_init (s, ss_ref (r, 1), SS_DICT_WEAK_KEYS);
       
       i = 0;
-      dyn_foreach_ (w, sgb_words)
+      dyn_foreach (w, sgb_words)
 	{
 	  ss_val b = ss_tab_intern_soft (t, strlen(w), (void *)w);
 	  if (i < 20)
@@ -1463,7 +1463,7 @@ DEFTEST (db_simple)
 
       dyn_foreach_iter (p, dpm_db_origin_packages, o)
         {
-          dyn_foreach_ (v, ss_elts, p.versions)
+          dyn_foreach (v, ss_elts, p.versions)
 	    {
 	      EXPECT (ss_streq (dpm_pkg_name (dpm_ver_package (v)), "foo"));
 	      EXPECT (ss_streq (dpm_ver_version (v), "1.0"));
@@ -1532,7 +1532,7 @@ check_packages (dpm_origin origin, const char *pkg, ...)
 
   dyn_foreach_iter (p, dpm_db_origin_packages, origin)
     {
-      dyn_foreach_ (v, ss_elts, p.versions)
+      dyn_foreach (v, ss_elts, p.versions)
 	{
 	  int i;
 	  for (i = 0; i < n_packages; i++)
@@ -1586,7 +1586,7 @@ DEFTEST (db_unique_versions)
 
       dyn_foreach_iter (p, dpm_db_origin_packages, o1)
 	{
-          dyn_foreach_ (v, ss_elts, p.versions)
+          dyn_foreach (v, ss_elts, p.versions)
 	    {
 	      if (ss_streq (dpm_pkg_name (p.package), "foo"))
 		{
@@ -1605,7 +1605,7 @@ DEFTEST (db_unique_versions)
 	    
       dyn_foreach_iter (p, dpm_db_origin_packages, o2)
 	{
-          dyn_foreach_ (v, ss_elts, p.versions)
+          dyn_foreach (v, ss_elts, p.versions)
 	    {
 	      if (ss_streq (dpm_pkg_name (p.package), "foo"))
 		EXPECT (foo_ver == v);
@@ -1716,7 +1716,7 @@ setup_ws (const char *meta)
   dpm_ws_create ();
   dyn_foreach_iter (p, dpm_db_origin_packages, o)
     {
-      dyn_foreach_ (v, ss_elts, p.versions)
+      dyn_foreach (v, ss_elts, p.versions)
 	dpm_ws_add_cand (v);
     }
   dpm_ws_start ();
@@ -1740,7 +1740,7 @@ setup_ws_1 (const char *meta, const char *cand)
   dyn_foreach_iter (p, dpm_db_origin_packages, o)
     {
       if (ss_streq (dpm_pkg_name (p.package), cand))
-	dyn_foreach_ (v, ss_elts, p.versions)
+	dyn_foreach (v, ss_elts, p.versions)
 	  dpm_ws_add_cand_and_deps (v);
     }
   dpm_ws_start ();
@@ -1758,8 +1758,8 @@ try_cand (const char *id)
       
       dpm_package pkg = dpm_db_package_find (p);
       if (pkg)
-	dyn_foreach_ (s, dpm_ws_seats, pkg)
-	  dyn_foreach_ (c, dpm_seat_cands, s)
+	dyn_foreach (s, dpm_ws_seats, pkg)
+	  dyn_foreach (c, dpm_seat_cands, s)
 	    {
 	      dpm_version ver = dpm_cand_version (c);
 	      if ((ver && ss_streq (dpm_ver_version (ver), v))
@@ -1806,7 +1806,7 @@ check_deps (const char *from, ...)
   bool dep_eq (dpm_dep d, int i)
   {
     int n_alts_found = 0;
-    dyn_foreach_ (a, dpm_dep_alts, d)
+    dyn_foreach (a, dpm_dep_alts, d)
       for (int j = 0; deps[i][j]; j++)
 	if (deps[i][j] == a)
 	  {
@@ -1828,7 +1828,7 @@ check_deps (const char *from, ...)
   }
 
   dpm_cand f = find_cand (from);
-  dyn_foreach_ (d, dpm_cand_deps, f)
+  dyn_foreach (d, dpm_cand_deps, f)
     if (!find_dep (d))
       goto wrong;
 
@@ -1851,9 +1851,9 @@ check_deps (const char *from, ...)
     }
 
   dyn_print ("actual deps:\n");
-  dyn_foreach_ (d, dpm_cand_deps, f)
+  dyn_foreach (d, dpm_cand_deps, f)
     {
-      dyn_foreach_ (a, dpm_dep_alts, d)
+      dyn_foreach (a, dpm_dep_alts, d)
 	{
 	  dyn_print (" ");
 	  dpm_cand_print_id (a);
@@ -1883,8 +1883,8 @@ DEFTEST (ws_cands)
       dpm_package p = dpm_db_package_find ("foo");
 
       int n = 0;
-      dyn_foreach_ (s, dpm_ws_seats, p)
-	dyn_foreach_ (c, dpm_seat_cands, s)
+      dyn_foreach (s, dpm_ws_seats, p)
+	dyn_foreach (c, dpm_seat_cands, s)
 	  {
 	    dpm_package pp = dpm_seat_package (dpm_cand_seat (c));
 	    EXPECT (p == pp);

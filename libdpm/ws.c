@@ -159,7 +159,7 @@ dpm_ws_create ()
     s->cands = g;
   }
 
-  dyn_foreach_ (pkg, dpm_db_packages)
+  dyn_foreach (pkg, dpm_db_packages)
     {
       dpm_seat s = ws->pkg_seats + dpm_pkg_id (pkg);
       dpm_cand n = &(s->null_cand);
@@ -293,7 +293,7 @@ add_relation_cands (dpm_ws ws, dpm_relation rel)
 	{
 	  bool accept_providers (dpm_version ver)
 	  {
-	    dyn_foreach_ (r, ss_elts,
+	    dyn_foreach (r, ss_elts,
 			  dpm_rels_provides (dpm_ver_relations (ver)))
 	      if (dpm_rel_package (r, 0) == a.package)
 		return true;
@@ -301,7 +301,7 @@ add_relation_cands (dpm_ws ws, dpm_relation rel)
 	  }
 
 	  s->providers_added = true;
-	  dyn_foreach_ (r, ss_elts, dpm_db_provides (a.package))
+	  dyn_foreach (r, ss_elts, dpm_db_provides (a.package))
 	    {
 	      dpm_version ver =
 		dpm_pol_get_best_version (dpm_ver_package (r),
@@ -334,7 +334,7 @@ add_candspec_relation_cands (dpm_ws ws, struct candspec_rel *r)
 	{
 	  bool accept_providers (dpm_version ver)
 	  {
-	    dyn_foreach_ (r, ss_elts,
+	    dyn_foreach (r, ss_elts,
 			  dpm_rels_provides (dpm_ver_relations (ver)))
 	      if (dpm_rel_package (r, 0) == a->pkg)
 		return true;
@@ -342,7 +342,7 @@ add_candspec_relation_cands (dpm_ws ws, struct candspec_rel *r)
 	  }
 
 	  s->providers_added = true;
-	  dyn_foreach_ (r, ss_elts, dpm_db_provides (a->pkg))
+	  dyn_foreach (r, ss_elts, dpm_db_provides (a->pkg))
 	    {
 	      dpm_version ver =
 		dpm_pol_get_best_version (dpm_ver_package (r),
@@ -377,7 +377,7 @@ dpm_ws_add_cand_deps (dpm_cand cand)
     {
       void do_rels (ss_val rels)
       {
-	dyn_foreach_ (rel, ss_elts, rels)
+	dyn_foreach (rel, ss_elts, rels)
 	  add_relation_cands (ws, rel);
       }
       do_rels (dpm_rels_pre_depends (dpm_ver_relations (cand->ver)));
@@ -510,7 +510,7 @@ find_providers (dpm_ws ws)
       dpm_cand c = ws->ver_cands + i;
       if (c->ver)
 	{
-	  dyn_foreach_ (prv, ss_elts,
+	  dyn_foreach (prv, ss_elts,
 			dpm_rels_provides (dpm_ver_relations (c->ver)))
 	    {
 	      dpm_seat s = get_seat (ws, dpm_rel_package (prv, 0));
@@ -583,7 +583,7 @@ compute_deps (dpm_ws ws)
 	    {
 	      void do_rels (ss_val rels, bool conf)
 	      {
-		dyn_foreach_ (rel, ss_elts, rels)
+		dyn_foreach (rel, ss_elts, rels)
 		  {
 		    int n_alts = 0;
 		    obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
@@ -603,7 +603,7 @@ compute_deps (dpm_ws ws)
 			dpm_seat s = get_seat (ws, alt.package);
 			
 			bool all_satisfy = true;
-			dyn_foreach_ (pc, dpm_seat_cands, s)
+			dyn_foreach (pc, dpm_seat_cands, s)
 			  if (satisfies_rel (pc, conf, alt.op, alt.version))
 			    add_alt (pc);
 			  else
@@ -701,7 +701,7 @@ compute_goal_deps (dpm_ws ws)
 	      dpm_seat s = get_seat (ws, a->pkg);
 	      
 	      bool all_satisfy = true;
-	      dyn_foreach_ (pc, dpm_seat_cands, s)
+	      dyn_foreach (pc, dpm_seat_cands, s)
 		if (satisfies_rel_str (pc, r->conf, a->op, a->ver))
 		  add_alt (pc);
 		else
@@ -863,7 +863,7 @@ dpm_ws_select (dpm_cand c)
   if (s->selected == c)
     return;
 
-  dyn_foreach_ (d, dpm_cand_revdeps, s->selected)
+  dyn_foreach (d, dpm_cand_revdeps, s->selected)
     {
       d->n_selected--;
       if (d->n_selected == 0)
@@ -872,7 +872,7 @@ dpm_ws_select (dpm_cand c)
 
   s->selected = c;
 
-  dyn_foreach_ (d, dpm_cand_revdeps, c)
+  dyn_foreach (d, dpm_cand_revdeps, c)
     {
       if (d->n_selected == 0)
 	d->cand->n_unsatisfied--;
@@ -930,7 +930,7 @@ dump_seat (dpm_ws ws, dpm_seat s)
   else
     dyn_print ("goal-pkg:\n");
 
-  dyn_foreach_ (c, dpm_seat_cands, s)
+  dyn_foreach (c, dpm_seat_cands, s)
     {
       if (c->ver)
 	dyn_print (" %r\n", dpm_ver_version (c->ver));
@@ -938,10 +938,10 @@ dump_seat (dpm_ws ws, dpm_seat s)
 	dyn_print (" goal-cand\n");
       else
 	dyn_print (" null\n");
-      dyn_foreach_ (d, dpm_cand_deps, c)
+      dyn_foreach (d, dpm_cand_deps, c)
 	{
 	  dyn_print ("  >");
-	  dyn_foreach_ (a, dpm_dep_alts, d)
+	  dyn_foreach (a, dpm_dep_alts, d)
 	    {
 	      dyn_print (" ");
 	      dpm_cand_print_id (a);
@@ -954,7 +954,7 @@ dump_seat (dpm_ws ws, dpm_seat s)
 	      dyn_print ("\n");
 	    }
 	}
-      dyn_foreach_ (r, dpm_cand_revdeps, c)
+      dyn_foreach (r, dpm_cand_revdeps, c)
 	{
 	  dyn_print ("  < ");
 	  dpm_cand_print_id (r->cand);

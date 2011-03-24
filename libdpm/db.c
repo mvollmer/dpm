@@ -1307,11 +1307,11 @@ dpm_db_stats ()
   int n_packages = 0;
   int n_versions = 0;
 
-  dyn_foreach_ (p, dpm_db_packages)
+  dyn_foreach (p, dpm_db_packages)
     if (p)
       n_packages++;
 
-  dyn_foreach_ (v, dpm_db_versions)
+  dyn_foreach (v, dpm_db_versions)
     if (v)
       n_versions++;
 

@@ -25,8 +25,8 @@ dpm_pol_get_best_version (dpm_package pkg,
 {
   dpm_version best = NULL;
 
-  dyn_foreach_ (o, dpm_db_origins)
-    dyn_foreach_ (v, dpm_db_origin_package_versions, o, pkg)
+  dyn_foreach (o, dpm_db_origins)
+    dyn_foreach (v, dpm_db_origin_package_versions, o, pkg)
       {
 	if (accept != NULL && !accept (v))
 	  continue;
