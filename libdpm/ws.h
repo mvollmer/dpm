@@ -31,14 +31,16 @@
    their relations.
 
    For each package in the database, a workspace stores a list of some
-   of its versions, called the "candidates" of that package.
+   of its versions, called "candidates".  There are one or more
+   "seats" per package, and each candidates is associates with exactly
+   one seat.  (Normally, there is only one seat per package, but with
+   things like multiarch, there might be more seats to fill.)
 
-   There is one special candidate per package, the "null candidate".
-   This null candidate is used to represent the absence of that
-   package.  For example, installing the null candidate of a package
-   means that this package will be removed from the system.
+   There is one special candidate per seat, the "null candidate".
+   This null candidate is used to represent the emptiness of that
+   seat.
 
-   Of all the candidates of a package, exactly one is "selected".
+   Exactly one candidate of each seat is selected.
 
    For each candidate, the workspace maintains the state of its
    dependencies on other candidates.  Each candidate has a list of
@@ -68,21 +70,28 @@
 
    A cand is "broken" when it is selected but not satisfied.
 
+   A workspace has some special seats and associated cands that do not
+   belong to any real package.
 
-   A workspace has some special cands that do not belong to any
-   package.
-
-   One is the 'goal' candidate.  It represents a desired goal state
-   via its dependencies.  For example, installing a number of packages
-   is represented by creating a goal candidate that depends on all of
-   those packages.  Likewise, the desired removal a package is
-   represented by a goal candidate that conflicts with that package.
+   One is the 'goal' candidate and its seat.  It represents a desired
+   goal state via its dependencies.  For example, installing a number
+   of packages is represented by creating a goal candidate that
+   depends on all of those packages.  Likewise, the desired removal of
+   a package is represented by a goal candidate that conflicts with
+   that package.
 
    Another one is the 'ugly' candidate.  Using the ugly cand to
    satisfy a dep has higher cost than other cands and this makes it
    useful to represent optional dependencies.  For example a
    Recommends relation is represented by a dep with two alternatives:
    the recommended package and the ugly cand.
+
+   
+   A workspace maintains a set of 'relevant' seats.  These are the
+   packages that are involved in satisfying the dependencies of the
+   goal cand.  A workspace is called 'broken' when any of the selected
+   candidates of all relevant packages is broken.
+
 */
 
 DYN_DECLARE_TYPE (dpm_ws);
@@ -99,6 +108,7 @@ void dpm_ws_dump_pkg (dpm_package p);
 /* Adding candidates to the current workspace.
 */
 
+typedef struct dpm_seat_struct *dpm_seat;
 typedef struct dpm_cand_struct *dpm_cand;
 
 dpm_cand dpm_ws_add_cand (dpm_version ver);
@@ -119,16 +129,25 @@ void dpm_candspec_add_alt (dpm_candspec spec,
 void dpm_ws_set_goal_candspec (dpm_candspec spec);
 dpm_cand dpm_ws_get_goal_cand ();
 
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_ws_cands, dpm_package pkg)
+DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_seats, dpm_package pkg)
+{
+  dpm_seat cur;
+};
+
+DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_seat_cands, dpm_seat s)
 {
   dpm_cand cur;
 };
 
-dpm_package dpm_cand_package (dpm_cand);
+dpm_seat dpm_cand_seat (dpm_cand);
+bool     dpm_cand_selected (dpm_cand);
+dpm_cand dpm_seat_null_cand (dpm_seat);
+dpm_cand dpm_seat_selected (dpm_seat);
+
+dpm_package dpm_seat_package (dpm_seat);
 dpm_version dpm_cand_version (dpm_cand);
 
 dpm_cand dpm_ws_cand (dpm_version ver);
-dpm_cand dpm_ws_null_cand (dpm_package pkg);
 
 void dpm_ws_start ();
 
@@ -172,10 +191,8 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
  */
 
 void dpm_ws_select (dpm_cand cand);
-dpm_cand dpm_ws_selected (dpm_package pkg);
 
 bool dpm_dep_satisfied (dpm_dep d);
 bool dpm_cand_satisfied (dpm_cand c);
-bool dpm_cand_selected (dpm_cand c);
 
 #endif /* !DPM_WS_H */

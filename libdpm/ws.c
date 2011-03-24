@@ -31,7 +31,7 @@ typedef struct dpm_pkg_struct  *dpm_pkg;
 
 struct dpm_cand_struct {
   dpm_cand next;
-  dpm_pkg pkg;
+  dpm_seat seat;
   dpm_version ver;
   int id;
 
@@ -42,7 +42,7 @@ struct dpm_cand_struct {
   bool deps_added;
 };
 
-struct dpm_pkg_struct {
+struct dpm_seat_struct {
   dpm_package pkg;
   dpm_cand cands;
   dpm_cand selected;
@@ -63,12 +63,12 @@ struct dpm_ws_struct {
   struct obstack mem;
 
   int n_pkgs;
-  struct dpm_pkg_struct *pkgs;
+  struct dpm_seat_struct *pkg_seats;
 
   int n_vers;
   struct dpm_cand_struct *ver_cands;
 
-  struct dpm_pkg_struct goal_pkg;
+  struct dpm_seat_struct goal_seat;
   struct dpm_cand_struct goal_cand;
   dpm_candspec goal_spec;
 
@@ -93,17 +93,17 @@ cons_dep (dpm_ws ws, dpm_dep d, dpm_dep_node next)
   return n;
 }
 
-static dpm_pkg
-get_pkg (dpm_ws ws, dpm_package pkg)
+static dpm_seat
+get_seat (dpm_ws ws, dpm_package pkg)
 {
-  dpm_pkg p = ws->pkgs + dpm_pkg_id(pkg);
-  if (p->cands == NULL)
+  dpm_seat s = ws->pkg_seats + dpm_pkg_id(pkg);
+  if (s->cands == NULL)
     {
-      dpm_cand n = &(p->null_cand);
-      p->cands = n;
-      p->selected = n;
+      dpm_cand n = &(s->null_cand);
+      s->cands = n;
+      s->selected = n;
     }
-  return p;
+  return s;
 }
 
 static void
@@ -132,8 +132,9 @@ dpm_ws_create ()
   obstack_init (&ws->mem);
 
   ws->n_pkgs = dpm_db_package_id_limit ();
-  ws->pkgs = obstack_alloc (&ws->mem, ws->n_pkgs*sizeof(struct dpm_pkg_struct));
-  memset (ws->pkgs, 0, ws->n_pkgs*sizeof(struct dpm_pkg_struct));
+  ws->pkg_seats = obstack_alloc (&ws->mem,
+				 ws->n_pkgs*sizeof(struct dpm_seat_struct));
+  memset (ws->pkg_seats, 0, ws->n_pkgs*sizeof(struct dpm_seat_struct));
 
   ws->n_vers = dpm_db_version_id_limit ();
   ws->ver_cands =
@@ -143,27 +144,27 @@ dpm_ws_create ()
   int id = 0;
 
   {
-    dpm_pkg p = &(ws->goal_pkg);
-    dpm_cand n = &(p->null_cand);
-    n->pkg = p;
+    dpm_seat s = &(ws->goal_seat);
+    dpm_cand n = &(s->null_cand);
+    n->seat = s;
     n->id = id++;
-    p->cands = n;
-    p->selected = n;
+    s->cands = n;
+    s->selected = n;
 
     dpm_cand g = &(ws->goal_cand);
-    g->pkg = p;
+    g->seat = s;
     g->ver = NULL;
     g->id = id++;
-    g->next = p->cands;
-    p->cands = g;
+    g->next = s->cands;
+    s->cands = g;
   }
 
   dyn_foreach_ (pkg, dpm_db_packages)
     {
-      dpm_pkg p = ws->pkgs + dpm_pkg_id (pkg);
-      dpm_cand n = &(p->null_cand);
-      p->pkg = pkg;
-      n->pkg = p;
+      dpm_seat s = ws->pkg_seats + dpm_pkg_id (pkg);
+      dpm_cand n = &(s->null_cand);
+      s->pkg = pkg;
+      n->seat = s;
       n->id = id++;
     }
 
@@ -260,13 +261,13 @@ dpm_ws_add_cand (dpm_version ver)
   dpm_ws ws = dpm_ws_current ();
 
   dpm_cand c = ws->ver_cands + dpm_ver_id(ver);
-  if (c->pkg)
+  if (c->seat)
     return c;
   
-  c->pkg = get_pkg (ws, dpm_ver_package (ver));
+  c->seat = get_seat (ws, dpm_ver_package (ver));
   c->ver = ver;
-  c->next = c->pkg->cands;
-  c->pkg->cands = c;
+  c->next = c->seat->cands;
+  c->seat->cands = c;
   c->id = ws->next_id++;
   return c;
 }
@@ -287,8 +288,8 @@ add_relation_cands (dpm_ws ws, dpm_relation rel)
       if (ver)
 	dpm_ws_add_cand_and_deps (ver);
 
-      dpm_pkg p = get_pkg (ws, a.package);
-      if (!p->providers_added)
+      dpm_seat s = get_seat (ws, a.package);
+      if (!s->providers_added)
 	{
 	  bool accept_providers (dpm_version ver)
 	  {
@@ -299,7 +300,7 @@ add_relation_cands (dpm_ws ws, dpm_relation rel)
 	    return false;
 	  }
 
-	  p->providers_added = true;
+	  s->providers_added = true;
 	  dyn_foreach_ (r, ss_elts, dpm_db_provides (a.package))
 	    {
 	      dpm_version ver =
@@ -328,8 +329,8 @@ add_candspec_relation_cands (dpm_ws ws, struct candspec_rel *r)
       if (ver)
 	dpm_ws_add_cand_and_deps (ver);
 
-      dpm_pkg p = get_pkg (ws, a->pkg);
-      if (!p->providers_added)
+      dpm_seat s = get_seat (ws, a->pkg);
+      if (!s->providers_added)
 	{
 	  bool accept_providers (dpm_version ver)
 	  {
@@ -340,7 +341,7 @@ add_candspec_relation_cands (dpm_ws ws, struct candspec_rel *r)
 	    return false;
 	  }
 
-	  p->providers_added = true;
+	  s->providers_added = true;
 	  dyn_foreach_ (r, ss_elts, dpm_db_provides (a->pkg))
 	    {
 	      dpm_version ver =
@@ -409,74 +410,68 @@ dpm_ws_get_goal_cand ()
 }
 
 void
-dpm_ws_cands_init (dpm_ws_cands *iter, dpm_package pkg)
+dpm_ws_seats_init (dpm_ws_seats *iter, dpm_package pkg)
 {
   dpm_ws ws = dpm_ws_current ();
-  dpm_pkg p = get_pkg (ws, pkg);
-  iter->cur = p->cands;
+  iter->cur = get_seat (ws, pkg);
 }
 
 void
-dpm_ws_cands_fini (dpm_ws_cands *iter)
+dpm_ws_seats_fini (dpm_ws_seats *iter)
 {
 }
 
 void
-dpm_ws_cands_step (dpm_ws_cands *iter)
+dpm_ws_seats_step (dpm_ws_seats *iter)
+{
+  iter->cur = NULL;
+}
+
+bool
+dpm_ws_seats_done (dpm_ws_seats *iter)
+{
+  return iter->cur == NULL;
+}
+
+dpm_seat
+dpm_ws_seats_elt (dpm_ws_seats *iter)
+{
+  return iter->cur;
+}
+
+void
+dpm_seat_cands_init (dpm_seat_cands *iter, dpm_seat s)
+{
+  iter->cur = s->cands;
+}
+
+void
+dpm_seat_cands_fini (dpm_seat_cands *iter)
+{
+}
+
+void
+dpm_seat_cands_step (dpm_seat_cands *iter)
 {
   iter->cur = iter->cur->next;
 }
 
 bool
-dpm_ws_cands_done (dpm_ws_cands *iter)
+dpm_seat_cands_done (dpm_seat_cands *iter)
 {
   return iter->cur == NULL;
 }
 
 dpm_cand
-dpm_ws_cands_elt (dpm_ws_cands *iter)
+dpm_seat_cands_elt (dpm_seat_cands *iter)
 {
   return iter->cur;
 }
 
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_pkg_cands, dpm_pkg pkg)
+dpm_seat
+dpm_cand_seat (dpm_cand c)
 {
-  dpm_cand cur;
-};
-
-void
-dpm_pkg_cands_init (dpm_pkg_cands *iter, dpm_pkg p)
-{
-  iter->cur = p->cands;
-}
-
-void
-dpm_pkg_cands_fini (dpm_pkg_cands *iter)
-{
-}
-
-void
-dpm_pkg_cands_step (dpm_pkg_cands *iter)
-{
-  iter->cur = iter->cur->next;
-}
-
-bool
-dpm_pkg_cands_done (dpm_pkg_cands *iter)
-{
-  return iter->cur == NULL;
-}
-
-dpm_cand
-dpm_pkg_cands_elt (dpm_pkg_cands *iter)
-{
-  return iter->cur;
-}
-
-dpm_package
-dpm_cand_package (dpm_cand c)
-{
-  return c->pkg->pkg;
+  return c->seat;
 }
 
 dpm_version
@@ -489,6 +484,12 @@ int
 dpm_cand_id (dpm_cand c)
 {
   return c->id;
+}
+
+dpm_package
+dpm_seat_package (dpm_seat s)
+{
+  return s->pkg;
 }
 
 int
@@ -512,8 +513,8 @@ find_providers (dpm_ws ws)
 	  dyn_foreach_ (prv, ss_elts,
 			dpm_rels_provides (dpm_ver_relations (c->ver)))
 	    {
-	      dpm_pkg p = get_pkg (ws, dpm_rel_package (prv, 0));
-	      p->providers = cons_cand (ws, c, p->providers);
+	      dpm_seat s = get_seat (ws, dpm_rel_package (prv, 0));
+	      s->providers = cons_cand (ws, c, s->providers);
 	    }
 	}
     }
@@ -599,10 +600,10 @@ compute_deps (dpm_ws ws)
 
 		    dyn_foreach_iter (alt, dpm_db_alternatives, rel)
 		      {
-			dpm_pkg p = get_pkg (ws, alt.package);
+			dpm_seat s = get_seat (ws, alt.package);
 			
 			bool all_satisfy = true;
-			dyn_foreach_ (pc, dpm_pkg_cands, p)
+			dyn_foreach_ (pc, dpm_seat_cands, s)
 			  if (satisfies_rel (pc, conf, alt.op, alt.version))
 			    add_alt (pc);
 			  else
@@ -619,7 +620,7 @@ compute_deps (dpm_ws ws)
 			    break;
 			  }
 		    
-			for (dpm_cand_node n = p->providers; n; n = n->next)
+			for (dpm_cand_node n = s->providers; n; n = n->next)
 			  if (provides_rel (n->elt, conf, alt.op, alt.version))
 			    add_alt (n->elt);
 		      }
@@ -637,7 +638,7 @@ compute_deps (dpm_ws ws)
 			c->deps = cons_dep (ws, d, c->deps);
 
 			for (int i = 0; i < n_alts; i++)
-			  if (d->alts[i]->pkg->selected == d->alts[i])
+			  if (d->alts[i]->seat->selected == d->alts[i])
 			    d->n_selected++;
 
 			if (d->n_selected == 0)
@@ -697,10 +698,10 @@ compute_goal_deps (dpm_ws ws)
 	    
 	  for (struct candspec_alt *a = r->alts; a; a = a->next)
 	    {
-	      dpm_pkg p = get_pkg (ws, a->pkg);
+	      dpm_seat s = get_seat (ws, a->pkg);
 	      
 	      bool all_satisfy = true;
-	      dyn_foreach_ (pc, dpm_pkg_cands, p)
+	      dyn_foreach_ (pc, dpm_seat_cands, s)
 		if (satisfies_rel_str (pc, r->conf, a->op, a->ver))
 		  add_alt (pc);
 		else
@@ -716,7 +717,7 @@ compute_goal_deps (dpm_ws ws)
 		  break;
 		}
 	      
-	      for (dpm_cand_node n = p->providers; n; n = n->next)
+	      for (dpm_cand_node n = s->providers; n; n = n->next)
 		if (provides_rel_str (n->elt, r->conf, a->op, a->ver))
 		  add_alt (n->elt);
 	    }
@@ -734,7 +735,7 @@ compute_goal_deps (dpm_ws ws)
 	      c->deps = cons_dep (ws, d, c->deps);
 	      
 	      for (int i = 0; i < n_alts; i++)
-		if (d->alts[i]->pkg->selected == d->alts[i])
+		if (d->alts[i]->seat->selected == d->alts[i])
 		  d->n_selected++;
 	      
 	      if (d->n_selected == 0)
@@ -857,19 +858,19 @@ dpm_ws_start ()
 void
 dpm_ws_select (dpm_cand c)
 {
-  dpm_pkg p = c->pkg;
+  dpm_seat s = c->seat;
   
-  if (p->selected == c)
+  if (s->selected == c)
     return;
 
-  dyn_foreach_ (d, dpm_cand_revdeps, p->selected)
+  dyn_foreach_ (d, dpm_cand_revdeps, s->selected)
     {
       d->n_selected--;
       if (d->n_selected == 0)
 	d->cand->n_unsatisfied++;
     }
 
-  p->selected = c;
+  s->selected = c;
 
   dyn_foreach_ (d, dpm_cand_revdeps, c)
     {
@@ -880,11 +881,9 @@ dpm_ws_select (dpm_cand c)
 }
 
 dpm_cand
-dpm_ws_selected (dpm_package pkg)
+dpm_seat_selected (dpm_seat s)
 {
-  dpm_ws ws = dpm_ws_current ();
-  dpm_pkg p = get_pkg (ws, pkg);
-  return p->selected;
+  return s->selected;
 }
 
 bool
@@ -902,7 +901,7 @@ dpm_cand_satisfied (dpm_cand c)
 bool
 dpm_cand_selected (dpm_cand cand)
 {
-  return cand->pkg->selected == cand;
+  return cand->seat->selected == cand;
 }
 
 /* Dumping
@@ -911,9 +910,9 @@ dpm_cand_selected (dpm_cand cand)
 void
 dpm_cand_print_id (dpm_cand c)
 {
-  if (c->pkg->pkg)
+  if (c->seat->pkg)
     {
-      ss_val n = dpm_pkg_name (c->pkg->pkg);
+      ss_val n = dpm_pkg_name (c->seat->pkg);
       if (c->ver)
 	dyn_print ("%r_%r", n, dpm_ver_version (c->ver));
       else
@@ -924,14 +923,14 @@ dpm_cand_print_id (dpm_cand c)
 }
 
 static void
-dump_pkg (dpm_ws ws, dpm_pkg p)
+dump_seat (dpm_ws ws, dpm_seat s)
 {
-  if (p->pkg)
-    dyn_print ("%r:\n", dpm_pkg_name (p->pkg));
+  if (s->pkg)
+    dyn_print ("%r:\n", dpm_pkg_name (s->pkg));
   else
     dyn_print ("goal-pkg:\n");
 
-  dyn_foreach_ (c, dpm_pkg_cands, p)
+  dyn_foreach_ (c, dpm_seat_cands, s)
     {
       if (c->ver)
 	dyn_print (" %r\n", dpm_ver_version (c->ver));
@@ -969,15 +968,15 @@ dpm_ws_dump ()
 {
   dpm_ws ws = dpm_ws_current ();
 
-  dump_pkg (ws, &(ws->goal_pkg));
+  dump_seat (ws, &(ws->goal_seat));
   dyn_print ("\n");
 
   for (int i = 0; i < ws->n_pkgs; i++)
     {
-      dpm_pkg p = ws->pkgs + i;
-      if (p->cands)
+      dpm_seat s = ws->pkg_seats + i;
+      if (s->cands)
 	{
-	  dump_pkg (ws, p);
+	  dump_seat (ws, s);
 	  dyn_print ("\n");
 	}
     }
@@ -987,5 +986,5 @@ void
 dpm_ws_dump_pkg (dpm_package p)
 {
   dpm_ws ws = dpm_ws_current ();
-  dump_pkg (ws, get_pkg (ws, p));
+  dump_seat (ws, get_seat (ws, p));
 }

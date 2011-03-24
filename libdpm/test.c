@@ -1758,13 +1758,14 @@ try_cand (const char *id)
       
       dpm_package pkg = dpm_db_package_find (p);
       if (pkg)
-	dyn_foreach_ (c, dpm_ws_cands, pkg)
-	  {
-	    dpm_version ver = dpm_cand_version (c);
-	    if ((ver && ss_streq (dpm_ver_version (ver), v))
-		|| (!ver && strcmp (v, "null") == 0))
-	      return c;
-	  }
+	dyn_foreach_ (s, dpm_ws_seats, pkg)
+	  dyn_foreach_ (c, dpm_seat_cands, s)
+	    {
+	      dpm_version ver = dpm_cand_version (c);
+	      if ((ver && ss_streq (dpm_ver_version (ver), v))
+		  || (!ver && strcmp (v, "null") == 0))
+		return c;
+	    }
     }
 
   return NULL;
@@ -1882,16 +1883,17 @@ DEFTEST (ws_cands)
       dpm_package p = dpm_db_package_find ("foo");
 
       int n = 0;
-      dyn_foreach_ (c, dpm_ws_cands, p)
-	{
-	  dpm_package pp = dpm_cand_package (c);
-	  EXPECT (p == pp);
-	  dpm_version v = dpm_cand_version (c);
-	  if (v)
-	    EXPECT (ss_streq (dpm_ver_version (v), "1.0")
-		    || ss_streq (dpm_ver_version (v), "1.1"));
-	  n++;
-	}
+      dyn_foreach_ (s, dpm_ws_seats, p)
+	dyn_foreach_ (c, dpm_seat_cands, s)
+	  {
+	    dpm_package pp = dpm_seat_package (dpm_cand_seat (c));
+	    EXPECT (p == pp);
+	    dpm_version v = dpm_cand_version (c);
+	    if (v)
+	      EXPECT (ss_streq (dpm_ver_version (v), "1.0")
+		      || ss_streq (dpm_ver_version (v), "1.1"));
+	    n++;
+	  }
       EXPECT (n == 3);
     }
 }
