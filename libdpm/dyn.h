@@ -97,9 +97,12 @@ void *dyn_memdup (void *mem, int n);
        ITER##_step (&NAME))
 
 #define dyn_foreach(VAR, ITER, ARGS...)					\
-  dyn_foreach_iter(__i, ITER, ## ARGS)					\
-    for (bool __c = true; __c;)						\
-      for (ITER##_type VAR = ITER##_elt (&__i); __c; __c = false)
+  for (bool __c = true; __c;)						\
+    for (ITER##_type VAR; __c; __c = false)				\
+      for (ITER __i __attribute__ ((cleanup (ITER##_fini)))		\
+	     = (ITER##_init (&__i, ## ARGS), __i); \
+	   !ITER##_done (&__i) && (VAR = ITER##_elt (&__i), true);	\
+	   ITER##_step (&__i))
 
 #define DYN_DECLARE_STRUCT_ITER(TYPE, ITER, INIT_ARGS...)	\
   typedef TYPE ITER##_type;					\
