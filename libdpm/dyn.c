@@ -215,10 +215,6 @@ dyn_unref (dyn_val val)
     }
 }
 
-struct dyn_string_struct {
-  char chars[0];
-};
-
 static void
 dyn_string_unref (dyn_type *type, void *object)
 {
@@ -242,8 +238,7 @@ dyn_is_string (dyn_val val)
 const char *
 dyn_to_string (dyn_val val)
 {
-  dyn_string string = val;
-  return (const char *)string->chars;
+  return (const char *)val;
 }
 
 dyn_val
@@ -255,9 +250,9 @@ dyn_from_string (const char *str)
 dyn_val
 dyn_from_stringn (const char *str, int len)
 {
-  dyn_string string = dyn_alloc (dyn_string_type, len + 1);
-  strncpy (string->chars, str, len);
-  string->chars[len] = 0;
+  char *string = dyn_alloc (dyn_string_type, len + 1);
+  strncpy (string, str, len);
+  string[len] = 0;
   return string;
 }
 
