@@ -75,7 +75,8 @@ struct dpm_ws_struct {
   struct dpm_cand_struct goal_cand;
   dpm_candspec goal_spec;
 
-  int next_id;
+  int next_seat_id;
+  int next_cand_id;
 };
 
 static dpm_cand_node
@@ -144,20 +145,22 @@ dpm_ws_create ()
     obstack_alloc (&ws->mem, ws->n_vers*sizeof(struct dpm_cand_struct));
   memset (ws->ver_cands, 0, ws->n_vers*sizeof(struct dpm_cand_struct));
 
-  int id = 0;
+  int cand_id = 0;
+  int seat_id = 0;
 
   {
     dpm_seat s = &(ws->goal_seat);
+    s->id = seat_id++;
     dpm_cand n = &(s->null_cand);
     n->seat = s;
-    n->id = id++;
+    n->id = cand_id++;
     s->cands = n;
     s->selected = n;
 
     dpm_cand g = &(ws->goal_cand);
     g->seat = s;
     g->ver = NULL;
-    g->id = id++;
+    g->id = cand_id++;
     g->next = s->cands;
     s->cands = g;
   }
@@ -165,13 +168,15 @@ dpm_ws_create ()
   dyn_foreach (pkg, dpm_db_packages)
     {
       dpm_seat s = ws->pkg_seats + dpm_pkg_id (pkg);
+      s->id = seat_id++;
       dpm_cand n = &(s->null_cand);
       s->pkg = pkg;
       n->seat = s;
-      n->id = id++;
+      n->id = cand_id++;
     }
 
-  ws->next_id = id;
+  ws->next_cand_id = cand_id;
+  ws->next_seat_id = seat_id;
 
   dyn_let (cur_ws, ws);
 }
@@ -271,7 +276,7 @@ dpm_ws_add_cand (dpm_version ver)
   c->ver = ver;
   c->next = c->seat->cands;
   c->seat->cands = c;
-  c->id = ws->next_id++;
+  c->id = ws->next_cand_id++;
   return c;
 }
 
@@ -499,14 +504,14 @@ int
 dpm_ws_cand_id_limit ()
 {
   dpm_ws ws = dpm_ws_current ();
-  return ws->next_id;
+  return ws->next_cand_id;
 }
 
 int
 dpm_ws_seat_id_limit ()
 {
   dpm_ws ws = dpm_ws_current ();
-  return ws->n_pkgs;
+  return ws->next_seat_id;
 }
 
 int
@@ -978,14 +983,27 @@ dump_seat (dpm_ws ws, dpm_seat s)
   dyn_foreach (c, dpm_seat_cands, s)
     {
       if (c->ver)
-	dyn_print (" %r\n", dpm_ver_version (c->ver));
+	dyn_print (" %r", dpm_ver_version (c->ver));
       else if (c == &(ws->goal_cand))
-	dyn_print (" goal-cand\n");
+	dyn_print (" goal-cand");
       else
-	dyn_print (" null\n");
+	dyn_print (" null");
+      
+      if (dpm_cand_selected (c))
+	{
+	  if (!dpm_cand_satisfied (c))
+	    dyn_print (" XXX");
+	  else
+	    dyn_print (" ***");
+	}
+	
+      dyn_print ("\n");
+
       dyn_foreach (d, dpm_cand_deps, c)
 	{
 	  dyn_print ("  >");
+	  if (!dpm_dep_satisfied (d))
+	    dyn_print (" !!!");
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    {
 	      dyn_print (" ");

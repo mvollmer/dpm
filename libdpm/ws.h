@@ -153,7 +153,7 @@ void dpm_ws_start ();
 
 int dpm_ws_seat_id_limit ();
 int dpm_seat_id (dpm_seat);
-bool dpm_seat_relevanr (dpm_seat);
+bool dpm_seat_relevant (dpm_seat);
 
 int dpm_ws_cand_id_limit ();
 int dpm_cand_id (dpm_cand);

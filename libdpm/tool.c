@@ -379,7 +379,6 @@ void
 install (const char *package)
 {
   dpm_package pkg;
-  dpm_version ver;
 
   dpm_db_open ();
   dpm_ws_create ();
@@ -388,14 +387,15 @@ install (const char *package)
   if (pkg == NULL)
     dyn_error ("No such package: %s", package);
   
-  ver = dpm_pol_get_best_version (pkg, NULL);
-  if (ver == NULL)
-    dyn_error ("Not available: %s", package);
-  
-  dpm_ws_add_cand_and_deps (ver);
+  dpm_candspec spec = dpm_candspec_new ();
+  dpm_candspec_begin_rel (spec, false);
+  dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
+  dpm_ws_set_goal_candspec (spec);
+  dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
 
   dpm_ws_start ();
-  dpm_ws_dump ();
+  dpm_alg_install_naively ();
+  // dpm_ws_dump ();
 }
 
 int

@@ -298,3 +298,51 @@ dpm_candpq_peek (dpm_candpq q)
     return NULL;
 }
 
+/* The super naive install
+
+   We just walk down the dep graph and for each unsatisfied dep, we
+   select the first candidate, but every seat is only touched once.
+*/
+
+bool
+dpm_alg_install_naively ()
+{
+  bool failed = false;
+
+  dyn_block
+    {
+      dpm_seatset touched = dpm_seatset_new ();
+
+      void visit (dpm_cand c)
+      {
+	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
+	  return;
+
+	dyn_print ("selecting ");
+	dpm_cand_print_id (c);
+	dyn_print ("\n");
+
+	dpm_seatset_add (touched, dpm_cand_seat (c));
+	dpm_ws_select (c);
+
+	dyn_foreach (d, dpm_cand_deps, c)
+	  if (!dpm_dep_satisfied (d))
+	    {
+	      dyn_foreach (a, dpm_dep_alts, d)
+		{
+		  if (!dpm_seatset_has (touched, dpm_cand_seat (a)))
+		    {
+		      visit (a);
+		      break;
+		    }
+		}
+	      if (!dpm_dep_satisfied (d))
+		failed = true;
+	    }
+      }
+
+      visit (dpm_ws_get_goal_cand ());
+    }
+
+  return !failed;
+}

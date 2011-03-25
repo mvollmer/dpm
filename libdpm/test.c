@@ -747,7 +747,7 @@ DEFTEST (store_table_foreach)
 	  ss_tab_intern_blob (t, strlen (w), (void*)w);
 	  count++;
 	}
-      
+
       ss_val tt = ss_tab_finish (t);
       t = ss_tab_init (s, tt);
 
