@@ -2057,6 +2057,10 @@ DEFTEST (ws_goal_cand)
 	L()
 	L(Package: two            )
 	L(Version: 2.0            )
+	L(Architecture: all       )
+	L(                        )
+	L(Package: irrelevant     )
+	L(Version: 1.0            )
 	L(Architecture: all       );
 
       dyn_let (dpm_database_name, testdst ("test.db"));
@@ -2078,10 +2082,30 @@ DEFTEST (ws_goal_cand)
 			    dpm_db_package_find ("foo"),
 			    DPM_ANY, NULL);
       dpm_ws_set_goal_candspec (spec);
-      
-      dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
+
+      dpm_cand goal = dpm_ws_get_goal_cand ();
+      dpm_ws_add_cand_deps (goal);
       dpm_ws_start ();
-      dpm_ws_dump ();
+
+      int n_deps = 0, n_alts = 0;
+      dyn_foreach (d, dpm_cand_deps, goal)
+	{
+	  n_deps++;
+	  dyn_foreach (a, dpm_dep_alts, d)
+	    {
+	      n_alts++;
+	      EXPECT (a == find_cand ("foo_1.0"));
+	    }
+	}
+      EXPECT (n_deps == 1);
+      EXPECT (n_alts == 1);
+
+      EXPECT (try_cand ("foo_1.0") != NULL);
+      EXPECT (try_cand ("bar_1.1") != NULL);
+      EXPECT (try_cand ("bar_1.0") == NULL);
+      EXPECT (try_cand ("baz_1.0") != NULL);
+      EXPECT (try_cand ("two_1.0") != NULL);
+      EXPECT (try_cand ("two_2.0") == NULL);
     }
 }
 

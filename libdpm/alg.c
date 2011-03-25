@@ -77,9 +77,65 @@ dpm_candset_has (dpm_candset s, dpm_cand c)
   return s->tags[dpm_cand_id(c)] == s->tag;
 }
 
-/* Cand priority queues
+/* Seat sets
+ */
 
-   XXX - don't allow candidates to be in the queue more than once.
+struct dpm_seatset_struct {
+  int *tags;
+  int tag;
+};
+
+static void
+dpm_seatset_unref (dyn_type *type, void *object)
+{
+  dpm_seatset s = object;
+  free (s->tags);
+}
+
+static int
+dpm_seatset_equal (void *a, void *b)
+{
+  return 0;
+}
+
+DYN_DEFINE_TYPE (dpm_seatset, "seatset");
+
+dpm_seatset
+dpm_seatset_new ()
+{
+  dpm_seatset s = dyn_new (dpm_seatset);
+  s->tags = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(int));
+  s->tag = 1;
+  return s;
+}
+
+void
+dpm_seatset_reset (dpm_seatset s)
+{
+  s->tag++;
+  if (s->tag == 0)
+    abort ();
+}
+
+void
+dpm_seatset_add (dpm_seatset s, dpm_seat c)
+{
+  s->tags[dpm_seat_id(c)] = s->tag;
+}
+
+void
+dpm_seatset_rem (dpm_seatset s, dpm_seat c)
+{
+  s->tags[dpm_seat_id(c)] = 0;
+}
+
+bool
+dpm_seatset_has (dpm_seatset s, dpm_seat c)
+{
+  return s->tags[dpm_seat_id(c)] == s->tag;
+}
+
+/* Cand priority queues
 */
 
 struct cand_prio {

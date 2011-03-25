@@ -151,8 +151,12 @@ dpm_cand dpm_ws_cand (dpm_version ver);
 
 void dpm_ws_start ();
 
+int dpm_ws_seat_id_limit ();
+int dpm_seat_id (dpm_seat);
+bool dpm_seat_relevanr (dpm_seat);
+
 int dpm_ws_cand_id_limit ();
-int dpm_cand_id (dpm_cand c);
+int dpm_cand_id (dpm_cand);
 
 void dpm_cand_print_id (dpm_cand c);
 

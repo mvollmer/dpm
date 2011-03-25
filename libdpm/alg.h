@@ -41,28 +41,24 @@ DYN_DECLARE_TYPE (dpm_candset);
 
 dpm_candset dpm_candset_new ();
 
-void dpm_candset_reset (dpm_candset s);
-void dpm_candset_add (dpm_candset s, dpm_cand c);
-void dpm_candset_rem (dpm_candset s, dpm_cand c);
-bool dpm_candset_has (dpm_candset s, dpm_cand c);
+void dpm_candset_reset (dpm_candset cs);
+void dpm_candset_add (dpm_candset cs, dpm_cand c);
+void dpm_candset_rem (dpm_candset cs, dpm_cand c);
+bool dpm_candset_has (dpm_candset cs, dpm_cand c);
 
-/* Cand lists
+/* Seat sets
 
-   A 'candlist' is a ordered list of candidates.  It differs from a
-   candset in that addition, removal, and membership test are
-   expensive, but creating a list is cheap.
+   The same as a candset, but for seats.
 */
 
-DYN_DECLARE_TYPE (dpm_candlist);
+DYN_DECLARE_TYPE (dpm_seatset);
 
-dpm_candlist dpm_candlist_new ();
-void dpm_candlist_append (dpm_candlist cl, dpm_cand c);
+dpm_seatset dpm_seatset_new ();
 
-DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_candlist_elts, dpm_candlist)
-{
-  dpm_candlist cl;
-  int i;
-};
+void dpm_seatset_reset (dpm_seatset ss);
+void dpm_seatset_add (dpm_seatset ss, dpm_seat s);
+void dpm_seatset_rem (dpm_seatset ss, dpm_seat s);
+bool dpm_seatset_has (dpm_seatset ss, dpm_seat s);
 
 /* Cand priority queues
 

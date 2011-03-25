@@ -44,11 +44,14 @@ struct dpm_cand_struct {
 
 struct dpm_seat_struct {
   dpm_package pkg;
+  int id;
+
   dpm_cand cands;
   dpm_cand selected;
   dpm_cand_node providers;
   struct dpm_cand_struct null_cand;
   bool providers_added;
+  bool relevant;
 };
 
 struct dpm_dep_struct {
@@ -499,6 +502,25 @@ dpm_ws_cand_id_limit ()
   return ws->next_id;
 }
 
+int
+dpm_ws_seat_id_limit ()
+{
+  dpm_ws ws = dpm_ws_current ();
+  return ws->n_pkgs;
+}
+
+int
+dpm_seat_id (dpm_seat s)
+{
+  return s->id;
+}
+
+bool
+dpm_seat_relevant (dpm_seat s)
+{
+  return s->relevant;
+}
+
 /* Deps
  */
 
@@ -839,6 +861,23 @@ dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
   return iter->n->elt;
 }
 
+static void
+mark_relevant (dpm_ws ws)
+{
+  void mark (dpm_cand c)
+  {
+    if (c->seat->relevant)
+      return;
+    
+    c->seat->relevant = true;
+    dyn_foreach (d, dpm_cand_deps, c)
+      dyn_foreach (a, dpm_dep_alts, d)
+        mark (a);
+  }
+
+  mark (&(ws->goal_cand));
+}
+
 /* Starting
  */
 
@@ -850,6 +889,7 @@ dpm_ws_start ()
   find_providers (ws);
   compute_deps (ws);
   compute_goal_deps (ws);
+  mark_relevant (ws);
 }
 
 /* Selecting
@@ -926,9 +966,14 @@ static void
 dump_seat (dpm_ws ws, dpm_seat s)
 {
   if (s->pkg)
-    dyn_print ("%r:\n", dpm_pkg_name (s->pkg));
+    dyn_print ("%r", dpm_pkg_name (s->pkg));
   else
-    dyn_print ("goal-pkg:\n");
+    dyn_print ("goal");
+
+  if (s->relevant)
+    dyn_print (" (relevant)");
+  
+  dyn_print ("\n");
 
   dyn_foreach (c, dpm_seat_cands, s)
     {
