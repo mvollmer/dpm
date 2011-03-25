@@ -280,121 +280,6 @@ DEFTEST (dyn_string)
     }
 }
 
-DEFTEST (dyn_pair)
-{
-  dyn_block
-    {
-      dyn_val p = dyn_pair (S("1st"), S("2nd"));
-      EXPECT (dyn_is_pair (p));
-      EXPECT (dyn_eq (dyn_first (p), "1st"));
-      EXPECT (dyn_eq (dyn_second (p), "2nd"));
-
-      dyn_val p2 = dyn_pair (S("1st"), S("2nd"));
-      EXPECT (dyn_is_pair (p2));
-      EXPECT (dyn_equal (p, p2));
-    }
-}
-
-DEFTEST (dyn_seq)
-{
-  dyn_block
-    {
-      dyn_seq_builder b1;
-      dyn_seq_start (b1);
-      dyn_seq_append (b1, S("pre"));
-      dyn_val pre = dyn_seq_finish (b1);
-
-      dyn_seq_builder b3;
-      dyn_seq_start (b3);
-      dyn_seq_append (b3, S("post"));
-      dyn_val post = dyn_seq_finish (b3);
-
-      dyn_seq_builder b2;
-      dyn_seq_start (b2);
-      dyn_seq_append (b2, S("two"));
-      dyn_seq_append (b2, S("three"));
-      dyn_seq_prepend (b2, S("one"));
-      dyn_seq_concat_front (b2, pre);
-      dyn_seq_concat_back (b2, post);
-      dyn_val s = dyn_seq_finish (b2);
-
-      EXPECT (dyn_is_seq (s));
-      EXPECT (dyn_len (s) == 5);
-      EXPECT (dyn_eq (dyn_elt (s, 0), "pre"));
-      EXPECT (dyn_eq (dyn_elt (s, 1), "one"));
-      EXPECT (dyn_eq (dyn_elt (s, 2), "two"));
-      EXPECT (dyn_eq (dyn_elt (s, 3), "three"));
-      EXPECT (dyn_eq (dyn_elt (s, 4), "post"));
-
-      dyn_val ss = dyn_concat (s, s, DYN_EOS);
-      dyn_val sss = dyn_seq (S("pre"), S("one"), S("two"),
-			     S("three"), S("post"),
-			     S("pre"), S("one"), S("two"),
-			     S("three"), S("post"),
-			     DYN_EOS);
-      EXPECT (dyn_equal (ss, sss));
-    }
-}
-
-DEFTEST (dyn_assoc)
-{
-  dyn_block
-    {
-      dyn_val a = NULL;
-
-      a = dyn_assoc (S("key"), S("value-1"), a);
-      a = dyn_assoc (S("key"), S("value-2"), a);
-      a = dyn_assoc (S("key-2"), S("value"), a);
-
-      EXPECT (dyn_eq (dyn_lookup (S("key"), a), "value-2"));
-      EXPECT (dyn_eq (dyn_lookup (S("key-2"), a), "value"));
-      EXPECT (dyn_lookup (S("key-3"), a) == NULL);
-    }
-}
-
-void
-func ()
-{
-}
-
-void
-func_free (void *data)
-{
-  *(int *)data = 1;
-}
-
-DEFTEST (dyn_func)
-{
-  int flag = 0;
-  dyn_block
-    {
-      dyn_val f = dyn_func (func, &flag, func_free);
-      EXPECT (dyn_is_func (f));
-      EXPECT (dyn_func_code (f) == func);
-      EXPECT (dyn_func_env (f) == &flag);
-    }
-  EXPECT (flag == 1);
-}
-
-DEFTEST (dyn_equal)
-{
-  dyn_block
-    {
-      dyn_val a = S("foo");
-      dyn_val b = dyn_seq (S("foo"), S("bar"), S("baz"), DYN_EOS);
-      dyn_val c = dyn_seq (S("foo"), S("bar"), S("baz"), DYN_EOS);
-      dyn_val d = dyn_seq (S("foo"), S("bar"), S("bazbaz"), DYN_EOS);
-      dyn_val e = dyn_seq (S("foo"), S("bar"), DYN_EOS);
-
-      EXPECT (!dyn_equal (a, NULL));
-      EXPECT (dyn_equal (a, a));
-      EXPECT (!dyn_equal (a, b));
-      EXPECT (dyn_equal (b, c));
-      EXPECT (!dyn_equal (b, d));
-      EXPECT (!dyn_equal (b, e));
-    }
-}
-
 void
 expect_numbers (dyn_input in)
 {
@@ -466,55 +351,6 @@ DEFTEST (dyn_output)
 	  
 	  dyn_input_advance (in, 1);
 	}
-    }
-}
-
-DEFTEST (dyn_read)
-{
-  dyn_block
-    {
-      dyn_val x;
-
-      x = dyn_read_string ("foo");
-      EXPECT (dyn_eq (x, "foo"));
-
-      x = dyn_read_string ("  foo");
-      EXPECT (dyn_eq (x, "foo"));
-
-      x = dyn_read_string ("\"foo\"");
-      EXPECT (dyn_eq (x, "foo"));
-
-      x = dyn_read_string ("  \"foo\"");
-      EXPECT (dyn_eq (x, "foo"));
-
-      x = dyn_read_string ("  \"\\\\\"");
-      EXPECT (dyn_eq (x, "\\"));
-
-      x = dyn_read_string ("  \"\\n\\t\\v\"");
-      EXPECT (dyn_eq (x, "\n\t\v"));
-
-      x = dyn_read_string ("# comment\nfoo");
-      EXPECT (dyn_eq (x, "foo"));
-
-      x = dyn_read_string ("foo: bar");
-      EXPECT (dyn_is_pair (x));
-      EXPECT (dyn_eq (dyn_first (x), "foo"));
-      EXPECT (dyn_eq (dyn_second (x), "bar"));
-
-      x = dyn_read_string ("(foo bar)");
-      EXPECT (dyn_is_seq (x));
-      EXPECT (dyn_eq (dyn_elt (x, 0), "foo"));
-      EXPECT (dyn_eq (dyn_elt (x, 1), "bar"));
-
-      x = dyn_read_string ("(foo: bar)");
-      EXPECT (dyn_is_seq (x));
-      dyn_val y = dyn_elt (x, 0);
-      EXPECT (dyn_is_pair (y));
-      EXPECT (dyn_eq (dyn_first (y), "foo"));
-      EXPECT (dyn_eq (dyn_second (y), "bar"));
-
-      x = dyn_read_string ("");
-      EXPECT (dyn_is_eof (x));
     }
 }
 
@@ -626,28 +462,6 @@ DEFTEST (dyn_error)
       dyn_val x;
       x = dyn_catch_error (signal_error, NULL);
       EXPECT (dyn_eq (x, "foo: bar"));
-    }
-}
-
-DEFTEST (dyn_eval)
-{
-  dyn_block
-    {
-      dyn_val env = dyn_assoc (S("foo"), S("12"), NULL);
-      dyn_val x;
-      
-      x = dyn_eval_string ("foo", env);
-      EXPECT (dyn_eq (x, "foo"));
-
-      x = dyn_read_string ("$foo");
-      EXPECT (dyn_equal (x, dyn_read_string ("$foo")));
-
-      x = dyn_eval_string ("$foo", env);
-      EXPECT (dyn_eq (x, "12"));
-
-      x = dyn_eval_string ("$(+ $foo 1)", env);
-      EXPECT (dyn_eq (x, "13"));
-
     }
 }
 

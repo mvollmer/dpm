@@ -31,11 +31,6 @@
    dynamic extents, dynamic variables, and a simple dynamic type
    system with semi-automatic garbage collection.
 
-   Nothing of this is particularily efficient.  Especially
-   dictionaries are horrible.  In fact, it's considerable less
-   efficient than your typical dynamic language implementation, so use
-   this sparingly.
-
    The dyn_begin and dyn_end functions delimit a dynamic extent.  They
    need to be called in a strictly nested fashion.  Within a dynamic
    extent, you can register certain actions that should be carried out
@@ -46,17 +41,10 @@
    A dynamic variable is like a thread local variable, but it will
    revert to its previous value when a dynamic extent ends.
 
-   Dynamic variables store "dynamic values", values with dynamic
-   types.  A dynamic value can be null, a string, a pair, a sequence,
-   a function, or a general object.  Of special note are sequences of
-   pairs, which are used as key/value dictionaries in many places.
+   A "dynamic value" is a reference counted block of memory with a
+   type tag.  You can define new types of values, and strings are
+   defined here.
 
-   Memory for dynamic values is handled semi-automatically via
-   reference counting.  Refcounting works well with threads, is
-   reasonably incremental, doesn't need to be tuned, the overhead is
-   deemed tolerable for the mild use of this dynamic type system, and
-   cycles will simply not be allowed.  Yep, the easy way out.
-   
    A dynamic value has one or more owners.  A piece of code that calls
    dyn_ref becomes a owner, and the same piece is responsible for
    calling dyn_unref eventually.  Ownership is never implicitly
@@ -73,22 +61,6 @@
    If you want to explicitly create a reference from the current
    dynamic context to a value, use dyn_on_unwind_unref.  This is
    typically done in constructors.
-
-   There is a standard external representation for dynamic values.
-   This is useful for simple user interactions, such as in
-   configuration files.
-
-   Null: "%"
-   Seq:  "(" elt_0 elt_1 ... ")"
-   Pair: first ":" second
-   
-   For kicks and completeness, there are also standard evaluation
-   semantics for dynamic values, inspired by Scheme.  This is not
-   intended to be useful, it's just there for paedagocic purposes, and
-   because it is fun.  By adding some more primitive functions and
-   numeric data types, a useful little language would result.
-
-   "$" form => Eval
 
    You can mark a point in the call stack with dyn_catch, and you can
    directly return to such a point with dyn_throw.  When this happens,
@@ -197,35 +169,6 @@ const char *dyn_to_string (dyn_val val);
 dyn_val dyn_from_string (const char *str);
 dyn_val dyn_from_stringn (const char *str, int len);
 
-int dyn_is_pair (dyn_val val);
-dyn_val dyn_first (dyn_val val);
-dyn_val dyn_second (dyn_val val);
-dyn_val dyn_pair (dyn_val first, dyn_val rest);
-
-int dyn_is_seq (dyn_val val);
-int dyn_len (dyn_val seq);
-dyn_val dyn_elt (dyn_val seq, int index);
-
-#define DYN_EOS ((dyn_val)-1)
-
-dyn_val dyn_seq (dyn_val val, ...);
-dyn_val dyn_concat (dyn_val seq, ...);
-
-typedef struct {
-  dyn_val *elts;
-  int offset, len, max;
-} dyn_seq_builder[1];
-
-void dyn_seq_start (dyn_seq_builder builder);
-void dyn_seq_append (dyn_seq_builder builder, dyn_val val);
-void dyn_seq_prepend (dyn_seq_builder builder, dyn_val val);
-void dyn_seq_concat_back (dyn_seq_builder builder, dyn_val seq);
-void dyn_seq_concat_front (dyn_seq_builder builder, dyn_val seq);
-dyn_val dyn_seq_finish (dyn_seq_builder builder);
-
-dyn_val dyn_assoc (dyn_val key, dyn_val val, dyn_val seq);
-dyn_val dyn_lookup (dyn_val key, dyn_val seq);
-
 int dyn_is_func (dyn_val val);
 dyn_val dyn_func (void (*code) (), void *env, void (*free) (void *env));
 void (*dyn_func_code (dyn_val val))();
@@ -327,10 +270,7 @@ int dyn_output_grow (dyn_output out, int min);
 char *dyn_output_pos (dyn_output out);
 void dyn_output_advance (dyn_output out, int n);
 
-/* Reading and writing.
-
-   The dyn_read function parses the string representation of a dynamic
-   value from a input stream.
+/* Writing.
 
    The dyn_write function takes a formatting template much like
    printf, with the following formatting codes:
@@ -338,8 +278,7 @@ void dyn_output_advance (dyn_output out, int n);
    %s - prints a '\0' terminated string, character by character.
 
    %S - prints a '\0' terminated string surrounded by quotes and with
-        escape sequences inside so that it can be parsed correctly by
-        dyn_read as a string.
+        escape sequences inside.
 
    %ls, %lS - like %s and %S, but print a string with given length.
 
@@ -368,20 +307,12 @@ void dyn_output_advance (dyn_output out, int n);
    dyn_format returns the printing result as a string.
  */
 
-dyn_val dyn_read (dyn_input in);
-dyn_val dyn_read_string (const char *str);
-int dyn_is_eof (dyn_val val);
-
 void dyn_write (dyn_output out, const char *format, ...);
 void dyn_writev (dyn_output out, const char *format, va_list args);
 void dyn_print (const char *format, ...);
 
 dyn_val dyn_format (const char *fmt, ...);
 dyn_val dyn_formatv (const char *fmt, va_list ap);
-
-dyn_val dyn_eval (dyn_val form, dyn_val env);
-dyn_val dyn_eval_string (dyn_val string, dyn_val env);
-
 
 typedef struct {
   dyn_val val;
