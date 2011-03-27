@@ -199,4 +199,6 @@ void dpm_ws_select (dpm_cand cand);
 bool dpm_dep_satisfied (dpm_dep d);
 bool dpm_cand_satisfied (dpm_cand c);
 
+void dpm_ws_show_broken ();
+
 #endif /* !DPM_WS_H */

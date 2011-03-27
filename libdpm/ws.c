@@ -1045,6 +1045,50 @@ dpm_ws_dump ()
     }
 }
 
+static void
+dump_broken_seat (dpm_ws ws, dpm_seat s)
+{
+  dpm_cand c = dpm_seat_selected (s);
+  if (!dpm_cand_satisfied (c))
+    {
+      dpm_cand_print_id (c);
+      dyn_print (" is broken\n");
+
+      dyn_foreach (d, dpm_cand_deps, c)
+	{
+	  if (!dpm_dep_satisfied (d))
+	    {
+	      dyn_print (" it depends on");
+	      bool first = true;
+	      dyn_foreach (a, dpm_dep_alts, d)
+		{
+		  if (!first)
+		    dyn_print (", or");
+		  dyn_print (" ");
+		  dpm_cand_print_id (a);
+		  first = false;
+		}
+	      dyn_print (", but none of them is selected.\n");
+	    }
+	}
+      dyn_print ("\n");
+    }
+}
+
+void
+dpm_ws_show_broken ()
+{
+  dpm_ws ws = dpm_ws_current ();
+  dump_broken_seat (ws, &(ws->goal_seat));
+
+  for (int i = 0; i < ws->n_pkgs; i++)
+    {
+      dpm_seat s = ws->pkg_seats + i;
+      if (s->cands)
+	dump_broken_seat (ws, s);
+    }
+}
+
 void
 dpm_ws_dump_pkg (dpm_package p)
 {

@@ -301,7 +301,8 @@ dpm_candpq_peek (dpm_candpq q)
 /* The super naive install
 
    We just walk down the dep graph and for each unsatisfied dep, we
-   select the first candidate, but every seat is only touched once.
+   select the candidate with the highest version for the first
+   untouched seat.
 */
 
 bool
@@ -313,8 +314,39 @@ dpm_alg_install_naively ()
     {
       dpm_seatset touched = dpm_seatset_new ();
 
+      dpm_cand find_best (dpm_dep d)
+      {
+	dyn_foreach (a, dpm_dep_alts, d)
+	  {
+	    dpm_seat s = dpm_cand_seat (a);
+	    if (!dpm_seatset_has (touched, s))
+	      {
+		if (dpm_cand_version (a) == NULL)
+		  return a;
+		ss_val a_ver = dpm_ver_version (dpm_cand_version (a));
+		dyn_foreach (b, dpm_dep_alts, d)
+		  {
+		    if (dpm_cand_version (b))
+		      {
+			ss_val b_ver = dpm_ver_version (dpm_cand_version (b));
+			if (dpm_db_compare_versions (b_ver, a_ver) > 0)
+			  {
+			    a = b;
+			    a_ver = b_ver;
+			  }
+		      }
+		  }
+		return a;
+	      }
+	  }
+	return NULL;
+      }
+
       void visit (dpm_cand c)
       {
+	if (c == NULL)
+	  return;
+
 	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
 	  return;
 
@@ -328,14 +360,7 @@ dpm_alg_install_naively ()
 	dyn_foreach (d, dpm_cand_deps, c)
 	  if (!dpm_dep_satisfied (d))
 	    {
-	      dyn_foreach (a, dpm_dep_alts, d)
-		{
-		  if (!dpm_seatset_has (touched, dpm_cand_seat (a)))
-		    {
-		      visit (a);
-		      break;
-		    }
-		}
+	      visit (find_best (d));
 	      if (!dpm_dep_satisfied (d))
 		failed = true;
 	    }

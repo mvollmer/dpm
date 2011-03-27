@@ -395,7 +395,7 @@ install (const char *package)
 
   dpm_ws_start ();
   dpm_alg_install_naively ();
-  // dpm_ws_dump ();
+  dpm_ws_show_broken ();
 }
 
 int
