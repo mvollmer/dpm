@@ -355,13 +355,13 @@ dpm_alg_install_naively ()
 	dyn_print ("\n");
 
 	dpm_seatset_add (touched, dpm_cand_seat (c));
-	dpm_ws_select (c);
+	dpm_ws_select (c, 0);
 
 	dyn_foreach (d, dpm_cand_deps, c)
-	  if (!dpm_dep_satisfied (d))
+	  if (!dpm_dep_satisfied (d, 0))
 	    {
 	      visit (find_best (d));
-	      if (!dpm_dep_satisfied (d))
+	      if (!dpm_dep_satisfied (d, 0))
 		failed = true;
 	    }
       }

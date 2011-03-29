@@ -27,6 +27,8 @@
 #define obstack_chunk_alloc dyn_malloc
 #define obstack_chunk_free free
 
+#define MAX_UNIVERSES 2
+
 typedef struct dpm_pkg_struct  *dpm_pkg;
 
 struct dpm_cand_struct {
@@ -37,9 +39,9 @@ struct dpm_cand_struct {
 
   dpm_dep_node deps;
   dpm_dep_node revdeps;
-  int n_unsatisfied;
-
   bool deps_added;
+
+  int n_unsatisfied[MAX_UNIVERSES];
 };
 
 struct dpm_seat_struct {
@@ -47,18 +49,20 @@ struct dpm_seat_struct {
   int id;
 
   dpm_cand cands;
-  dpm_cand selected;
   dpm_cand_node providers;
   struct dpm_cand_struct null_cand;
   bool providers_added;
   bool relevant;
+
+  dpm_cand selected[MAX_UNIVERSES];
 };
 
 struct dpm_dep_struct {
   dpm_cand cand;
   dpm_relation rel;
+  bool for_unpack;
   int n_alts;
-  int n_selected;
+  int n_selected[MAX_UNIVERSES];
   dpm_cand alts[0];
 };
 
@@ -105,7 +109,8 @@ get_seat (dpm_ws ws, dpm_package pkg)
     {
       dpm_cand n = &(s->null_cand);
       s->cands = n;
-      s->selected = n;
+      for (int i = 0; i < MAX_UNIVERSES; i++)
+	s->selected[i] = n;
     }
   return s;
 }
@@ -129,7 +134,7 @@ DYN_DEFINE_TYPE (dpm_ws, "workspace");
 static dyn_var cur_ws[1];
 
 void
-dpm_ws_create ()
+dpm_ws_create (int n_universe)
 {
   dpm_ws ws = dyn_new (dpm_ws);
 
@@ -155,7 +160,8 @@ dpm_ws_create ()
     n->seat = s;
     n->id = cand_id++;
     s->cands = n;
-    s->selected = n;
+    for (int i = 0; i < MAX_UNIVERSES; i++)
+      s->selected[i] = n;
 
     dpm_cand g = &(ws->goal_cand);
     g->seat = s;
@@ -410,7 +416,8 @@ dpm_ws_add_installed ()
       if (inst)
 	{
 	  dpm_cand c = dpm_ws_add_cand (inst);
-	  dpm_ws_select (c);
+	  for (int i = 0; i < MAX_UNIVERSES; i++)
+	    dpm_ws_select (c, i);
 	}
     }
 }
@@ -622,7 +629,7 @@ compute_deps (dpm_ws ws)
 	  dpm_cand c = ws->ver_cands + i;
 	  if (c->ver)
 	    {
-	      void do_rels (ss_val rels, bool conf)
+	      void do_rels (ss_val rels, bool conf, bool for_unpack)
 	      {
 		dyn_foreach (rel, ss_elts, rels)
 		  {
@@ -673,17 +680,21 @@ compute_deps (dpm_ws ws)
 		      {
 			d->cand = c;
 			d->rel = rel;
-			d->n_selected = 0;
+			d->for_unpack = for_unpack;
 			d->n_alts = n_alts;
 			
 			c->deps = cons_dep (ws, d, c->deps);
 
-			for (int i = 0; i < n_alts; i++)
-			  if (d->alts[i]->seat->selected == d->alts[i])
-			    d->n_selected++;
+			for (int u = 0; u < MAX_UNIVERSES; u++)
+			  {
+			    d->n_selected[u] = 0;
+			    for (int i = 0; i < n_alts; i++)
+			      if (d->alts[i]->seat->selected[u] == d->alts[i])
+				d->n_selected[u]++;
 
-			if (d->n_selected == 0)
-			  c->n_unsatisfied++;
+			    if (d->n_selected[u] == 0)
+			      c->n_unsatisfied[u]++;
+			  }
 
 			for (int i = 0; i < n_alts; i++)
 			  d->alts[i]->revdeps =
@@ -695,13 +706,13 @@ compute_deps (dpm_ws ws)
 	      }
 	  
 	      do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)),
-		       false);
+		       false, true);
 	      do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)),
-		       false);
+		       false, false);
 	      do_rels (dpm_rels_conflicts (dpm_ver_relations (c->ver)),
-		       true);
+		       true, true);
 	      do_rels (dpm_rels_breaks (dpm_ver_relations (c->ver)),
-		       true);
+		       true, false);
 	    }
 	}
     }
@@ -770,18 +781,22 @@ compute_goal_deps (dpm_ws ws)
 	    {
 	      d->cand = c;
 	      d->rel = NULL;
-	      d->n_selected = 0;
+	      d->for_unpack = false;
 	      d->n_alts = n_alts;
 	      
 	      c->deps = cons_dep (ws, d, c->deps);
 	      
-	      for (int i = 0; i < n_alts; i++)
-		if (d->alts[i]->seat->selected == d->alts[i])
-		  d->n_selected++;
+	      for (int u = 0; u < MAX_UNIVERSES; u++)
+		{
+		  d->n_selected[u] = 0;
+		  for (int i = 0; i < n_alts; i++)
+		    if (d->alts[i]->seat->selected[u] == d->alts[i])
+		      d->n_selected[u]++;
 	      
-	      if (d->n_selected == 0)
-		c->n_unsatisfied++;
-		
+		  if (d->n_selected[u] == 0)
+		    c->n_unsatisfied[u]++;
+		}
+
 	      for (int i = 0; i < n_alts; i++)
 		d->alts[i]->revdeps =
 		  cons_dep (ws, d, d->alts[i]->revdeps);
@@ -880,6 +895,22 @@ dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
   return iter->n->elt;
 }
 
+bool
+dpm_dep_for_unpack (dpm_dep d)
+{
+  return d->for_unpack;
+}
+
+bool
+dpm_dep_for_setup (dpm_dep d)
+{
+  return true;
+}
+
+/* Starting
+ */
+
+
 static void
 mark_relevant (dpm_ws ws)
 {
@@ -897,9 +928,6 @@ mark_relevant (dpm_ws ws)
   mark (&(ws->goal_cand));
 }
 
-/* Starting
- */
-
 void
 dpm_ws_start ()
 {
@@ -915,52 +943,52 @@ dpm_ws_start ()
  */
 
 void
-dpm_ws_select (dpm_cand c)
+dpm_ws_select (dpm_cand c, int universe)
 {
   dpm_seat s = c->seat;
   
-  if (s->selected == c)
+  if (s->selected[universe] == c)
     return;
 
-  dyn_foreach (d, dpm_cand_revdeps, s->selected)
+  dyn_foreach (d, dpm_cand_revdeps, s->selected[universe])
     {
-      d->n_selected--;
-      if (d->n_selected == 0)
-	d->cand->n_unsatisfied++;
+      d->n_selected[universe]--;
+      if (d->n_selected[universe] == 0)
+	d->cand->n_unsatisfied[universe]++;
     }
 
-  s->selected = c;
+  s->selected[universe] = c;
 
   dyn_foreach (d, dpm_cand_revdeps, c)
     {
-      if (d->n_selected == 0)
-	d->cand->n_unsatisfied--;
-      d->n_selected++;
+      if (d->n_selected[universe] == 0)
+	d->cand->n_unsatisfied[universe]--;
+      d->n_selected[universe]++;
     }
 }
 
 dpm_cand
-dpm_seat_selected (dpm_seat s)
+dpm_ws_selected (dpm_seat s, int universe)
 {
-  return s->selected;
+  return s->selected[universe];
 }
 
 bool
-dpm_dep_satisfied (dpm_dep d)
+dpm_dep_satisfied (dpm_dep d, int universe)
 {
-  return d->n_selected > 0;
+  return d->n_selected[universe] > 0;
 }
 
 bool
-dpm_cand_satisfied (dpm_cand c)
+dpm_cand_satisfied (dpm_cand c, int universe)
 {
-  return c->n_unsatisfied == 0;
+  return c->n_unsatisfied[universe] == 0;
 }
 
 bool
-dpm_cand_selected (dpm_cand cand)
+dpm_ws_is_selected (dpm_cand cand, int universe)
 {
-  return cand->seat->selected == cand;
+  return cand->seat->selected[universe] == cand;
 }
 
 /* Dumping
@@ -982,7 +1010,7 @@ dpm_cand_print_id (dpm_cand c)
 }
 
 static void
-dump_seat (dpm_ws ws, dpm_seat s)
+dump_seat (dpm_ws ws, dpm_seat s, int u)
 {
   if (s->pkg)
     dyn_print ("%r", dpm_pkg_name (s->pkg));
@@ -1003,9 +1031,9 @@ dump_seat (dpm_ws ws, dpm_seat s)
       else
 	dyn_print (" null");
       
-      if (dpm_cand_selected (c))
+      if (dpm_ws_is_selected (c, u))
 	{
-	  if (!dpm_cand_satisfied (c))
+	  if (!dpm_cand_satisfied (c, u))
 	    dyn_print (" XXX");
 	  else
 	    dyn_print (" ***");
@@ -1016,7 +1044,7 @@ dump_seat (dpm_ws ws, dpm_seat s)
       dyn_foreach (d, dpm_cand_deps, c)
 	{
 	  dyn_print ("  >");
-	  if (!dpm_dep_satisfied (d))
+	  if (!dpm_dep_satisfied (d, u))
 	    dyn_print (" !!!");
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    {
@@ -1041,11 +1069,11 @@ dump_seat (dpm_ws ws, dpm_seat s)
 }
 
 void
-dpm_ws_dump ()
+dpm_ws_dump (int universe)
 {
   dpm_ws ws = dpm_ws_current ();
 
-  dump_seat (ws, &(ws->goal_seat));
+  dump_seat (ws, &(ws->goal_seat), universe);
   dyn_print ("\n");
 
   for (int i = 0; i < ws->n_pkgs; i++)
@@ -1053,24 +1081,24 @@ dpm_ws_dump ()
       dpm_seat s = ws->pkg_seats + i;
       if (s->cands)
 	{
-	  dump_seat (ws, s);
+	  dump_seat (ws, s, universe);
 	  dyn_print ("\n");
 	}
     }
 }
 
 static void
-dump_broken_seat (dpm_ws ws, dpm_seat s)
+dump_broken_seat (dpm_ws ws, dpm_seat s, int u)
 {
-  dpm_cand c = dpm_seat_selected (s);
-  if (!dpm_cand_satisfied (c))
+  dpm_cand c = dpm_ws_selected (s, u);
+  if (!dpm_cand_satisfied (c, u))
     {
       dpm_cand_print_id (c);
       dyn_print (" is broken\n");
 
       dyn_foreach (d, dpm_cand_deps, c)
 	{
-	  if (!dpm_dep_satisfied (d))
+	  if (!dpm_dep_satisfied (d, u))
 	    {
 	      dyn_print (" it depends on");
 	      bool first = true;
@@ -1090,22 +1118,22 @@ dump_broken_seat (dpm_ws ws, dpm_seat s)
 }
 
 void
-dpm_ws_show_broken ()
+dpm_ws_show_broken (int universe)
 {
   dpm_ws ws = dpm_ws_current ();
-  dump_broken_seat (ws, &(ws->goal_seat));
+  dump_broken_seat (ws, &(ws->goal_seat), universe);
 
   for (int i = 0; i < ws->n_pkgs; i++)
     {
       dpm_seat s = ws->pkg_seats + i;
       if (s->cands)
-	dump_broken_seat (ws, s);
+	dump_broken_seat (ws, s, universe);
     }
 }
 
 void
-dpm_ws_dump_pkg (dpm_package p)
+dpm_ws_dump_pkg (dpm_package p, int universe)
 {
   dpm_ws ws = dpm_ws_current ();
-  dump_seat (ws, get_seat (ws, p));
+  dump_seat (ws, get_seat (ws, p), universe);
 }

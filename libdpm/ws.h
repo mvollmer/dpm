@@ -70,6 +70,11 @@
 
    A cand is "broken" when it is selected but not satisfied.
 
+   In fact, a workspace keeps track of any number of 'selection
+   universes'.  A seat has the same cands in each universe, and a cand
+   has the same deps, but different cands can be selected for their
+   seat in different universes.
+
    A workspace has some special seats and associated cands that do not
    belong to any real package.
 
@@ -90,7 +95,6 @@
    packages that are involved in satisfying the dependencies of the
    goal cand.  A workspace is called 'broken' when any of the selected
    candidates of all relevant packages is broken.
-
 */
 
 DYN_DECLARE_TYPE (dpm_ws);
@@ -98,11 +102,11 @@ DYN_DECLARE_TYPE (dpm_ws);
 /* Workspace creation
  */
 
-void dpm_ws_create ();
+void dpm_ws_create (int n_universes);
 dpm_ws dpm_ws_current ();
 
-void dpm_ws_dump ();
-void dpm_ws_dump_pkg (dpm_package p);
+void dpm_ws_dump (int universe);
+void dpm_ws_dump_pkg (dpm_package p, int universe);
 
 /* Adding candidates to the current workspace.
 */
@@ -141,9 +145,7 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_seat_cands, dpm_seat s)
 };
 
 dpm_seat dpm_cand_seat (dpm_cand);
-bool     dpm_cand_selected (dpm_cand);
 dpm_cand dpm_seat_null_cand (dpm_seat);
-dpm_cand dpm_seat_selected (dpm_seat);
 
 dpm_package dpm_seat_package (dpm_seat);
 dpm_version dpm_cand_version (dpm_cand);
@@ -192,14 +194,19 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
   int i;
 };
 
+bool dpm_dep_for_unpack (dpm_dep d);
+bool dpm_dep_for_setup (dpm_dep d);
+
 /* Selecting cands.
  */
 
-void dpm_ws_select (dpm_cand cand);
+void dpm_ws_select (dpm_cand cand, int universe);
+dpm_cand dpm_ws_selected (dpm_seat, int universe);
+bool dpm_ws_is_selected (dpm_cand, int universe);
 
-bool dpm_dep_satisfied (dpm_dep d);
-bool dpm_cand_satisfied (dpm_cand c);
+bool dpm_dep_satisfied (dpm_dep d, int universe);
+bool dpm_cand_satisfied (dpm_cand c, int universe);
 
-void dpm_ws_show_broken ();
+void dpm_ws_show_broken (int universe);
 
 #endif /* !DPM_WS_H */

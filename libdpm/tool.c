@@ -363,7 +363,7 @@ void
 dump (const char *origin)
 {
   dpm_db_open ();
-  dpm_ws_create ();
+  dpm_ws_create (1);
 
   dyn_foreach_iter (p, dpm_db_origin_packages, dpm_db_origin_find (origin))
     {
@@ -372,7 +372,7 @@ dump (const char *origin)
     }
 
   dpm_ws_start ();
-  dpm_ws_dump ();
+  dpm_ws_dump (0);
 }
 
 void
@@ -381,7 +381,7 @@ install (const char *package)
   dpm_package pkg;
 
   dpm_db_open ();
-  dpm_ws_create ();
+  dpm_ws_create (1);
 
   dpm_ws_add_installed ();
 
@@ -397,7 +397,7 @@ install (const char *package)
 
   dpm_ws_start ();
   dpm_alg_install_naively ();
-  dpm_ws_show_broken ();
+  dpm_ws_show_broken (0);
 }
 
 int
