@@ -402,6 +402,20 @@ dpm_ws_add_cand_and_deps (dpm_version ver)
 }
 
 void
+dpm_ws_add_installed ()
+{
+  dyn_foreach (p, dpm_db_packages)
+    {
+      dpm_version inst = dpm_db_installed (p);
+      if (inst)
+	{
+	  dpm_cand c = dpm_ws_add_cand (inst);
+	  dpm_ws_select (c);
+	}
+    }
+}
+
+void
 dpm_ws_set_goal_candspec (dpm_candspec spec)
 {
   dpm_ws ws = dpm_ws_current ();

@@ -86,7 +86,6 @@
    Recommends relation is represented by a dep with two alternatives:
    the recommended package and the ugly cand.
 
-   
    A workspace maintains a set of 'relevant' seats.  These are the
    packages that are involved in satisfying the dependencies of the
    goal cand.  A workspace is called 'broken' when any of the selected
@@ -114,6 +113,8 @@ typedef struct dpm_cand_struct *dpm_cand;
 dpm_cand dpm_ws_add_cand (dpm_version ver);
 dpm_cand dpm_ws_add_cand_and_deps (dpm_version ver);
 void dpm_ws_add_cand_deps (dpm_cand cand);
+
+void dpm_ws_add_installed ();
 
 /* A 'candspec' contains the parameters for a virtual candidate, such
    as the goal cadidate.

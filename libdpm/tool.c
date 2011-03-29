@@ -383,6 +383,8 @@ install (const char *package)
   dpm_db_open ();
   dpm_ws_create ();
 
+  dpm_ws_add_installed ();
+
   pkg = dpm_db_package_find (package);
   if (pkg == NULL)
     dyn_error ("No such package: %s", package);
