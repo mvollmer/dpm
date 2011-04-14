@@ -64,6 +64,17 @@
    Continuing the example above, these are foo_2.0, foo_1.3, and
    foo_null, the null candidate of foo.
 
+   The deps are also expressed a second time in 'reverse'.  For
+   example, if foo_1.0 has a dep on bar_1.0, then bar_null has a dep
+   on foo_null.  Because of these 'reversed' dependencies, you only
+   have to consider the deps of a cand when selecting it; you don't
+   have to check how this selection has affected other cands that have
+   deps on the one that has just been selected.  To continue the
+   example, when selecting bar_null, you don't have to figure out that
+   foo_1.0 now has a unsatisfied dep; you can just look at the deps of
+   bar_null and find that foo_null must be selected, too, and that
+   will take care of it.
+
    A dep is called "satisfied" when one of its alts is selected.
 
    A cand is called "satisfied" when all of its deps are satisfied.
