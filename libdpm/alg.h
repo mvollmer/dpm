@@ -92,4 +92,6 @@ bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 
 bool dpm_alg_install_naively ();
 
+void dpm_alg_execute ();
+
 #endif /* !DPM_ALG_H */

@@ -350,7 +350,7 @@ dpm_alg_install_naively ()
 	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
 	  return;
 
-	dyn_print ("selecting ");
+	dyn_print ("Selecting ");
 	dpm_cand_print_id (c);
 	dyn_print ("\n");
 
@@ -370,4 +370,108 @@ dpm_alg_install_naively ()
     }
 
   return !failed;
+}
+
+/* Executing a plan.
+ */
+
+void
+dpm_alg_execute ()
+{
+  dpm_seatset unpack_done = dpm_seatset_new ();
+  dpm_seatset setup_queued = dpm_seatset_new ();
+  dpm_seatset setup_done = dpm_seatset_new ();
+
+  void do_unpack (dpm_seat s)
+  {
+    dpm_cand c = dpm_ws_selected (s, 0);
+    dpm_version v = dpm_cand_version (c);
+    dpm_package p = dpm_seat_package (s);
+    
+    if (v)
+      dyn_print ("Unpacking %r %r\n",
+		 dpm_pkg_name (dpm_ver_package (v)), dpm_ver_version (v));
+    else if (p)
+      dyn_print ("Removing %r\n", dpm_pkg_name (p));
+  }
+
+  void do_setup (dpm_seat s)
+  {
+    dpm_cand c = dpm_ws_selected (s, 0);
+    dpm_version v = dpm_cand_version (c);
+    
+    if (v)
+      dyn_print ("Setting up %r %r\n",
+		 dpm_pkg_name (dpm_ver_package (v)), dpm_ver_version (v));
+  }
+
+  auto void setup (dpm_seat s);
+
+  void unpack (dpm_seat s)
+  {
+    if (dpm_seatset_has (unpack_done, s))
+      return;
+
+    dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s, 0))
+      if (dpm_dep_for_unpack (d))
+	{
+	  dyn_foreach (a, dpm_dep_alts, d)
+	    if (dpm_ws_is_selected (a, 0))
+	      {
+		dyn_print ("(setting up %r for pre-dep of %r)\n",
+			   dpm_pkg_name (dpm_seat_package (dpm_cand_seat (a))),
+			   dpm_pkg_name (dpm_seat_package (s)));
+		setup (dpm_cand_seat (a));
+		break;
+	      }
+	}
+
+    if (!dpm_seatset_has (unpack_done, s))
+      {
+	do_unpack (s);
+	dpm_seatset_add (unpack_done, s);
+      }
+  }
+
+  void setup (dpm_seat s)
+  {
+    if (dpm_seatset_has (setup_done, s))
+      return;
+
+    if (dpm_seatset_has (setup_queued, s))
+      {
+	dyn_print ("(dep cycle broken at %r)\n",
+		   dpm_pkg_name (dpm_seat_package (s)));
+	return;
+      }
+
+    dpm_seatset_add (setup_queued, s);
+
+    dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s, 0))
+      dyn_foreach (a, dpm_dep_alts, d)
+        if (dpm_ws_is_selected (a, 0))
+	  {
+	    if (!dpm_seatset_has (setup_done, dpm_cand_seat (a)))
+	      dyn_print ("(setting up %r for dep of %r)\n",
+			 dpm_pkg_name (dpm_seat_package (dpm_cand_seat (a))),
+			 dpm_pkg_name (dpm_seat_package (s)));
+	    setup (dpm_cand_seat (a));
+	    break;
+	  }
+
+    unpack (s);
+
+    if (!dpm_seatset_has (setup_done, s))
+      {
+	do_setup (s);
+	dpm_seatset_add (setup_done, s);
+      }
+  }
+
+  dyn_foreach (p, dpm_db_packages)
+    dyn_foreach (s, dpm_ws_seats, p)
+      {
+	if (dpm_seat_relevant (s))
+	  setup (s);
+      }
 }

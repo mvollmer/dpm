@@ -396,8 +396,12 @@ install (const char *package)
   dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
 
   dpm_ws_start ();
-  dpm_alg_install_naively ();
-  dpm_ws_show_broken (0);
+  if (dpm_alg_install_naively ())
+    dpm_alg_execute ();
+  else
+    dpm_ws_show_broken (0);
+
+  // dpm_ws_dump (0);
 }
 
 int
