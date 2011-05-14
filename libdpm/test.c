@@ -1527,7 +1527,7 @@ setup_ws (const char *meta)
       dpm_db_checkpoint ();
     }
 
-  dpm_ws_create ();
+  dpm_ws_create (1);
   dyn_foreach_iter (p, dpm_db_origin_packages, o)
     {
       dyn_foreach (v, ss_elts, p.versions)
@@ -1550,7 +1550,7 @@ setup_ws_1 (const char *meta, const char *cand)
       dpm_db_checkpoint ();
     }
 
-  dpm_ws_create ();
+  dpm_ws_create (1);
   dyn_foreach_iter (p, dpm_db_origin_packages, o)
     {
       if (ss_streq (dpm_pkg_name (p.package), cand))
@@ -1819,24 +1819,24 @@ DEFTEST (ws_select)
       dpm_cand baz_10 = find_cand ("baz_1.0");
       dpm_cand baz_null = find_cand ("baz_null");
 
-      EXPECT (!dpm_cand_satisfied (foo_10));
-      EXPECT (dpm_cand_satisfied (bar_11));
-      EXPECT (dpm_cand_satisfied (bar_10));
-      EXPECT (dpm_cand_satisfied (baz_10));
+      EXPECT (!dpm_cand_satisfied (foo_10, 0));
+      EXPECT (dpm_cand_satisfied (bar_11, 0));
+      EXPECT (dpm_cand_satisfied (bar_10, 0));
+      EXPECT (dpm_cand_satisfied (baz_10, 0));
 
-      dpm_ws_select (bar_11);
-      EXPECT (dpm_cand_satisfied (foo_10));
-      dpm_ws_select (bar_10);
-      EXPECT (!dpm_cand_satisfied (foo_10));
-      dpm_ws_select (bar_null);
-      EXPECT (!dpm_cand_satisfied (foo_10));
+      dpm_ws_select (bar_11, 0);
+      EXPECT (dpm_cand_satisfied (foo_10, 0));
+      dpm_ws_select (bar_10, 0);
+      EXPECT (!dpm_cand_satisfied (foo_10, 0));
+      dpm_ws_select (bar_null, 0);
+      EXPECT (!dpm_cand_satisfied (foo_10, 0));
 
-      dpm_ws_select (baz_10);
-      EXPECT (dpm_cand_satisfied (foo_10));
-      EXPECT (!dpm_cand_satisfied (bar_11));
-      dpm_ws_select (baz_null);
-      EXPECT (!dpm_cand_satisfied (foo_10));
-      EXPECT (dpm_cand_satisfied (bar_11));
+      dpm_ws_select (baz_10, 0);
+      EXPECT (dpm_cand_satisfied (foo_10, 0));
+      EXPECT (!dpm_cand_satisfied (bar_11, 0));
+      dpm_ws_select (baz_null, 0);
+      EXPECT (!dpm_cand_satisfied (foo_10, 0));
+      EXPECT (dpm_cand_satisfied (bar_11, 0));
     }
 }
 
@@ -1888,7 +1888,7 @@ DEFTEST (ws_goal_cand)
 	  dpm_db_checkpoint ();
 	}
 
-      dpm_ws_create ();
+      dpm_ws_create (1);
 
       dpm_candspec spec = dpm_candspec_new ();
       dpm_candspec_begin_rel (spec, false);
