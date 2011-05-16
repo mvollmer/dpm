@@ -617,12 +617,115 @@ provides_rel (dpm_cand c, bool conf, int op, ss_val version)
     return res;
 }
 
+/* Dep builder
+ */
+
+typedef struct depb_struct {
+  dpm_ws ws;
+  dpm_candset alt_set;
+  int n_alts;
+} depb;
+
 static void
-compute_deps (dpm_ws ws)
+depb_init (depb *db)
 {
+  db->ws = dpm_ws_current ();
+  db->alt_set = dpm_candset_new ();
+}
+
+static void
+depb_start (depb *db)
+{
+  db->n_alts = 0;
+  dpm_candset_reset (db->alt_set);
+  obstack_blank (&(db->ws->mem), sizeof (struct dpm_dep_struct));
+}
+
+bool
+depb_collect_seat_alts (depb *db, dpm_seat s,
+			bool (*satisfies) (dpm_cand c),
+			bool (*provides) (dpm_cand c))
+{
+  void add_alt (dpm_cand c)
+  {
+    if (!dpm_candset_has (db->alt_set, c))
+      {
+	dpm_candset_add (db->alt_set, c);
+	obstack_ptr_grow (&(db->ws->mem), c);
+	db->n_alts++;
+      }
+  }
+
+  if (db->n_alts < 0)
+    return false;
+
+  bool all_satisfy = true;
+
+  dyn_foreach (c, dpm_seat_cands, s)
+    if (satisfies (c))
+      add_alt (c);
+    else
+      all_satisfy = false;
+  
+  if (all_satisfy)
+    {
+      // This dependency does not need to be
+      // recorded since it is always satisfied, no
+      // matter with candidate of of
+      // P is selected.
+      //
+      db->n_alts = -1;
+      return false;
+    }
+  
+  for (dpm_cand_node n = s->providers; n; n = n->next)
+    if (provides (n->elt))
+      add_alt (n->elt);
+
+  return true;
+}
+
+void
+depb_finish (depb *db, dpm_cand c, dpm_relation rel, bool for_unpack)
+{
+  dpm_dep d = obstack_finish (&db->ws->mem);
+  if (db->n_alts < 0)
+    obstack_free (&(db->ws->mem), d);
+  else
+    {
+      d->cand = c;
+      d->rel = rel;
+      d->for_unpack = for_unpack;
+      d->n_alts = db->n_alts;
+      
+      c->deps = cons_dep (db->ws, d, c->deps);
+      
+      for (int u = 0; u < MAX_UNIVERSES; u++)
+	{
+	  d->n_selected[u] = 0;
+	  for (int i = 0; i < db->n_alts; i++)
+	    if (d->alts[i]->seat->selected[u] == d->alts[i])
+	      d->n_selected[u]++;
+	  
+	  if (d->n_selected[u] == 0)
+	    c->n_unsatisfied[u]++;
+	}
+      
+      for (int i = 0; i < db->n_alts; i++)
+	d->alts[i]->revdeps =
+	  cons_dep (db->ws, d, d->alts[i]->revdeps);
+    }
+}
+
+static void
+compute_deps ()
+{
+  dpm_ws ws = dpm_ws_current ();
+
   dyn_block
     {
-      dpm_candset alt_set = dpm_candset_new ();
+      depb db;
+      depb_init (&db);
 
       for (int i = 0; i < ws->n_vers; i++)
 	{
@@ -633,75 +736,25 @@ compute_deps (dpm_ws ws)
 	      {
 		dyn_foreach (rel, ss_elts, rels)
 		  {
-		    int n_alts = 0;
-		    obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
-		    
-		    void add_alt (dpm_cand c)
-		    {
-		      if (!dpm_candset_has (alt_set, c))
-			{
-			  dpm_candset_add (alt_set, c);
-			  obstack_ptr_grow (&ws->mem, c);
-			  n_alts++;
-			}
-		    }
+		    depb_start (&db);
 
 		    dyn_foreach_iter (alt, dpm_db_alternatives, rel)
 		      {
+			bool satisfies (dpm_cand c)
+			{
+			  return satisfies_rel (c, conf, alt.op, alt.version);
+			}
+
+			bool provides (dpm_cand c)
+			{
+			  return provides_rel (c, conf, alt.op, alt.version);
+			}
+
 			dpm_seat s = get_seat (ws, alt.package);
-			
-			bool all_satisfy = true;
-			dyn_foreach (pc, dpm_seat_cands, s)
-			  if (satisfies_rel (pc, conf, alt.op, alt.version))
-			    add_alt (pc);
-			  else
-			    all_satisfy = false;
-		    
-			if (all_satisfy)
-			  {
-			    // This dependency does not need to be
-			    // recorded since it is always satisfied, no
-			    // matter with candidate of of
-			    // P is selected.
-			    //
-			    n_alts = -1;
-			    break;
-			  }
-		    
-			for (dpm_cand_node n = s->providers; n; n = n->next)
-			  if (provides_rel (n->elt, conf, alt.op, alt.version))
-			    add_alt (n->elt);
+			depb_collect_seat_alts (&db, s, satisfies, provides);
 		      }
 
-		    dpm_dep d = obstack_finish (&ws->mem);
-		    if (n_alts < 0)
-		      obstack_free (&ws->mem, d);
-		    else
-		      {
-			d->cand = c;
-			d->rel = rel;
-			d->for_unpack = for_unpack;
-			d->n_alts = n_alts;
-			
-			c->deps = cons_dep (ws, d, c->deps);
-
-			for (int u = 0; u < MAX_UNIVERSES; u++)
-			  {
-			    d->n_selected[u] = 0;
-			    for (int i = 0; i < n_alts; i++)
-			      if (d->alts[i]->seat->selected[u] == d->alts[i])
-				d->n_selected[u]++;
-
-			    if (d->n_selected[u] == 0)
-			      c->n_unsatisfied[u]++;
-			  }
-
-			for (int i = 0; i < n_alts; i++)
-			  d->alts[i]->revdeps =
-			    cons_dep (ws, d, d->alts[i]->revdeps);
-		      }
-		    
-		    dpm_candset_reset (alt_set);
+		    depb_finish (&db, c, rel, for_unpack);
 		  }
 	      }
 	  
@@ -719,90 +772,41 @@ compute_deps (dpm_ws ws)
 }
 
 static void
-compute_goal_deps (dpm_ws ws)
+compute_goal_deps ()
 {
-  /* XXX - This much code duplication is a crime, of course.
-   */
+  dpm_ws ws = dpm_ws_current ();
 
   if (ws->goal_spec == NULL)
     return;
 
   dyn_block
     {
-      dpm_candset alt_set = dpm_candset_new ();
+      depb db;
+      depb_init (&db);
 
       dpm_cand c = &(ws->goal_cand);
 
       for (struct candspec_rel *r = ws->goal_spec->rels; r; r = r->next)
 	{
-	  int n_alts = 0;
-	  obstack_blank (&ws->mem, sizeof (struct dpm_dep_struct));
-	    
-	  void add_alt (dpm_cand c)
-	  {
-	    if (!dpm_candset_has (alt_set, c))
-	      {
-		dpm_candset_add (alt_set, c);
-		obstack_ptr_grow (&ws->mem, c);
-		n_alts++;
-	      }
-	  }
-	    
+	  depb_start (&db);
+
 	  for (struct candspec_alt *a = r->alts; a; a = a->next)
 	    {
-	      dpm_seat s = get_seat (ws, a->pkg);
+	      bool satisfies (dpm_cand c)
+	      {
+		return satisfies_rel_str (c, r->conf, a->op, a->ver);
+	      }
 	      
-	      bool all_satisfy = true;
-	      dyn_foreach (pc, dpm_seat_cands, s)
-		if (satisfies_rel_str (pc, r->conf, a->op, a->ver))
-		  add_alt (pc);
-		else
-		  all_satisfy = false;
-	      
-	      if (all_satisfy)
-		{
-		  // This dependency does not need to be
-		  // recorded since it is always satisfied, no
-		  // matter with candidate of P is selected.
-		  //
-		  n_alts = -1;
-		  break;
-		}
-	      
-	      for (dpm_cand_node n = s->providers; n; n = n->next)
-		if (provides_rel_str (n->elt, r->conf, a->op, a->ver))
-		  add_alt (n->elt);
-	    }
-	  
-	  dpm_dep d = obstack_finish (&ws->mem);
-	  if (n_alts < 0)
-	    obstack_free (&ws->mem, d);
-	  else
-	    {
-	      d->cand = c;
-	      d->rel = NULL;
-	      d->for_unpack = false;
-	      d->n_alts = n_alts;
-	      
-	      c->deps = cons_dep (ws, d, c->deps);
-	      
-	      for (int u = 0; u < MAX_UNIVERSES; u++)
-		{
-		  d->n_selected[u] = 0;
-		  for (int i = 0; i < n_alts; i++)
-		    if (d->alts[i]->seat->selected[u] == d->alts[i])
-		      d->n_selected[u]++;
-	      
-		  if (d->n_selected[u] == 0)
-		    c->n_unsatisfied[u]++;
-		}
+	      bool provides (dpm_cand c)
+	      {
+		return provides_rel_str (c, r->conf, a->op, a->ver);
+	      }
 
-	      for (int i = 0; i < n_alts; i++)
-		d->alts[i]->revdeps =
-		  cons_dep (ws, d, d->alts[i]->revdeps);
+	      dpm_seat s = get_seat (ws, a->pkg);
+	      depb_collect_seat_alts (&db, s, satisfies, provides);
 	    }
-	  
-	  dpm_candset_reset (alt_set);
+
+	  depb_finish (&db, c, NULL, false);
 	}
     }
 }
@@ -934,8 +938,8 @@ dpm_ws_start ()
   dpm_ws ws = dpm_ws_current ();
   
   find_providers (ws);
-  compute_deps (ws);
-  compute_goal_deps (ws);
+  compute_deps ();
+  compute_goal_deps ();
   mark_relevant (ws);
 }
 

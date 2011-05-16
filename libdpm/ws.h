@@ -32,7 +32,7 @@
 
    For each package in the database, a workspace stores a list of some
    of its versions, called "candidates".  There are one or more
-   "seats" per package, and each candidates is associates with exactly
+   "seats" per package, and each candidate is associates with exactly
    one seat.  (Normally, there is only one seat per package, but with
    things like multiarch, there might be more seats to fill.)
 
