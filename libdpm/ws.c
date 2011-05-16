@@ -551,8 +551,10 @@ dpm_seat_relevant (dpm_seat s)
  */
 
 static void
-find_providers (dpm_ws ws)
+find_providers ()
 {
+  dpm_ws ws = dpm_ws_current ();
+
   for (int i = 0; i < ws->n_vers; i++)
     {
       dpm_cand c = ws->ver_cands + i;
@@ -916,7 +918,7 @@ dpm_dep_for_setup (dpm_dep d)
 
 
 static void
-mark_relevant (dpm_ws ws)
+mark_relevant ()
 {
   void mark (dpm_cand c)
   {
@@ -929,6 +931,7 @@ mark_relevant (dpm_ws ws)
         mark (a);
   }
 
+  dpm_ws ws = dpm_ws_current ();
   mark (&(ws->goal_cand));
 }
 
@@ -937,7 +940,7 @@ dpm_ws_start ()
 {
   dpm_ws ws = dpm_ws_current ();
   
-  find_providers (ws);
+  find_providers ();
   compute_deps ();
   compute_goal_deps ();
   mark_relevant (ws);
