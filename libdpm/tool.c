@@ -360,7 +360,72 @@ list_provides (const char *package)
 }
 
 void
-dump (const char *origin)
+dump_store_reference (ss_store ss, ss_val o)
+{
+  int i;
+
+  if (o == NULL)
+    printf (" nil\n");
+  else if (ss_is_int (o))
+    printf (" %d\n", ss_to_int (o));
+  else if (ss_is_blob (o))
+    {
+      int l = ss_len (o);
+      char *b = ss_blob_start (o);
+      printf (" (b%d) ", ss_id (ss, o));
+      for (i = 0; i < l; i++)
+	printf ("%c", isprint(b[i])? b[i] : '.');
+      printf ("\n");
+    }
+  else
+    printf (" r%d (%d)\n", ss_id (ss, o), ss_tag (o));
+}
+
+void
+dump_store_object (ss_store ss, ss_val o)
+{
+  int i;
+
+  if (o == NULL)
+    printf ("NULL\n");
+  else if (ss_is_int (o))
+    printf ("%d\n", ss_to_int (o));
+  else if (ss_is_blob (o))
+    {
+      int l = ss_len (o);
+      printf ("b%d: (blob, %d bytes)\n", ss_id (ss, o), l);
+      dump_store_reference (ss, o);
+    }
+  else
+    {
+      int n = ss_len (o);
+      printf ("r%d: (tag %d, %d fields)\n", ss_id (ss, o), ss_tag (o), n);
+      for (i = 0; i < n; i++)
+	dump_store_reference (ss, ss_ref (o, i));
+      if (n > 0)
+	{
+	  for (i = 0; i < n; i++)
+	    {
+	      ss_val r = ss_ref (o, i);
+	      if (r && !ss_is_int (r) && !ss_is_blob (r))
+		{
+		  printf ("\n");
+		  dump_store_object (ss, r);
+		}
+	    }
+	}
+    }
+}
+
+void
+dump_store (const char *name)
+{
+  ss_store st = ss_open (name, SS_READ);
+  dump_store_object (st, ss_get_root (st));
+}
+
+void
+dump_origin (const char *origin)
 {
   dpm_db_open ();
   dpm_ws_create (1);
@@ -373,6 +438,15 @@ dump (const char *origin)
 
   dpm_ws_start ();
   dpm_ws_dump (0);
+}
+
+void
+dump (const char *origin)
+{
+  if (origin == NULL)
+    dump_store (dyn_to_string (dyn_get (dpm_database_name)));
+  else
+    dump_origin (origin);
 }
 
 void
