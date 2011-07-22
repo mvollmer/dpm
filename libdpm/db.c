@@ -964,8 +964,10 @@ compare_fragment (const char *A, const char *AEnd,
 	 {
 	   int vc = order(*lhs);
 	   int rc = order(*rhs);
-	   if (vc != rc)
-	     return vc - rc;
+	   if (vc > rc)
+	     return 1;
+	   else if (vc < rc)
+	     return -1;
 	   lhs++; rhs++;
 	 }
 
@@ -986,7 +988,7 @@ compare_fragment (const char *A, const char *AEnd,
        if (isdigit(*rhs))
 	 return -1;
        if (first_diff)
-	 return first_diff;
+	 return first_diff < 0? -1 : 1;
      }
 
    // The strings must be equal
