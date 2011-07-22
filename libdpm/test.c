@@ -27,7 +27,6 @@
 // Utilities
 
 #define S(x) dyn_from_string (x)
-#define Q(x) dyn_read_string (#x)
 #define I(x) dyn_open_string (x, -1)
 #define L(x) #x "\n"
 
@@ -1238,6 +1237,82 @@ DEFTEST (parse_tar_members)
 	    }
 	  i++;
 	}
+    }
+}
+
+DEFTEST (db_version_compare)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+
+      int op[5] = {
+	DPM_EQ,
+	DPM_LESS,
+	DPM_LESSEQ,
+	DPM_GREATER,
+	DPM_GREATEREQ 
+      };
+
+      bool res[5][3] = {
+	{ false, true,  false },
+	{ true,  false, false },
+	{ true,  true,  false },
+	{ false, false, true },
+	{ false, true,  true }
+      };
+
+      void check1 (const char *a_str, const char *b_str, int sign)
+      {
+	int a_len = strlen (a_str);
+	int b_len = strlen (b_str);
+	
+	ss_val a = ss_blob_new (s, a_len, (void *)a_str);
+	ss_val b = ss_blob_new (s, b_len, (void *)b_str);
+
+	EXPECT (dpm_db_compare_versions (a, b) == sign);
+	EXPECT (dpm_db_compare_versions_str (a, b_str, b_len) == sign);
+
+	for (int i = 0; i < 5; i++)
+	  {
+	    EXPECT (dpm_db_check_versions (a, op[i], b) == res[i][sign+1]);
+	    EXPECT (dpm_db_check_versions_str (a, op[i], b_str, b_len) ==
+		    res[i][sign+1]);
+	  }
+      }
+
+      void check (const char *a_str, const char *b_str, int sign)
+      {
+	check1 (a_str, b_str, sign);
+	check1 (b_str, a_str, -sign);
+      }
+
+      check ("1", "1", 0);
+      check ("0.1.0", "0.1.0", 0);
+      check ("0.001", "0.01", 0);
+      check ("0:1", "1", 0);
+      check ("1:1", "1:1", 0);
+
+      check ("1", "2", -1);
+      check ("0.1.99", "0.2.0", -1);
+      check ("0.09", "0.10", -1);
+      check ("1:1", "2:1", -1);
+      check ("1", "1+", -1);
+      check ("1+", "1++", -1);
+      check ("1~", "1", -1);
+      check ("1~~", "1~", -1);
+      
+      check ("1", "1.0", -1);
+      check ("1.0", "1..0", -1);
+
+      check ("a", "b", -1);
+      check ("a1", "a2", -1);
+      check ("aaa.bbb", "a.b", -1);
+
+      check ("1.0-1", "1.0-2", -1);
+      // Policy says that a missing Debian revision is equal to a
+      // revision of "0".
+      // check ("1.0", "1.0-0", 0);
     }
 }
 
