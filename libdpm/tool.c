@@ -15,6 +15,7 @@ usage ()
   fprintf (stderr, "       dpm-tool [OPTIONS] relations PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] provides PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] install PACKAGE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] deps PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] dump\n");
   exit (1);
@@ -376,7 +377,7 @@ dump (const char *origin)
 }
 
 void
-install (char **packages)
+install (char **packages, bool show_deps, bool execute)
 {
   dpm_package pkg;
 
@@ -402,11 +403,15 @@ install (char **packages)
 
   dpm_ws_start ();
   if (dpm_alg_install_naively ())
-    dpm_alg_execute ();
+    {
+      if (execute)
+	dpm_alg_execute ();
+    }
   else
     dpm_ws_show_broken (0);
-
-  // dpm_ws_dump (0);
+  
+  if (show_deps)
+    dpm_ws_dump (0);
 }
 
 int
@@ -441,7 +446,9 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
   else if (strcmp (argv[1], "install") == 0)
-    install (argv+2);
+    install (argv+2, false, true);
+  else if (strcmp (argv[1], "deps") == 0)
+    install (argv+2, true, false);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else

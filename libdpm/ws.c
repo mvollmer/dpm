@@ -61,6 +61,7 @@ struct dpm_dep_struct {
   dpm_cand cand;
   dpm_relation rel;
   bool for_unpack;
+  bool reversed;
   int n_alts;
   int n_selected[MAX_UNIVERSES];
   dpm_cand alts[0];
@@ -643,21 +644,28 @@ depb_start (depb *db)
   obstack_blank (&(db->ws->mem), sizeof (struct dpm_dep_struct));
 }
 
+static void
+depb_add_alt (depb *db, dpm_cand c)
+{
+  if (db->n_alts >= 0 && !dpm_candset_has (db->alt_set, c))
+    {
+      dpm_candset_add (db->alt_set, c);
+      obstack_ptr_grow (&(db->ws->mem), c);
+      db->n_alts++;
+    }
+}
+
+static void
+depb_kill_cur (depb *db)
+{
+  db->n_alts = -1;
+}
+
 bool
 depb_collect_seat_alts (depb *db, dpm_seat s,
 			bool (*satisfies) (dpm_cand c),
 			bool (*provides) (dpm_cand c))
 {
-  void add_alt (dpm_cand c)
-  {
-    if (!dpm_candset_has (db->alt_set, c))
-      {
-	dpm_candset_add (db->alt_set, c);
-	obstack_ptr_grow (&(db->ws->mem), c);
-	db->n_alts++;
-      }
-  }
-
   if (db->n_alts < 0)
     return false;
 
@@ -665,7 +673,7 @@ depb_collect_seat_alts (depb *db, dpm_seat s,
 
   dyn_foreach (c, dpm_seat_cands, s)
     if (satisfies (c))
-      add_alt (c);
+      depb_add_alt (db, c);
     else
       all_satisfy = false;
   
@@ -676,19 +684,20 @@ depb_collect_seat_alts (depb *db, dpm_seat s,
       // matter with candidate of of
       // P is selected.
       //
-      db->n_alts = -1;
+      depb_kill_cur (db);
       return false;
     }
   
   for (dpm_cand_node n = s->providers; n; n = n->next)
     if (provides (n->elt))
-      add_alt (n->elt);
+      depb_add_alt (db, n->elt);
 
   return true;
 }
 
 void
-depb_finish (depb *db, dpm_cand c, dpm_relation rel, bool for_unpack)
+depb_finish (depb *db, dpm_cand c, dpm_relation rel,
+	     bool for_unpack, bool reversed)
 {
   dpm_dep d = obstack_finish (&db->ws->mem);
   if (db->n_alts < 0)
@@ -698,6 +707,7 @@ depb_finish (depb *db, dpm_cand c, dpm_relation rel, bool for_unpack)
       d->cand = c;
       d->rel = rel;
       d->for_unpack = for_unpack;
+      d->reversed = reversed;
       d->n_alts = db->n_alts;
       
       c->deps = cons_dep (db->ws, d, c->deps);
@@ -756,7 +766,7 @@ compute_deps ()
 			depb_collect_seat_alts (&db, s, satisfies, provides);
 		      }
 
-		    depb_finish (&db, c, rel, for_unpack);
+		    depb_finish (&db, c, rel, for_unpack, false);
 		  }
 	      }
 	  
@@ -808,7 +818,7 @@ compute_goal_deps ()
 	      depb_collect_seat_alts (&db, s, satisfies, provides);
 	    }
 
-	  depb_finish (&db, c, NULL, false);
+	  depb_finish (&db, c, NULL, false, false);
 	}
     }
 }
@@ -823,10 +833,11 @@ compute_reverse_deps ()
      the sequel.
 
      The reverse dep R of cand T for a seat S is computed by
-     considering each candidate C of S: If C has a dep D that does not
-     contain T in its alts but a sibling of T, then all the alts of R
-     that are not siblings of T are added as alts to R.  Otherwise, C
-     is added as an alt to R.
+     considering each candidate C of S: If C has one or more deps D
+     that do not contain T in its alts but a sibling of T, then all
+     the alts of D that are not siblings of T are added as alts to R.
+     Otherwise, if C does not have any such dep, C is added as an alt
+     to R.
 
      The usual optimization applies: If in the end R contains all
      candidates of S, it is not recorded at all.
@@ -865,6 +876,92 @@ compute_reverse_deps ()
      installed.
   */
 
+  dpm_ws ws = dpm_ws_current ();
+  depb db;
+
+  void consider_cand_and_seat (dpm_cand t, dpm_seat s)
+  {
+    dyn_print (" dep for %r\n", dpm_pkg_name (dpm_seat_package (s)));
+
+    depb_start (&db);
+    bool all_cands_added = true;
+
+    dyn_foreach (c, dpm_seat_cands, s)
+      {
+	bool has_sibling_dep = false;
+	dyn_foreach (d, dpm_cand_deps, c)
+	  {
+	    if (d->reversed)
+	      continue;
+
+	    bool t_seat_dep = false;
+	    bool t_dep = false;
+	    bool other_dep = false;
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      {
+		if (a == t)
+		  t_dep = true;
+		else if (dpm_cand_seat (a) == dpm_cand_seat (t))
+		  t_seat_dep = true;
+		else
+		  other_dep = true;
+	      }
+	    if (!t_dep && t_seat_dep)
+	      {
+		has_sibling_dep = true;
+		all_cands_added = false;
+		if (other_dep)
+		  dyn_foreach (a, dpm_dep_alts, d)
+		    {
+		      if (dpm_cand_seat (a) != dpm_cand_seat (t))
+			{
+			  depb_add_alt (&db, a);
+			  dyn_print ("  alt ");
+			  dpm_cand_print_id (a);
+			  dyn_print ("\n");
+			}
+		    }
+	      }
+	  }
+	if (!has_sibling_dep)
+	  {
+	    depb_add_alt (&db, c);
+	    dyn_print ("  alt ");
+	    dpm_cand_print_id (c);
+	    dyn_print ("\n");
+	  }
+      }
+
+    if (all_cands_added)
+      {
+	dyn_print ("  all\n");
+	depb_kill_cur (&db);
+      }
+
+    depb_finish (&db, t, NULL, false, true);
+  }
+
+  void consider_cand (dpm_cand t)
+  {
+    dyn_print ("on ");
+    dpm_cand_print_id (t);
+    dyn_print ("\n");
+    for (int i = 0; i < ws->n_pkgs; i++)
+      {
+	dpm_seat s = ws->pkg_seats + i;
+	if (s->cands)
+	  consider_cand_and_seat (t, s);
+      }
+  }
+
+  depb_init (&db);
+
+  for (int i = 0; i < ws->n_pkgs; i++)
+    {
+      dpm_seat s = ws->pkg_seats + i;
+      dyn_foreach (t, dpm_seat_cands, s)
+	consider_cand (t);
+    }
 }
 
 void
@@ -997,6 +1094,7 @@ dpm_ws_start ()
   find_providers ();
   compute_deps ();
   compute_goal_deps ();
+  compute_reverse_deps ();
   mark_relevant (ws);
 }
 
@@ -1104,7 +1202,10 @@ dump_seat (dpm_ws ws, dpm_seat s, int u)
 
       dyn_foreach (d, dpm_cand_deps, c)
 	{
-	  dyn_print ("  >");
+	  if (d->reversed)
+	    dyn_print ("  >>");
+	  else
+	    dyn_print ("  >");
 	  if (!dpm_dep_satisfied (d, u))
 	    dyn_print (" !!!");
 	  dyn_foreach (a, dpm_dep_alts, d)
