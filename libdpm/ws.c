@@ -878,6 +878,7 @@ compute_reverse_deps ()
 
   dpm_ws ws = dpm_ws_current ();
   depb db;
+  dpm_seatset seen;
 
   void consider_cand_and_seat (dpm_cand t, dpm_seat s)
   {
@@ -945,28 +946,40 @@ compute_reverse_deps ()
       {
 	dyn_print ("on ");
 	dpm_cand_print_id (c);
-	dyn_print (" for %r\n", dpm_pkg_name (dpm_seat_package (s)));
+	// dyn_print (" for %r\n", dpm_pkg_name (dpm_seat_package (s)));
+	dyn_print ("\n");
 	consider_cand_and_seat (c, s);
       }
   }
 
   void consider_seat (dpm_seat t)
   {
-    for (int i = 0; i < ws->n_pkgs; i++)
-      {
-	dpm_seat s = ws->pkg_seats + i;
-	if (s != t && s->cands)
-	  consider_seat_and_seat (t, s);
-      }
+    // find all seats S that have deps on any of the cands of T.
+
+    dpm_seatset_reset (seen);
+    dyn_foreach (c, dpm_seat_cands, t)
+      dyn_foreach (r, dpm_cand_revdeps, c)
+        {
+	  dpm_seat s = dpm_cand_seat (r->cand);
+	  if (s->cands && !dpm_seatset_has (seen, s))
+	    {
+	      dpm_seatset_add (seen, s);
+	      consider_seat_and_seat (t, s);
+	    }
+	}
   }
 
-  depb_init (&db);
-
-  for (int i = 0; i < ws->n_pkgs; i++)
+  dyn_block
     {
-      dpm_seat s = ws->pkg_seats + i;
-      if (s->cands)
-	consider_seat (s);
+      depb_init (&db);
+      seen = dpm_seatset_new ();
+
+      for (int i = 0; i < ws->n_pkgs; i++)
+	{
+	  dpm_seat s = ws->pkg_seats + i;
+	  if (s->cands)
+	    consider_seat (s);
+	}
     }
 }
 
