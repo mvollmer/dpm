@@ -813,6 +813,60 @@ compute_goal_deps ()
     }
 }
 
+static void
+compute_reverse_deps ()
+{
+  /* For each seat, we compute the reverse dep of each of its cands
+     with respect to each other seat.
+
+     Two cands that belong to the same seat are called 'siblings' in
+     the sequel.
+
+     The reverse dep R of cand T for a seat S is computed by
+     considering each candidate C of S: If C has a dep D that does not
+     contain T in its alts but a sibling of T, then all the alts of R
+     that are not siblings of T are added as alts to R.  Otherwise, C
+     is added as an alt to R.
+
+     The usual optimization applies: If in the end R contains all
+     candidates of S, it is not recorded at all.
+
+     As an example, consider foo_1 that depends on bar_1 or baz_1, and
+     their null candidates:
+
+       foo_1
+        ->  bar_1 | baz_1
+       foo_null
+       bar_1
+       bar_null
+
+     When computing the reverse dep R of foo_1, we look at all
+     candidates of the seat bar: bar_1 does not have a dep on a
+     sibling of foo_1 (in fact, it doesn't have any deps at all), so
+     we add bar_1 to R.  The same happens for bar_null, so R ends up
+     with bar_1 and bar_null as alts, and is not recorded at all.
+     Likewise for the reverse dep of foo_null.
+
+     It get's more interesting with bar_null: foo_1 has a dep on a
+     sibling of bar_null (on bar_1), but not on bar_null itself.  Thus
+     we add the rest of the alts of that dep to R, which is baz_1.
+     The foo_null cand has no deps, so it is added to R.  The result
+     is:
+
+       foo_1
+        -> bar_1
+       foo_null
+       bar_1
+       bar_null
+        ->> baz_1 | foo_null 
+
+     which correctly expresses the fact that if bar_1 is not
+     installed, foo_1 can't be installed either, except when baz_1 is
+     installed.
+  */
+
+}
+
 void
 dpm_cand_deps_init (dpm_cand_deps *iter, dpm_cand c)
 {
