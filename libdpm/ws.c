@@ -881,8 +881,6 @@ compute_reverse_deps ()
 
   void consider_cand_and_seat (dpm_cand t, dpm_seat s)
   {
-    dyn_print (" dep for %r\n", dpm_pkg_name (dpm_seat_package (s)));
-
     depb_start (&db);
     bool all_cands_added = true;
 
@@ -941,16 +939,24 @@ compute_reverse_deps ()
     depb_finish (&db, t, NULL, false, true);
   }
 
-  void consider_cand (dpm_cand t)
+  void consider_seat_and_seat (dpm_seat t, dpm_seat s)
   {
-    dyn_print ("on ");
-    dpm_cand_print_id (t);
-    dyn_print ("\n");
+    dyn_foreach (c, dpm_seat_cands, t)
+      {
+	dyn_print ("on ");
+	dpm_cand_print_id (c);
+	dyn_print (" for %r\n", dpm_pkg_name (dpm_seat_package (s)));
+	consider_cand_and_seat (c, s);
+      }
+  }
+
+  void consider_seat (dpm_seat t)
+  {
     for (int i = 0; i < ws->n_pkgs; i++)
       {
 	dpm_seat s = ws->pkg_seats + i;
-	if (s->cands)
-	  consider_cand_and_seat (t, s);
+	if (s != t && s->cands)
+	  consider_seat_and_seat (t, s);
       }
   }
 
@@ -959,8 +965,8 @@ compute_reverse_deps ()
   for (int i = 0; i < ws->n_pkgs; i++)
     {
       dpm_seat s = ws->pkg_seats + i;
-      dyn_foreach (t, dpm_seat_cands, s)
-	consider_cand (t);
+      if (s->cands)
+	consider_seat (s);
     }
 }
 
