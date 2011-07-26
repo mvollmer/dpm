@@ -915,9 +915,9 @@ compute_reverse_deps ()
 		      if (dpm_cand_seat (a) != dpm_cand_seat (t))
 			{
 			  depb_add_alt (&db, a);
-			  dyn_print ("  alt ");
-			  dpm_cand_print_id (a);
-			  dyn_print ("\n");
+			  // dyn_print ("  alt ");
+			  // dpm_cand_print_id (a);
+			  // dyn_print ("\n");
 			}
 		    }
 	      }
@@ -925,15 +925,15 @@ compute_reverse_deps ()
 	if (!has_sibling_dep)
 	  {
 	    depb_add_alt (&db, c);
-	    dyn_print ("  alt ");
-	    dpm_cand_print_id (c);
-	    dyn_print ("\n");
+	    // dyn_print ("  alt ");
+	    // dpm_cand_print_id (c);
+	    // dyn_print ("\n");
 	  }
       }
 
     if (all_cands_added)
       {
-	dyn_print ("  all\n");
+	// dyn_print ("  all\n");
 	depb_kill_cur (&db);
       }
 
@@ -944,10 +944,10 @@ compute_reverse_deps ()
   {
     dyn_foreach (c, dpm_seat_cands, t)
       {
-	dyn_print ("on ");
-	dpm_cand_print_id (c);
+	// dyn_print ("on ");
+	// dpm_cand_print_id (c);
 	// dyn_print (" for %r\n", dpm_pkg_name (dpm_seat_package (s)));
-	dyn_print ("\n");
+	// dyn_print ("\n");
 	consider_cand_and_seat (c, s);
       }
   }
