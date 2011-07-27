@@ -469,7 +469,7 @@ dpm_alg_execute ()
   }
 
   dyn_foreach (p, dpm_db_packages)
-    dyn_foreach (s, dpm_ws_seats, p)
+    dyn_foreach (s, dpm_ws_package_seats, p)
       {
 	if (dpm_seat_relevant (s))
 	  setup (s);

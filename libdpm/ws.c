@@ -440,31 +440,31 @@ dpm_ws_get_goal_cand ()
 }
 
 void
-dpm_ws_seats_init (dpm_ws_seats *iter, dpm_package pkg)
+dpm_ws_package_seats_init (dpm_ws_package_seats *iter, dpm_package pkg)
 {
   dpm_ws ws = dpm_ws_current ();
   iter->cur = get_seat (ws, pkg);
 }
 
 void
-dpm_ws_seats_fini (dpm_ws_seats *iter)
+dpm_ws_package_seats_fini (dpm_ws_package_seats *iter)
 {
 }
 
 void
-dpm_ws_seats_step (dpm_ws_seats *iter)
+dpm_ws_package_seats_step (dpm_ws_package_seats *iter)
 {
   iter->cur = NULL;
 }
 
 bool
-dpm_ws_seats_done (dpm_ws_seats *iter)
+dpm_ws_package_seats_done (dpm_ws_package_seats *iter)
 {
   return iter->cur == NULL;
 }
 
 dpm_seat
-dpm_ws_seats_elt (dpm_ws_seats *iter)
+dpm_ws_package_seats_elt (dpm_ws_package_seats *iter)
 {
   return iter->cur;
 }

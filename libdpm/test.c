@@ -1647,7 +1647,7 @@ try_cand (const char *id)
       
       dpm_package pkg = dpm_db_package_find (p);
       if (pkg)
-	dyn_foreach (s, dpm_ws_seats, pkg)
+	dyn_foreach (s, dpm_ws_package_seats, pkg)
 	  dyn_foreach (c, dpm_seat_cands, s)
 	    {
 	      dpm_version ver = dpm_cand_version (c);
@@ -1772,7 +1772,7 @@ DEFTEST (ws_cands)
       dpm_package p = dpm_db_package_find ("foo");
 
       int n = 0;
-      dyn_foreach (s, dpm_ws_seats, p)
+      dyn_foreach (s, dpm_ws_package_seats, p)
 	dyn_foreach (c, dpm_seat_cands, s)
 	  {
 	    dpm_package pp = dpm_seat_package (dpm_cand_seat (c));
