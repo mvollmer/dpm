@@ -470,7 +470,7 @@ dpm_alg_execute ()
 
   dyn_foreach (s, dpm_ws_seats)
     {
-      if (dpm_seat_relevant (s))
+      if (dpm_seat_relevant (s) && dpm_seat_package (s) != NULL)
 	setup (s);
     }
 }
