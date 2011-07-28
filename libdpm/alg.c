@@ -392,10 +392,9 @@ dpm_alg_execute ()
     if (v != inst)
       {
 	if (v)
-	  dyn_print ("Unpacking %r %r\n",
-		     dpm_pkg_name (dpm_ver_package (v)), dpm_ver_version (v));
+	  dyn_print ("Unpacking %{ver}\n", v);
 	else if (p)
-	  dyn_print ("Removing %r\n", dpm_pkg_name (p));
+	  dyn_print ("Removing %{pkg}\n", p);
       }
   }
 
@@ -405,8 +404,7 @@ dpm_alg_execute ()
     dpm_version v = dpm_cand_version (c);
     
     if (v)
-      dyn_print ("Setting up %r %r\n",
-		 dpm_pkg_name (dpm_ver_package (v)), dpm_ver_version (v));
+      dyn_print ("Setting up %{ver}\n", v);
   }
 
   auto void setup (dpm_seat s);
@@ -422,9 +420,8 @@ dpm_alg_execute ()
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    if (dpm_ws_is_selected (a, 0))
 	      {
-		dyn_print ("(setting up %r for pre-dep of %r)\n",
-			   dpm_pkg_name (dpm_seat_package (dpm_cand_seat (a))),
-			   dpm_pkg_name (dpm_seat_package (s)));
+		dyn_print ("(setting up %{seat} for pre-dep of %{seat})\n",
+			   dpm_cand_seat (a), s);
 		setup (dpm_cand_seat (a));
 		break;
 	      }
@@ -444,8 +441,7 @@ dpm_alg_execute ()
 
     if (dpm_seatset_has (setup_queued, s))
       {
-	dyn_print ("(dep cycle broken at %r)\n",
-		   dpm_pkg_name (dpm_seat_package (s)));
+	dyn_print ("(dep cycle broken at %{seat})\n", s);
 	return;
       }
 
@@ -456,9 +452,8 @@ dpm_alg_execute ()
         if (dpm_ws_is_selected (a, 0))
 	  {
 	    if (!dpm_seatset_has (setup_done, dpm_cand_seat (a)))
-	      dyn_print ("(setting up %r for dep of %r)\n",
-			 dpm_pkg_name (dpm_seat_package (dpm_cand_seat (a))),
-			 dpm_pkg_name (dpm_seat_package (s)));
+	      dyn_print ("(setting up %{seat} for dep of %{seat})\n",
+			 dpm_cand_seat (a), s);
 	    setup (dpm_cand_seat (a));
 	    break;
 	  }
