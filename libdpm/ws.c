@@ -474,7 +474,6 @@ dpm_ws_seats_init (dpm_ws_seats *iter)
 {
   iter->ws = dpm_ws_current ();
   iter->i = -1;
-  dpm_ws_seats_step (iter);
 }
 
 void
@@ -500,7 +499,10 @@ dpm_ws_seats_fini (dpm_ws_seats *iter)
 dpm_seat
 dpm_ws_seats_elt (dpm_ws_seats *iter)
 {
-  return iter->ws->pkg_seats + iter->i;
+  if (iter->i < 0)
+    return &(iter->ws->goal_seat);
+  else
+    return iter->ws->pkg_seats + iter->i;
 }
 
 void
