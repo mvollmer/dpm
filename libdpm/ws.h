@@ -151,6 +151,12 @@ DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_package_seats, dpm_package pkg)
   dpm_seat cur;
 };
 
+DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_seats)
+{
+  dpm_ws ws;
+  int i;
+};
+
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_seat_cands, dpm_seat s)
 {
   dpm_cand cur;

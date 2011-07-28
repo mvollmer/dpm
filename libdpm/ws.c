@@ -470,6 +470,40 @@ dpm_ws_package_seats_elt (dpm_ws_package_seats *iter)
 }
 
 void
+dpm_ws_seats_init (dpm_ws_seats *iter)
+{
+  iter->ws = dpm_ws_current ();
+  iter->i = -1;
+  dpm_ws_seats_step (iter);
+}
+
+void
+dpm_ws_seats_step (dpm_ws_seats *iter)
+{
+  iter->i++;
+  while (iter->i < iter->ws->n_pkgs
+	 && iter->ws->pkg_seats[iter->i].cands == NULL)
+    iter->i++;
+}
+
+bool
+dpm_ws_seats_done (dpm_ws_seats *iter)
+{
+  return iter->i >= iter->ws->n_pkgs;
+}
+
+void
+dpm_ws_seats_fini (dpm_ws_seats *iter)
+{
+}
+
+dpm_seat
+dpm_ws_seats_elt (dpm_ws_seats *iter)
+{
+  return iter->ws->pkg_seats + iter->i;
+}
+
+void
 dpm_seat_cands_init (dpm_seat_cands *iter, dpm_seat s)
 {
   iter->cur = s->cands;
@@ -876,7 +910,6 @@ compute_reverse_deps ()
      installed.
   */
 
-  dpm_ws ws = dpm_ws_current ();
   depb db;
   dpm_seatset seen;
 
@@ -974,12 +1007,8 @@ compute_reverse_deps ()
       depb_init (&db);
       seen = dpm_seatset_new ();
 
-      for (int i = 0; i < ws->n_pkgs; i++)
-	{
-	  dpm_seat s = ws->pkg_seats + i;
-	  if (s->cands)
-	    consider_seat (s);
-	}
+      dyn_foreach (s, dpm_ws_seats)
+	consider_seat (s);
     }
 }
 
