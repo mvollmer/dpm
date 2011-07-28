@@ -387,12 +387,16 @@ dpm_alg_execute ()
     dpm_cand c = dpm_ws_selected (s, 0);
     dpm_version v = dpm_cand_version (c);
     dpm_package p = dpm_seat_package (s);
-    
-    if (v)
-      dyn_print ("Unpacking %r %r\n",
-		 dpm_pkg_name (dpm_ver_package (v)), dpm_ver_version (v));
-    else if (p)
-      dyn_print ("Removing %r\n", dpm_pkg_name (p));
+    dpm_version inst = dpm_db_installed (p);
+
+    if (v != inst)
+      {
+	if (v)
+	  dyn_print ("Unpacking %r %r\n",
+		     dpm_pkg_name (dpm_ver_package (v)), dpm_ver_version (v));
+	else if (p)
+	  dyn_print ("Removing %r\n", dpm_pkg_name (p));
+      }
   }
 
   void do_setup (dpm_seat s)
