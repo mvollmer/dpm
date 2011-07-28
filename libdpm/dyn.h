@@ -324,11 +324,11 @@ typedef void dyn_formatter_func (dyn_output out,
 
 void dyn_register_formatter (const char *id, dyn_formatter_func *func);
 
-#define DYN_DEFINE_FORMATTER(id, func) \
-  __attribute__ ((constructor))			\
-  static void register_formatter_##__LINE__ ()	\
-  {						\
-    dyn_register_formatter (id, func);		\
+#define DYN_DEFINE_FORMATTER(id, func)				\
+  __attribute__ ((constructor))					\
+  static void dyn_paste (register_formatter_, __LINE__) ()	\
+  {								\
+    dyn_register_formatter (id, func);				\
   }
 
 typedef struct {
