@@ -317,6 +317,12 @@ void dyn_print (const char *format, ...);
 dyn_val dyn_format (const char *fmt, ...);
 dyn_val dyn_formatv (const char *fmt, va_list ap);
 
+void dyn_register_formatter (const char *id,
+			     void (*func) (dyn_output out,
+					   const char *id, int id_len,
+					   const char *parms, int parms_len,
+					   va_list *args));
+
 typedef struct {
   dyn_val val;
 } dyn_var;

@@ -1654,6 +1654,15 @@ dyn_write_ss_val (dyn_output out, ss_val val, int quoted)
 }
 
 void
+dyn_write_with_formatter (dyn_output out,
+			  const char *id, int id_len,
+			  const char *parms, int parms_len,
+			  va_list *args)
+{
+  dyn_write (out, "{FMT %ls %ls}", id, id_len, parms, parms_len);
+}
+
+void
 dyn_writev (dyn_output out, const char *fmt, va_list ap)
 {
   int err = errno;
@@ -1773,6 +1782,28 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 		const char *sub_fmt = va_arg (ap, const char *);
 		va_list sub_ap = va_arg (ap, va_list);
 		dyn_writev (out, sub_fmt, sub_ap);
+	      }
+	      break;
+	    case '{':
+	      {
+		fmt++;
+		const char *end = strchr (fmt, '}');
+		if (end == NULL)
+		  break;
+		const char *id_end = memchr (fmt, ':', end-fmt);
+		const char *parms;
+		if (id_end == NULL)
+		  {
+		    id_end = end;
+		    parms = end;
+		  }
+		else
+		  parms = id_end+1;
+		dyn_write_with_formatter (out,
+					  fmt, id_end-fmt,
+					  parms, end-parms,
+					  &ap);
+		fmt = end;
 	      }
 	      break;
 	    case '%':
