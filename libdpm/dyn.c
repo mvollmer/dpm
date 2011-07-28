@@ -1653,13 +1653,39 @@ dyn_write_ss_val (dyn_output out, ss_val val, int quoted)
     dyn_write (out, "<record>");
 }
 
+static struct formatter {
+  struct formatter *next;
+  const char *id;
+  dyn_formatter_func *func;
+} *dyn_formatters;
+
 void
+dyn_register_formatter (const char *id,
+			dyn_formatter_func *func)
+{
+  struct formatter *f = dyn_malloc (sizeof (*f));
+  f->id = id;
+  f->func = func;
+  f->next = dyn_formatters;
+  dyn_formatters = f;
+}
+
+static void
 dyn_write_with_formatter (dyn_output out,
 			  const char *id, int id_len,
 			  const char *parms, int parms_len,
 			  va_list *args)
 {
-  dyn_write (out, "{FMT %ls %ls}", id, id_len, parms, parms_len);
+  for (struct formatter *f = dyn_formatters; f; f = f->next)
+    {
+      if (strlen (f->id) == id_len && strncmp (id, f->id, id_len) == 0)
+	{
+	  f->func (out, id, id_len, parms, parms_len, args);
+	  return;
+	}
+    }
+  dyn_write (out, "%%{%ls:%ls}", id, id_len, parms, parms_len);
+  va_arg (*args, void *);
 }
 
 void

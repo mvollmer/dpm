@@ -353,6 +353,28 @@ DEFTEST (dyn_output)
     }
 }
 
+static void twice_formatter (dyn_output out,
+			     const char *id, int id_len,
+			     const char *parms, int parms_len,
+			     va_list *args)
+{
+  int i = va_arg (*args, int);
+  dyn_write (out, "%d", 2*i);
+}
+
+DYN_DEFINE_FORMATTER ("twice", twice_formatter);
+
+DEFTEST (dyn_formatter)
+{
+  dyn_block
+    {
+      dyn_val s = dyn_format ("%{twice}", 12);
+      EXPECT (dyn_eq (s, "24"));
+      dyn_val s2 = dyn_format ("%{thrice}", 12);
+      EXPECT (dyn_eq (s2, "%{thrice:}"));
+    }
+}
+
 dyn_var var_1[1];
 
 DEFTEST (dyn_var)

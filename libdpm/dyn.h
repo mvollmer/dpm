@@ -317,11 +317,19 @@ void dyn_print (const char *format, ...);
 dyn_val dyn_format (const char *fmt, ...);
 dyn_val dyn_formatv (const char *fmt, va_list ap);
 
-void dyn_register_formatter (const char *id,
-			     void (*func) (dyn_output out,
-					   const char *id, int id_len,
-					   const char *parms, int parms_len,
-					   va_list *args));
+typedef void dyn_formatter_func (dyn_output out,
+				 const char *id, int id_len,
+				 const char *parms, int parms_len,
+				 va_list *args);
+
+void dyn_register_formatter (const char *id, dyn_formatter_func *func);
+
+#define DYN_DEFINE_FORMATTER(id, func) \
+  __attribute__ ((constructor))			\
+  static void register_formatter_##__LINE__ ()	\
+  {						\
+    dyn_register_formatter (id, func);		\
+  }
 
 typedef struct {
   dyn_val val;
