@@ -371,6 +371,8 @@ dpm_alg_install_naively ()
 }
 
 /* Executing a plan.
+
+   (Just for fun.)
  */
 
 void
@@ -379,6 +381,41 @@ dpm_alg_execute ()
   dpm_seatset unpack_done = dpm_seatset_new ();
   dpm_seatset setup_queued = dpm_seatset_new ();
   dpm_seatset setup_done = dpm_seatset_new ();
+
+  dpm_version pending_unpack = NULL;
+
+  void cmd_unpack (dpm_version v)
+  {
+    if (pending_unpack)
+      dyn_print ("Unpacking %{ver}\n", pending_unpack);
+    pending_unpack = v;
+  }
+
+  void cmd_setup (dpm_version v)
+  {
+    if (pending_unpack == v)
+      {
+	dyn_print ("Installing %{ver}\n", v);
+	pending_unpack = NULL;
+      }
+    else
+      {
+	if (pending_unpack)
+	  dyn_print ("Unpacking %{ver}\n", pending_unpack);
+	pending_unpack = NULL;
+	dyn_print ("Setting up %{ver}\n", v);
+      }
+  }
+
+  void cmd_remove (dpm_package p)
+  {
+    if (pending_unpack)
+      {
+	dyn_print ("Unpacking %{ver}\n", pending_unpack);
+	pending_unpack = NULL;
+      }
+    dyn_print ("Removing %{pkg}\n", p);
+  }
 
   void do_unpack (dpm_seat s)
   {
@@ -390,9 +427,9 @@ dpm_alg_execute ()
     if (v != inst)
       {
 	if (v)
-	  dyn_print ("Unpacking %{ver}\n", v);
+	  cmd_unpack (v);
 	else if (p)
-	  dyn_print ("Removing %{pkg}\n", p);
+	  cmd_remove (p);
       }
   }
 
@@ -402,7 +439,7 @@ dpm_alg_execute ()
     dpm_version v = dpm_cand_version (c);
     
     if (v)
-      dyn_print ("Setting up %{ver}\n", v);
+      cmd_setup (v);
   }
 
   auto void setup (dpm_seat s);
@@ -418,8 +455,6 @@ dpm_alg_execute ()
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    if (dpm_ws_is_selected (a, 0))
 	      {
-		dyn_print ("(setting up %{seat} for pre-dep of %{seat})\n",
-			   dpm_cand_seat (a), s);
 		setup (dpm_cand_seat (a));
 		break;
 	      }
@@ -439,7 +474,7 @@ dpm_alg_execute ()
 
     if (dpm_seatset_has (setup_queued, s))
       {
-	dyn_print ("(dep cycle broken at %{seat})\n", s);
+	// dyn_print ("(dep cycle broken at %{seat})\n", s);
 	return;
       }
 
@@ -450,9 +485,7 @@ dpm_alg_execute ()
         if (dpm_ws_is_selected (a, 0))
 	  {
 	    if (!dpm_seatset_has (setup_done, dpm_cand_seat (a)))
-	      dyn_print ("(setting up %{seat} for dep of %{seat})\n",
-			 dpm_cand_seat (a), s);
-	    setup (dpm_cand_seat (a));
+	      setup (dpm_cand_seat (a));
 	    break;
 	  }
 
