@@ -350,9 +350,7 @@ dpm_alg_install_naively ()
 	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
 	  return;
 
-	dyn_print ("Selecting ");
-	dpm_cand_print_id (c);
-	dyn_print ("\n");
+	dyn_print ("Selecting %{cand}\n", c);
 
 	dpm_seatset_add (touched, dpm_cand_seat (c));
 	dpm_ws_select (c, 0);

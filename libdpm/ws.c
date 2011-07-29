@@ -948,43 +948,24 @@ compute_reverse_deps ()
 		  dyn_foreach (a, dpm_dep_alts, d)
 		    {
 		      if (dpm_cand_seat (a) != dpm_cand_seat (t))
-			{
-			  depb_add_alt (&db, a);
-			  // dyn_print ("  alt ");
-			  // dpm_cand_print_id (a);
-			  // dyn_print ("\n");
-			}
+			depb_add_alt (&db, a);
 		    }
 	      }
 	  }
 	if (!has_sibling_dep)
-	  {
-	    depb_add_alt (&db, c);
-	    // dyn_print ("  alt ");
-	    // dpm_cand_print_id (c);
-	    // dyn_print ("\n");
-	  }
+	  depb_add_alt (&db, c);
       }
 
     if (all_cands_added)
-      {
-	// dyn_print ("  all\n");
-	depb_kill_cur (&db);
-      }
-
+      depb_kill_cur (&db);
+  
     depb_finish (&db, t, NULL, false, true);
   }
 
   void consider_seat_and_seat (dpm_seat t, dpm_seat s)
   {
     dyn_foreach (c, dpm_seat_cands, t)
-      {
-	// dyn_print ("on ");
-	// dpm_cand_print_id (c);
-	// dyn_print (" for %r\n", dpm_pkg_name (dpm_seat_package (s)));
-	// dyn_print ("\n");
-	consider_cand_and_seat (c, s);
-      }
+      consider_cand_and_seat (c, s);
   }
 
   void consider_seat (dpm_seat t)
@@ -1202,21 +1183,6 @@ dpm_ws_is_selected (dpm_cand cand, int universe)
 
 /* Dumping
  */
-
-void
-dpm_cand_print_id (dpm_cand c)
-{
-  if (c->seat->pkg)
-    {
-      ss_val n = dpm_pkg_name (c->seat->pkg);
-      if (c->ver)
-	dyn_print ("%r_%r", n, dpm_ver_version (c->ver));
-      else
-	dyn_print ("%r_null", n);
-    }
-  else
-    dyn_print ("goal-cand");
-}
 
 static void
 dump_seat (dpm_ws ws, dpm_seat s, int u)

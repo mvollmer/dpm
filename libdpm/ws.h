@@ -179,8 +179,6 @@ bool dpm_seat_relevant (dpm_seat);
 int dpm_ws_cand_id_limit ();
 int dpm_cand_id (dpm_cand);
 
-void dpm_cand_print_id (dpm_cand c);
-
 /* Deps.
  */
 

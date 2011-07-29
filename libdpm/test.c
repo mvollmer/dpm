@@ -1754,10 +1754,7 @@ check_deps (const char *from, ...)
   for (int i = 0; i < n_deps; i++)
     {
       for (int j = 0; j < n_alts[i]; j++)
-	{
-	  dyn_print (" ");
-	  dpm_cand_print_id (deps[i][j]);
-	}
+	dyn_print (" %{cand}", deps[i][j]);
       dyn_print ("\n");
     }
 
@@ -1765,10 +1762,7 @@ check_deps (const char *from, ...)
   dyn_foreach (d, dpm_cand_deps, f)
     {
       dyn_foreach (a, dpm_dep_alts, d)
-	{
-	  dyn_print (" ");
-	  dpm_cand_print_id (a);
-	}
+	dyn_print (" %{cand}", a);
       dyn_print ("\n");
     }
 
