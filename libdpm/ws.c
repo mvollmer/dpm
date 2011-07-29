@@ -1221,15 +1221,7 @@ dpm_cand_print_id (dpm_cand c)
 static void
 dump_seat (dpm_ws ws, dpm_seat s, int u)
 {
-  if (s->pkg)
-    dyn_print ("%r", dpm_pkg_name (s->pkg));
-  else
-    dyn_print ("goal");
-
-  if (s->relevant)
-    dyn_print (" (relevant)");
-  
-  dyn_print ("\n");
+  dyn_print ("%{seat}%s\n", s, s->relevant? " (relevant)" : "");
 
   dyn_foreach (c, dpm_seat_cands, s)
     {
@@ -1260,8 +1252,7 @@ dump_seat (dpm_ws ws, dpm_seat s, int u)
 	    dyn_print (" !!!");
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    {
-	      dyn_print (" ");
-	      dpm_cand_print_id (a);
+	      dyn_print (" %{cand}", a);
 	    }
 	  dyn_print ("\n");
 	  if (d->rel)
@@ -1272,11 +1263,7 @@ dump_seat (dpm_ws ws, dpm_seat s, int u)
 	    }
 	}
       dyn_foreach (r, dpm_cand_revdeps, c)
-	{
-	  dyn_print ("  < ");
-	  dpm_cand_print_id (r->cand);
-	  dyn_print ("\n");
-	}
+	dyn_print ("  < %{cand}\n", r->cand);
     }
 }
 
@@ -1305,8 +1292,7 @@ dump_broken_seat (dpm_ws ws, dpm_seat s, int u)
   dpm_cand c = dpm_ws_selected (s, u);
   if (!dpm_cand_satisfied (c, u))
     {
-      dpm_cand_print_id (c);
-      dyn_print (" is broken\n");
+      dyn_print ("%{cand} is broken\n", c);
 
       dyn_foreach (d, dpm_cand_deps, c)
 	{
@@ -1318,8 +1304,7 @@ dump_broken_seat (dpm_ws ws, dpm_seat s, int u)
 		{
 		  if (!first)
 		    dyn_print (", or");
-		  dyn_print (" ");
-		  dpm_cand_print_id (a);
+		  dyn_print (" %{cand}", a);
 		  first = false;
 		}
 	      dyn_print (", but none of them is selected.\n");
@@ -1349,3 +1334,46 @@ dpm_ws_dump_pkg (dpm_package p, int universe)
   dpm_ws ws = dpm_ws_current ();
   dump_seat (ws, get_seat (ws, p), universe);
 }
+
+static void
+seat_formatter (dyn_output out,
+		const char *id, int id_len,
+		const char *parms, int parms_len,
+		va_list *ap)
+{
+  dpm_seat s = va_arg (*ap, dpm_seat);
+  if (s)
+    {
+      dpm_package p = dpm_seat_package (s);
+      if (p)
+	dyn_write (out, "%{pkg}", p);
+      else
+	dyn_write (out, "goal");
+    }
+  else
+    dyn_write (out, "<null seat>");
+}
+
+DYN_DEFINE_FORMATTER ("seat", seat_formatter);
+
+static void
+cand_formatter (dyn_output out,
+		const char *id, int id_len,
+		const char *parms, int parms_len,
+		va_list *ap)
+{
+  dpm_cand c = va_arg (*ap, dpm_cand);
+  if (c)
+    {
+      dpm_version v = dpm_cand_version (c);
+      if (v)
+	dyn_write (out, "%{pkg}_%r", dpm_ver_package (v), dpm_ver_version (v));
+      else
+	dyn_write (out, "%{seat}_null", dpm_cand_seat (c));
+    }
+  else
+    dyn_write (out, "<null cand>");
+}
+
+DYN_DEFINE_FORMATTER ("cand", cand_formatter);
+
