@@ -1194,7 +1194,7 @@ dump_seat (dpm_ws ws, dpm_seat s, int u)
       if (c->ver)
 	dyn_print (" %r", dpm_ver_version (c->ver));
       else if (c == &(ws->goal_cand))
-	dyn_print (" goal-cand");
+	dyn_print (" cand");
       else
 	dyn_print (" null");
       
@@ -1335,7 +1335,13 @@ cand_formatter (dyn_output out,
       if (v)
 	dyn_write (out, "%{pkg}_%r", dpm_ver_package (v), dpm_ver_version (v));
       else
-	dyn_write (out, "%{seat}_null", dpm_cand_seat (c));
+	{
+	  dpm_seat s = dpm_cand_seat (c);
+	  if (c == &s->null_cand)
+	    dyn_write (out, "%{seat}_null", s);
+	  else
+	    dyn_write (out, "%{seat}_cand", s);
+	}
     }
   else
     dyn_write (out, "<null cand>");
