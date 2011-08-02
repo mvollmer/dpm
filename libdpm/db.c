@@ -973,7 +973,7 @@ compare_fragment (const char *A, const char *AEnd,
 	 lhs++;
        while (*rhs == '0')
 	 rhs++;
-       while (isdigit(*lhs) && isdigit(*rhs))
+       while (lhs != AEnd && isdigit(*lhs) && rhs != BEnd && isdigit(*rhs))
 	 {
 	   if (!first_diff)
 	     first_diff = *lhs - *rhs;
