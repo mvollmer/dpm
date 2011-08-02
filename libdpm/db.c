@@ -964,8 +964,10 @@ compare_fragment (const char *A, const char *AEnd,
 	 {
 	   int vc = order(*lhs);
 	   int rc = order(*rhs);
-	   if (vc != rc)
-	     return vc - rc;
+	   if (vc > rc)
+	     return 1;
+	   else if (vc < rc)
+	     return -1;
 	   lhs++; rhs++;
 	 }
 
@@ -986,7 +988,7 @@ compare_fragment (const char *A, const char *AEnd,
        if (isdigit(*rhs))
 	 return -1;
        if (first_diff)
-	 return first_diff;
+	 return first_diff < 0? -1 : 1;
      }
 
    // The strings must be equal
@@ -1318,3 +1320,37 @@ dpm_db_stats ()
   fprintf (stderr, "%d packages, %d versions\n",
 	   n_packages, n_versions);
 }
+
+/* Formatters
+ */
+
+static void
+ver_formatter (dyn_output out,
+	       const char *id, int id_len,
+	       const char *parms, int parms_len,
+	       va_list *ap)
+{
+  dpm_version ver = va_arg (*ap, dpm_version);
+  if (ver)
+    dyn_write (out, "%r %r",
+	       dpm_pkg_name (dpm_ver_package (ver)), dpm_ver_version (ver));
+  else
+    dyn_write (out, "<null version>");
+}
+
+DYN_DEFINE_FORMATTER ("ver", ver_formatter);
+
+static void
+pkg_formatter (dyn_output out,
+	       const char *id, int id_len,
+	       const char *parms, int parms_len,
+	       va_list *ap)
+{
+  dpm_package pkg = va_arg (*ap, dpm_package);
+  if (pkg)
+    dyn_write (out, "%r", dpm_pkg_name (pkg));
+  else
+    dyn_write (out, "<null package>");
+}
+
+DYN_DEFINE_FORMATTER ("pkg", pkg_formatter);

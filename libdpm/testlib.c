@@ -30,6 +30,8 @@
 #include <errno.h>
 #include <dlfcn.h>
 
+static bool flag_abort = false;
+
 static void
 default_failure_printer (const char *file, int line, 
 			 const char *fmt, va_list ap)
@@ -75,7 +77,10 @@ expect (int b, char *expr, char *file, int line,
 	}
       else
 	call_failure_printer (file, line, "Expected %s", expr);
-      exit (1);
+      if (flag_abort)
+	abort();
+      else
+	exit (1);
     }
 }
 
@@ -256,9 +261,23 @@ check_status_exit (int status,
 int
 test_main (int argc, char **argv)
 {
+  if (strcmp (argv[1], "-g") == 0)
+    {
+      execlp ("libtool", "libtool", "--mode=execute", "gdb", "--args",
+	      argv[0], "--abort", argv[2], NULL);
+      exit (100);
+    }
+
+  if (strcmp (argv[1], "--abort") == 0)
+    {
+      flag_abort = true;
+      argc--;
+      argv[1] = argv[2];
+    }
+
   if (argc != 2)
     {
-      fprintf (stderr, "Usage: %s TEST\n", argv[0]);
+      fprintf (stderr, "Usage: %s [-g] TEST\n", argv[0]);
       exit (1);
     }
 

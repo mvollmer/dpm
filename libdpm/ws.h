@@ -30,10 +30,11 @@
    A workspace is a place where one can play with package versions and
    their relations.
 
-   For each package in the database, a workspace stores a list of some
-   of its versions, called "candidates".  There are one or more
-   "seats" per package, and each candidate is associates with exactly
-   one seat.  (Normally, there is only one seat per package, but with
+   For each package in the database, a workspace manages a number of
+   "seats".  Each seat has associated with it a list of some versions
+   of the package, called "candidates".
+
+   (Normally, there is only one seat per package, but with
    things like multiarch, there might be more seats to fill.)
 
    There is one special candidate per seat, the "null candidate".
@@ -47,13 +48,13 @@
    dependencies ("deps" for short).  Each dep is a list of candidates,
    which are the alternatives ("alts") of that dep.
 
-   Note that deps refer to other concrete candidates, not to things
-   like "version 1.2 of foo or later".  For example, say versions 2.0,
-   1.3, and 1.0 are the candidates of foo.  Let's denote them as
-   "foo_2.0", "foo_1.3", and "foo_1.0", respectively.  Then a field
-   like "Depends: foo (>= 1.2)" will be translated into the dep
-   (foo_2.0, foo_1.3).  As you can see, for a Depends field, the
-   corresponding dep will simply list all candidates that fulfill it.
+   The deps refer to other concrete candidates, not to things like
+   "version 1.2 of foo or later".  For example, say versions 2.0, 1.3,
+   and 1.0 are the candidates of foo.  Let's denote them as "foo_2.0",
+   "foo_1.3", and "foo_1.0", respectively.  Then a field like
+   "Depends: foo (>= 1.2)" will be translated into the dep (foo_2.0,
+   foo_1.3).  As you can see, for a Depends field, the corresponding
+   dep will simply list all candidates that fulfill it.
 
    This is also done for things like "Depends: foo | bar" and
    Provides.  Any candidate of any package that can satisfy the
@@ -145,9 +146,15 @@ void dpm_candspec_add_alt (dpm_candspec spec,
 void dpm_ws_set_goal_candspec (dpm_candspec spec);
 dpm_cand dpm_ws_get_goal_cand ();
 
-DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_seats, dpm_package pkg)
+DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_package_seats, dpm_package pkg)
 {
   dpm_seat cur;
+};
+
+DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_seats)
+{
+  dpm_ws ws;
+  int i;
 };
 
 DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_seat_cands, dpm_seat s)
@@ -171,8 +178,6 @@ bool dpm_seat_relevant (dpm_seat);
 
 int dpm_ws_cand_id_limit ();
 int dpm_cand_id (dpm_cand);
-
-void dpm_cand_print_id (dpm_cand c);
 
 /* Deps.
  */

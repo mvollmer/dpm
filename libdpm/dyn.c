@@ -1653,6 +1653,41 @@ dyn_write_ss_val (dyn_output out, ss_val val, int quoted)
     dyn_write (out, "<record>");
 }
 
+static struct formatter {
+  struct formatter *next;
+  const char *id;
+  dyn_formatter_func *func;
+} *dyn_formatters;
+
+void
+dyn_register_formatter (const char *id,
+			dyn_formatter_func *func)
+{
+  struct formatter *f = dyn_malloc (sizeof (*f));
+  f->id = id;
+  f->func = func;
+  f->next = dyn_formatters;
+  dyn_formatters = f;
+}
+
+static void
+dyn_write_with_formatter (dyn_output out,
+			  const char *id, int id_len,
+			  const char *parms, int parms_len,
+			  va_list *args)
+{
+  for (struct formatter *f = dyn_formatters; f; f = f->next)
+    {
+      if (strlen (f->id) == id_len && strncmp (id, f->id, id_len) == 0)
+	{
+	  f->func (out, id, id_len, parms, parms_len, args);
+	  return;
+	}
+    }
+  dyn_write (out, "%%{%ls:%ls}", id, id_len, parms, parms_len);
+  va_arg (*args, void *);
+}
+
 void
 dyn_writev (dyn_output out, const char *fmt, va_list ap)
 {
@@ -1773,6 +1808,28 @@ dyn_writev (dyn_output out, const char *fmt, va_list ap)
 		const char *sub_fmt = va_arg (ap, const char *);
 		va_list sub_ap = va_arg (ap, va_list);
 		dyn_writev (out, sub_fmt, sub_ap);
+	      }
+	      break;
+	    case '{':
+	      {
+		fmt++;
+		const char *end = strchr (fmt, '}');
+		if (end == NULL)
+		  break;
+		const char *id_end = memchr (fmt, ':', end-fmt);
+		const char *parms;
+		if (id_end == NULL)
+		  {
+		    id_end = end;
+		    parms = end;
+		  }
+		else
+		  parms = id_end+1;
+		dyn_write_with_formatter (out,
+					  fmt, id_end-fmt,
+					  parms, end-parms,
+					  &ap);
+		fmt = end;
 	      }
 	      break;
 	    case '%':

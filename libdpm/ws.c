@@ -61,6 +61,7 @@ struct dpm_dep_struct {
   dpm_cand cand;
   dpm_relation rel;
   bool for_unpack;
+  bool reversed;
   int n_alts;
   int n_selected[MAX_UNIVERSES];
   dpm_cand alts[0];
@@ -439,10 +440,55 @@ dpm_ws_get_goal_cand ()
 }
 
 void
-dpm_ws_seats_init (dpm_ws_seats *iter, dpm_package pkg)
+dpm_ws_package_seats_init (dpm_ws_package_seats *iter, dpm_package pkg)
 {
   dpm_ws ws = dpm_ws_current ();
   iter->cur = get_seat (ws, pkg);
+}
+
+void
+dpm_ws_package_seats_fini (dpm_ws_package_seats *iter)
+{
+}
+
+void
+dpm_ws_package_seats_step (dpm_ws_package_seats *iter)
+{
+  iter->cur = NULL;
+}
+
+bool
+dpm_ws_package_seats_done (dpm_ws_package_seats *iter)
+{
+  return iter->cur == NULL;
+}
+
+dpm_seat
+dpm_ws_package_seats_elt (dpm_ws_package_seats *iter)
+{
+  return iter->cur;
+}
+
+void
+dpm_ws_seats_init (dpm_ws_seats *iter)
+{
+  iter->ws = dpm_ws_current ();
+  iter->i = -1;
+}
+
+void
+dpm_ws_seats_step (dpm_ws_seats *iter)
+{
+  iter->i++;
+  while (iter->i < iter->ws->n_pkgs
+	 && iter->ws->pkg_seats[iter->i].cands == NULL)
+    iter->i++;
+}
+
+bool
+dpm_ws_seats_done (dpm_ws_seats *iter)
+{
+  return iter->i >= iter->ws->n_pkgs;
 }
 
 void
@@ -450,22 +496,13 @@ dpm_ws_seats_fini (dpm_ws_seats *iter)
 {
 }
 
-void
-dpm_ws_seats_step (dpm_ws_seats *iter)
-{
-  iter->cur = NULL;
-}
-
-bool
-dpm_ws_seats_done (dpm_ws_seats *iter)
-{
-  return iter->cur == NULL;
-}
-
 dpm_seat
 dpm_ws_seats_elt (dpm_ws_seats *iter)
 {
-  return iter->cur;
+  if (iter->i < 0)
+    return &(iter->ws->goal_seat);
+  else
+    return iter->ws->pkg_seats + iter->i;
 }
 
 void
@@ -643,21 +680,28 @@ depb_start (depb *db)
   obstack_blank (&(db->ws->mem), sizeof (struct dpm_dep_struct));
 }
 
+static void
+depb_add_alt (depb *db, dpm_cand c)
+{
+  if (db->n_alts >= 0 && !dpm_candset_has (db->alt_set, c))
+    {
+      dpm_candset_add (db->alt_set, c);
+      obstack_ptr_grow (&(db->ws->mem), c);
+      db->n_alts++;
+    }
+}
+
+static void
+depb_kill_cur (depb *db)
+{
+  db->n_alts = -1;
+}
+
 bool
 depb_collect_seat_alts (depb *db, dpm_seat s,
 			bool (*satisfies) (dpm_cand c),
 			bool (*provides) (dpm_cand c))
 {
-  void add_alt (dpm_cand c)
-  {
-    if (!dpm_candset_has (db->alt_set, c))
-      {
-	dpm_candset_add (db->alt_set, c);
-	obstack_ptr_grow (&(db->ws->mem), c);
-	db->n_alts++;
-      }
-  }
-
   if (db->n_alts < 0)
     return false;
 
@@ -665,7 +709,7 @@ depb_collect_seat_alts (depb *db, dpm_seat s,
 
   dyn_foreach (c, dpm_seat_cands, s)
     if (satisfies (c))
-      add_alt (c);
+      depb_add_alt (db, c);
     else
       all_satisfy = false;
   
@@ -676,19 +720,20 @@ depb_collect_seat_alts (depb *db, dpm_seat s,
       // matter with candidate of of
       // P is selected.
       //
-      db->n_alts = -1;
+      depb_kill_cur (db);
       return false;
     }
   
   for (dpm_cand_node n = s->providers; n; n = n->next)
     if (provides (n->elt))
-      add_alt (n->elt);
+      depb_add_alt (db, n->elt);
 
   return true;
 }
 
 void
-depb_finish (depb *db, dpm_cand c, dpm_relation rel, bool for_unpack)
+depb_finish (depb *db, dpm_cand c, dpm_relation rel,
+	     bool for_unpack, bool reversed)
 {
   dpm_dep d = obstack_finish (&db->ws->mem);
   if (db->n_alts < 0)
@@ -698,6 +743,7 @@ depb_finish (depb *db, dpm_cand c, dpm_relation rel, bool for_unpack)
       d->cand = c;
       d->rel = rel;
       d->for_unpack = for_unpack;
+      d->reversed = reversed;
       d->n_alts = db->n_alts;
       
       c->deps = cons_dep (db->ws, d, c->deps);
@@ -756,7 +802,7 @@ compute_deps ()
 			depb_collect_seat_alts (&db, s, satisfies, provides);
 		      }
 
-		    depb_finish (&db, c, rel, for_unpack);
+		    depb_finish (&db, c, rel, for_unpack, false);
 		  }
 	      }
 	  
@@ -808,8 +854,144 @@ compute_goal_deps ()
 	      depb_collect_seat_alts (&db, s, satisfies, provides);
 	    }
 
-	  depb_finish (&db, c, NULL, false);
+	  depb_finish (&db, c, NULL, false, false);
 	}
+    }
+}
+
+static void
+compute_reverse_deps ()
+{
+  /* For each seat, we compute the reverse dep of each of its cands
+     with respect to each other seat.
+
+     Two cands that belong to the same seat are called 'siblings' in
+     the sequel.
+
+     The reverse dep R of cand T for a seat S is computed by
+     considering each candidate C of S: If C has one or more deps D
+     that do not contain T in its alts but a sibling of T, then all
+     the alts of D that are not siblings of T are added as alts to R.
+     Otherwise, if C does not have any such dep, C is added as an alt
+     to R.
+
+     The usual optimization applies: If in the end R contains all
+     candidates of S, it is not recorded at all.
+
+     As an example, consider foo_1 that depends on bar_1 or baz_1, and
+     their null candidates:
+
+       foo_1
+        ->  bar_1 | baz_1
+       foo_null
+       bar_1
+       bar_null
+
+     When computing the reverse dep R of foo_1, we look at all
+     candidates of the seat bar: bar_1 does not have a dep on a
+     sibling of foo_1 (in fact, it doesn't have any deps at all), so
+     we add bar_1 to R.  The same happens for bar_null, so R ends up
+     with bar_1 and bar_null as alts, and is not recorded at all.
+     Likewise for the reverse dep of foo_null.
+
+     It get's more interesting with bar_null: foo_1 has a dep on a
+     sibling of bar_null (on bar_1), but not on bar_null itself.  Thus
+     we add the rest of the alts of that dep to R, which is baz_1.
+     The foo_null cand has no deps, so it is added to R.  The result
+     is:
+
+       foo_1
+        -> bar_1
+       foo_null
+       bar_1
+       bar_null
+        ->> baz_1 | foo_null 
+
+     which correctly expresses the fact that if bar_1 is not
+     installed, foo_1 can't be installed either, except when baz_1 is
+     installed.
+  */
+
+  depb db;
+  dpm_seatset seen;
+
+  void consider_cand_and_seat (dpm_cand t, dpm_seat s)
+  {
+    depb_start (&db);
+    bool all_cands_added = true;
+
+    dyn_foreach (c, dpm_seat_cands, s)
+      {
+	bool has_sibling_dep = false;
+	dyn_foreach (d, dpm_cand_deps, c)
+	  {
+	    if (d->reversed)
+	      continue;
+
+	    bool t_seat_dep = false;
+	    bool t_dep = false;
+	    bool other_dep = false;
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      {
+		if (a == t)
+		  t_dep = true;
+		else if (dpm_cand_seat (a) == dpm_cand_seat (t))
+		  t_seat_dep = true;
+		else
+		  other_dep = true;
+	      }
+	    if (!t_dep && t_seat_dep)
+	      {
+		has_sibling_dep = true;
+		all_cands_added = false;
+		if (other_dep)
+		  dyn_foreach (a, dpm_dep_alts, d)
+		    {
+		      if (dpm_cand_seat (a) != dpm_cand_seat (t))
+			depb_add_alt (&db, a);
+		    }
+	      }
+	  }
+	if (!has_sibling_dep)
+	  depb_add_alt (&db, c);
+      }
+
+    if (all_cands_added)
+      depb_kill_cur (&db);
+  
+    depb_finish (&db, t, NULL, false, true);
+  }
+
+  void consider_seat_and_seat (dpm_seat t, dpm_seat s)
+  {
+    dyn_foreach (c, dpm_seat_cands, t)
+      consider_cand_and_seat (c, s);
+  }
+
+  void consider_seat (dpm_seat t)
+  {
+    // find all seats S that have deps on any of the cands of T.
+
+    dpm_seatset_reset (seen);
+    dyn_foreach (c, dpm_seat_cands, t)
+      dyn_foreach (r, dpm_cand_revdeps, c)
+        {
+	  dpm_seat s = dpm_cand_seat (r->cand);
+	  if (s->cands && !dpm_seatset_has (seen, s))
+	    {
+	      dpm_seatset_add (seen, s);
+	      consider_seat_and_seat (t, s);
+	    }
+	}
+  }
+
+  dyn_block
+    {
+      depb_init (&db);
+      seen = dpm_seatset_new ();
+
+      dyn_foreach (s, dpm_ws_seats)
+	consider_seat (s);
     }
 }
 
@@ -943,6 +1125,7 @@ dpm_ws_start ()
   find_providers ();
   compute_deps ();
   compute_goal_deps ();
+  compute_reverse_deps ();
   mark_relevant (ws);
 }
 
@@ -1001,40 +1184,17 @@ dpm_ws_is_selected (dpm_cand cand, int universe)
 /* Dumping
  */
 
-void
-dpm_cand_print_id (dpm_cand c)
-{
-  if (c->seat->pkg)
-    {
-      ss_val n = dpm_pkg_name (c->seat->pkg);
-      if (c->ver)
-	dyn_print ("%r_%r", n, dpm_ver_version (c->ver));
-      else
-	dyn_print ("%r_null", n);
-    }
-  else
-    dyn_print ("goal-cand");
-}
-
 static void
 dump_seat (dpm_ws ws, dpm_seat s, int u)
 {
-  if (s->pkg)
-    dyn_print ("%r", dpm_pkg_name (s->pkg));
-  else
-    dyn_print ("goal");
-
-  if (s->relevant)
-    dyn_print (" (relevant)");
-  
-  dyn_print ("\n");
+  dyn_print ("%{seat}%s\n", s, s->relevant? " (relevant)" : "");
 
   dyn_foreach (c, dpm_seat_cands, s)
     {
       if (c->ver)
 	dyn_print (" %r", dpm_ver_version (c->ver));
       else if (c == &(ws->goal_cand))
-	dyn_print (" goal-cand");
+	dyn_print (" cand");
       else
 	dyn_print (" null");
       
@@ -1050,13 +1210,15 @@ dump_seat (dpm_ws ws, dpm_seat s, int u)
 
       dyn_foreach (d, dpm_cand_deps, c)
 	{
-	  dyn_print ("  >");
+	  if (d->reversed)
+	    dyn_print ("  >>");
+	  else
+	    dyn_print ("  >");
 	  if (!dpm_dep_satisfied (d, u))
 	    dyn_print (" !!!");
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    {
-	      dyn_print (" ");
-	      dpm_cand_print_id (a);
+	      dyn_print (" %{cand}", a);
 	    }
 	  dyn_print ("\n");
 	  if (d->rel)
@@ -1067,11 +1229,7 @@ dump_seat (dpm_ws ws, dpm_seat s, int u)
 	    }
 	}
       dyn_foreach (r, dpm_cand_revdeps, c)
-	{
-	  dyn_print ("  < ");
-	  dpm_cand_print_id (r->cand);
-	  dyn_print ("\n");
-	}
+	dyn_print ("  < %{cand}\n", r->cand);
     }
 }
 
@@ -1100,8 +1258,7 @@ dump_broken_seat (dpm_ws ws, dpm_seat s, int u)
   dpm_cand c = dpm_ws_selected (s, u);
   if (!dpm_cand_satisfied (c, u))
     {
-      dpm_cand_print_id (c);
-      dyn_print (" is broken\n");
+      dyn_print ("%{cand} is broken\n", c);
 
       dyn_foreach (d, dpm_cand_deps, c)
 	{
@@ -1113,8 +1270,7 @@ dump_broken_seat (dpm_ws ws, dpm_seat s, int u)
 		{
 		  if (!first)
 		    dyn_print (", or");
-		  dyn_print (" ");
-		  dpm_cand_print_id (a);
+		  dyn_print (" %{cand}", a);
 		  first = false;
 		}
 	      dyn_print (", but none of them is selected.\n");
@@ -1144,3 +1300,52 @@ dpm_ws_dump_pkg (dpm_package p, int universe)
   dpm_ws ws = dpm_ws_current ();
   dump_seat (ws, get_seat (ws, p), universe);
 }
+
+static void
+seat_formatter (dyn_output out,
+		const char *id, int id_len,
+		const char *parms, int parms_len,
+		va_list *ap)
+{
+  dpm_seat s = va_arg (*ap, dpm_seat);
+  if (s)
+    {
+      dpm_package p = dpm_seat_package (s);
+      if (p)
+	dyn_write (out, "%{pkg}", p);
+      else
+	dyn_write (out, "goal");
+    }
+  else
+    dyn_write (out, "<null seat>");
+}
+
+DYN_DEFINE_FORMATTER ("seat", seat_formatter);
+
+static void
+cand_formatter (dyn_output out,
+		const char *id, int id_len,
+		const char *parms, int parms_len,
+		va_list *ap)
+{
+  dpm_cand c = va_arg (*ap, dpm_cand);
+  if (c)
+    {
+      dpm_version v = dpm_cand_version (c);
+      if (v)
+	dyn_write (out, "%{pkg}_%r", dpm_ver_package (v), dpm_ver_version (v));
+      else
+	{
+	  dpm_seat s = dpm_cand_seat (c);
+	  if (c == &s->null_cand)
+	    dyn_write (out, "%{seat}_null", s);
+	  else
+	    dyn_write (out, "%{seat}_cand", s);
+	}
+    }
+  else
+    dyn_write (out, "<null cand>");
+}
+
+DYN_DEFINE_FORMATTER ("cand", cand_formatter);
+

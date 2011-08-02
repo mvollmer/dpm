@@ -27,7 +27,6 @@
 // Utilities
 
 #define S(x) dyn_from_string (x)
-#define Q(x) dyn_read_string (#x)
 #define I(x) dyn_open_string (x, -1)
 #define L(x) #x "\n"
 
@@ -351,6 +350,28 @@ DEFTEST (dyn_output)
 	  
 	  dyn_input_advance (in, 1);
 	}
+    }
+}
+
+static void twice_formatter (dyn_output out,
+			     const char *id, int id_len,
+			     const char *parms, int parms_len,
+			     va_list *args)
+{
+  int i = va_arg (*args, int);
+  dyn_write (out, "%d", 2*i);
+}
+
+DYN_DEFINE_FORMATTER ("twice", twice_formatter);
+
+DEFTEST (dyn_formatter)
+{
+  dyn_block
+    {
+      dyn_val s = dyn_format ("%{twice}", 12);
+      EXPECT (dyn_eq (s, "24"));
+      dyn_val s2 = dyn_format ("%{thrice}", 12);
+      EXPECT (dyn_eq (s2, "%{thrice:}"));
     }
 }
 
@@ -1241,6 +1262,82 @@ DEFTEST (parse_tar_members)
     }
 }
 
+DEFTEST (db_version_compare)
+{
+  dyn_block
+    {
+      dyn_val s = ss_open (testdst ("store.db"), SS_TRUNC);
+
+      int op[5] = {
+	DPM_EQ,
+	DPM_LESS,
+	DPM_LESSEQ,
+	DPM_GREATER,
+	DPM_GREATEREQ 
+      };
+
+      bool res[5][3] = {
+	{ false, true,  false },
+	{ true,  false, false },
+	{ true,  true,  false },
+	{ false, false, true },
+	{ false, true,  true }
+      };
+
+      void check1 (const char *a_str, const char *b_str, int sign)
+      {
+	int a_len = strlen (a_str);
+	int b_len = strlen (b_str);
+	
+	ss_val a = ss_blob_new (s, a_len, (void *)a_str);
+	ss_val b = ss_blob_new (s, b_len, (void *)b_str);
+
+	EXPECT (dpm_db_compare_versions (a, b) == sign);
+	EXPECT (dpm_db_compare_versions_str (a, b_str, b_len) == sign);
+
+	for (int i = 0; i < 5; i++)
+	  {
+	    EXPECT (dpm_db_check_versions (a, op[i], b) == res[i][sign+1]);
+	    EXPECT (dpm_db_check_versions_str (a, op[i], b_str, b_len) ==
+		    res[i][sign+1]);
+	  }
+      }
+
+      void check (const char *a_str, const char *b_str, int sign)
+      {
+	check1 (a_str, b_str, sign);
+	check1 (b_str, a_str, -sign);
+      }
+
+      check ("1", "1", 0);
+      check ("0.1.0", "0.1.0", 0);
+      check ("0.001", "0.01", 0);
+      check ("0:1", "1", 0);
+      check ("1:1", "1:1", 0);
+
+      check ("1", "2", -1);
+      check ("0.1.99", "0.2.0", -1);
+      check ("0.09", "0.10", -1);
+      check ("1:1", "2:1", -1);
+      check ("1", "1+", -1);
+      check ("1+", "1++", -1);
+      check ("1~", "1", -1);
+      check ("1~~", "1~", -1);
+      
+      check ("1", "1.0", -1);
+      check ("1.0", "1..0", -1);
+
+      check ("a", "b", -1);
+      check ("a1", "a2", -1);
+      check ("aaa.bbb", "a.b", -1);
+
+      check ("1.0-1", "1.0-2", -1);
+      // Policy says that a missing Debian revision is equal to a
+      // revision of "0".
+      // check ("1.0", "1.0-0", 0);
+    }
+}
+
 DEFTEST (db_init)
 {
   dyn_block
@@ -1572,7 +1669,7 @@ try_cand (const char *id)
       
       dpm_package pkg = dpm_db_package_find (p);
       if (pkg)
-	dyn_foreach (s, dpm_ws_seats, pkg)
+	dyn_foreach (s, dpm_ws_package_seats, pkg)
 	  dyn_foreach (c, dpm_seat_cands, s)
 	    {
 	      dpm_version ver = dpm_cand_version (c);
@@ -1657,10 +1754,7 @@ check_deps (const char *from, ...)
   for (int i = 0; i < n_deps; i++)
     {
       for (int j = 0; j < n_alts[i]; j++)
-	{
-	  dyn_print (" ");
-	  dpm_cand_print_id (deps[i][j]);
-	}
+	dyn_print (" %{cand}", deps[i][j]);
       dyn_print ("\n");
     }
 
@@ -1668,10 +1762,7 @@ check_deps (const char *from, ...)
   dyn_foreach (d, dpm_cand_deps, f)
     {
       dyn_foreach (a, dpm_dep_alts, d)
-	{
-	  dyn_print (" ");
-	  dpm_cand_print_id (a);
-	}
+	dyn_print (" %{cand}", a);
       dyn_print ("\n");
     }
 
@@ -1697,7 +1788,7 @@ DEFTEST (ws_cands)
       dpm_package p = dpm_db_package_find ("foo");
 
       int n = 0;
-      dyn_foreach (s, dpm_ws_seats, p)
+      dyn_foreach (s, dpm_ws_package_seats, p)
 	dyn_foreach (c, dpm_seat_cands, s)
 	  {
 	    dpm_package pp = dpm_seat_package (dpm_cand_seat (c));
