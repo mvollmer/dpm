@@ -372,135 +372,79 @@ dpm_alg_install_naively ()
 
 /* Executing a plan.
 
-   (Just for fun.)
+   We leave strongly connected components unbroken for now.
  */
 
 void
 dpm_alg_execute ()
 {
-  dpm_seatset unpack_done = dpm_seatset_new ();
-  dpm_seatset setup_queued = dpm_seatset_new ();
-  dpm_seatset setup_done = dpm_seatset_new ();
+  int tag;
+  int *seat_tag;
+  
+  dpm_seat stack[200];  // XXX - max size of str. con. comp.
+  int stack_top;
 
-  dpm_version pending_unpack = NULL;
-
-  void cmd_unpack (dpm_version v)
+  void visit_component (dpm_seat *seats, int n_seats)
   {
-    if (pending_unpack)
-      dyn_print ("Unpacking %{ver}\n", pending_unpack);
-    pending_unpack = v;
+    dyn_print ("Installing ");
+    for (int i = 0; i < n_seats; i++)
+      {
+	dpm_seat s = seats[i];
+
+	if (dpm_seat_package (s) == NULL)
+	  continue;
+
+	dpm_version cand = dpm_cand_version (dpm_ws_selected (s, 0));
+	dpm_version inst = dpm_db_installed (dpm_seat_package (s));
+
+	if (cand != inst)
+	  dyn_print ("%{seat} ", s);
+      }
+    dyn_print ("\n");
   }
 
-  void cmd_setup (dpm_version v)
+  int visit (dpm_seat s)
   {
-    if (pending_unpack == v)
-      {
-	dyn_print ("Installing %{ver}\n", v);
-	pending_unpack = NULL;
-      }
-    else
-      {
-	if (pending_unpack)
-	  dyn_print ("Unpacking %{ver}\n", pending_unpack);
-	pending_unpack = NULL;
-	dyn_print ("Setting up %{ver}\n", v);
-      }
-  }
+    int s_id = dpm_seat_id (s);
 
-  void cmd_remove (dpm_package p)
-  {
-    if (pending_unpack)
-      {
-	dyn_print ("Unpacking %{ver}\n", pending_unpack);
-	pending_unpack = NULL;
-      }
-    dyn_print ("Removing %{pkg}\n", p);
-  }
+    if (seat_tag[s_id] != 0)
+      return seat_tag[s_id];
 
-  void do_unpack (dpm_seat s)
-  {
-    dpm_cand c = dpm_ws_selected (s, 0);
-    dpm_version v = dpm_cand_version (c);
-    dpm_package p = dpm_seat_package (s);
-    dpm_version inst = dpm_db_installed (p);
+    seat_tag[s_id] = ++tag;
+    int stack_pos = stack_top;
+    stack[stack_top++] = s;
 
-    if (v != inst)
-      {
-	if (v)
-	  cmd_unpack (v);
-	else if (p)
-	  cmd_remove (p);
-      }
-  }
-
-  void do_setup (dpm_seat s)
-  {
-    dpm_cand c = dpm_ws_selected (s, 0);
-    dpm_version v = dpm_cand_version (c);
-    
-    if (v)
-      cmd_setup (v);
-  }
-
-  auto void setup (dpm_seat s);
-
-  void unpack (dpm_seat s)
-  {
-    if (dpm_seatset_has (unpack_done, s))
-      return;
-
-    dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s, 0))
-      if (dpm_dep_for_unpack (d))
-	{
-	  dyn_foreach (a, dpm_dep_alts, d)
-	    if (dpm_ws_is_selected (a, 0))
-	      {
-		setup (dpm_cand_seat (a));
-		break;
-	      }
-	}
-
-    if (!dpm_seatset_has (unpack_done, s))
-      {
-	do_unpack (s);
-	dpm_seatset_add (unpack_done, s);
-      }
-  }
-
-  void setup (dpm_seat s)
-  {
-    if (dpm_seatset_has (setup_done, s))
-      return;
-
-    if (dpm_seatset_has (setup_queued, s))
-      {
-	// dyn_print ("(dep cycle broken at %{seat})\n", s);
-	return;
-      }
-
-    dpm_seatset_add (setup_queued, s);
-
+    int min_tag = seat_tag[s_id];
     dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s, 0))
       dyn_foreach (a, dpm_dep_alts, d)
         if (dpm_ws_is_selected (a, 0))
 	  {
-	    if (!dpm_seatset_has (setup_done, dpm_cand_seat (a)))
-	      setup (dpm_cand_seat (a));
+	    int t = visit (dpm_cand_seat (a));
+	    if (t > 0 && t < min_tag)
+	      min_tag = t;
 	    break;
 	  }
 
-    unpack (s);
-
-    if (!dpm_seatset_has (setup_done, s))
+    if (min_tag == seat_tag[s_id])
       {
-	do_setup (s);
-	dpm_seatset_add (setup_done, s);
-      }
-  }
+	for (int i = stack_pos; i < stack_top; i++)
+	  seat_tag[dpm_seat_id(stack[i])] = -1;
 
-  dyn_foreach (s, dpm_ws_seats)
+	visit_component (stack + stack_pos, stack_top - stack_pos);
+	stack_top = stack_pos;
+      }
+
+    return min_tag;
+  }
+  
+  dyn_block
     {
-      if (dpm_seat_relevant (s) && dpm_seat_package (s) != NULL)
-	setup (s);
+      tag = 0;
+      seat_tag = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(int));
+      dyn_on_unwind_free (seat_tag);
+
+      stack_top = 0;
+
+      visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
     }
 }
