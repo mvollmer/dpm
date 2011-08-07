@@ -92,6 +92,6 @@ bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 
 bool dpm_alg_install_naively ();
 
-void dpm_alg_execute ();
+void dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats));
 
 #endif /* !DPM_ALG_H */

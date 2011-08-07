@@ -350,7 +350,7 @@ dpm_alg_install_naively ()
 	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
 	  return;
 
-	dyn_print ("Selecting %{cand}\n", c);
+	// dyn_print ("Selecting %{cand}\n", c);
 
 	dpm_seatset_add (touched, dpm_cand_seat (c));
 	dpm_ws_select (c, 0);
@@ -376,32 +376,13 @@ dpm_alg_install_naively ()
  */
 
 void
-dpm_alg_execute ()
+dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
 {
   int tag;
   int *seat_tag;
   
-  dpm_seat stack[200];  // XXX - max size of str. con. comp.
+  dpm_seat stack[200];  // XXX - max size of str. conn. comp.
   int stack_top;
-
-  void visit_component (dpm_seat *seats, int n_seats)
-  {
-    dyn_print ("Installing ");
-    for (int i = 0; i < n_seats; i++)
-      {
-	dpm_seat s = seats[i];
-
-	if (dpm_seat_package (s) == NULL)
-	  continue;
-
-	dpm_version cand = dpm_cand_version (dpm_ws_selected (s, 0));
-	dpm_version inst = dpm_db_installed (dpm_seat_package (s));
-
-	if (cand != inst)
-	  dyn_print ("%{seat} ", s);
-      }
-    dyn_print ("\n");
-  }
 
   int visit (dpm_seat s)
   {
@@ -430,7 +411,7 @@ dpm_alg_execute ()
 	for (int i = stack_pos; i < stack_top; i++)
 	  seat_tag[dpm_seat_id(stack[i])] = -1;
 
-	visit_component (stack + stack_pos, stack_top - stack_pos);
+	visit_comp (stack + stack_pos, stack_top - stack_pos);
 	stack_top = stack_pos;
       }
 

@@ -485,7 +485,28 @@ install (char **packages, bool show_deps, bool execute)
   if (dpm_alg_install_naively ())
     {
       if (execute)
-	dpm_alg_execute ();
+	{
+	  void visit_component (dpm_seat *seats, int n_seats)
+	  {
+	    dyn_print ("Installing ");
+	    for (int i = 0; i < n_seats; i++)
+	      {
+		dpm_seat s = seats[i];
+		
+		if (dpm_seat_package (s) == NULL)
+		  continue;
+		
+		dpm_version cand = dpm_cand_version (dpm_ws_selected (s, 0));
+		dpm_version inst = dpm_db_installed (dpm_seat_package (s));
+		
+		if (cand != inst)
+		  dyn_print ("%{seat} ", s);
+	      }
+	    dyn_print ("\n");
+	  }
+
+	  dpm_alg_order (visit_component);
+	}
     }
   else
     dpm_ws_show_broken (0);
