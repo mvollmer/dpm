@@ -89,7 +89,7 @@ expect (int b, char *expr, char *file, int line,
 static void
 handle_fd (fd_set *fds, int *fd, char *buf, int *len)
 {
-  if (FD_ISSET (*fd, fds))
+  if (*fd >= 0 && FD_ISSET (*fd, fds))
     {
       int n = read (*fd, buf+(*len), BUFSIZE-(*len));
       if (n < 0)
@@ -160,6 +160,12 @@ expect_child (void (*check) (int status,
   stdout_len = 0;
   stderr_buf = malloc (BUFSIZE);
   stderr_len = 0;
+
+  if (stdout_buf == NULL || stderr_buf == NULL)
+    {
+      fprintf (stderr, "Can't malloc\n");
+      exit (1);
+    }
 
   while (stdout_pipe[0] > 0 || stderr_pipe[0] > 0)
     {
