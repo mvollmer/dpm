@@ -360,6 +360,7 @@ typedef struct {
   ss_val package_key;
   ss_val version_key;
   ss_val architecture_key;
+  ss_val architecture_all;
   ss_val description_key;
   ss_val tag_key;
   ss_val md5sum_key;
@@ -700,8 +701,7 @@ parse_package_stanza (update_data *ud, dyn_input in)
     dyn_error ("Package without version: %r",
 	       dpm_pkg_name (ud->package));
   if (architecture == NULL)
-    dyn_error ("Package without architecture: %r",
-	       dpm_pkg_name (ud->package));
+    architecture = ud->architecture_all;
 
   ss_val ver = ss_new (db->store, 64, 9,
 		       NULL,
@@ -743,6 +743,7 @@ dpm_db_origin_update (dpm_origin origin,
   ud.package_key = intern (ud.db, "Package");
   ud.version_key = intern (ud.db, "Version");
   ud.architecture_key = intern (ud.db, "Architecture");
+  ud.architecture_all = intern (ud.db, "all");
   ud.description_key = intern (ud.db, "Description");
   ud.tag_key = intern (ud.db, "Tag");
   ud.md5sum_key = intern (ud.db, "MD5Sum");

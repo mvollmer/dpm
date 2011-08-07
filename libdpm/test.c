@@ -1368,7 +1368,6 @@ DEFTEST (db_simple)
       dpm_db_origin_update 
 	(o, I(L(Package: foo           )
 	      L(Version: 1.0           )
-	      L(Architecture: all      )
 	      L(Depends: bar (>= 1.0)  )
 	      L(Conflicts: baz (<< 10) )));
 
@@ -1476,12 +1475,10 @@ DEFTEST (db_unique_versions)
       const char *meta = 
 	L(Package: foo                                  )
 	L(Version: 1.0                                  )
-	L(Architecture: all                             )
 	L(SHA1: 1234567890123456789012345678901234567890)
 	L(                                              )
 	L(Package: bar                                  )
-	L(Version: 1.0                                  )
-	L(Architecture: all                             );
+	L(Version: 1.0                                  );
 
       dyn_let (dpm_database_name, testdst ("test.db"));
       dpm_db_open ();
@@ -1536,23 +1533,18 @@ DEFTEST (db_remove)
       const char *meta = 
 	L(Package: foo                                  )
 	L(Version: 1.0                                  )
-	L(Architecture: all                             )
 	L(                                              )
 	L(Package: foo                                  )
 	L(Version: 2.0                                  )
-	L(Architecture: all                             )
 	L(                                              )
 	L(Package: bar                                  )
 	L(Version: 1.0                                  )
-	L(Architecture: all                             )
 	L(                                              )
 	L(Package: bar                                  )
 	L(Version: 2.0                                  )
-	L(Architecture: all                             )
 	L(                                              )
 	L(Package: baz                                  )
-	L(Version: 1.0                                  )
-	L(Architecture: all                             );
+	L(Version: 1.0                                  );
 
       dyn_let (dpm_database_name, testdst ("test.db"));
       dpm_db_open ();
@@ -1775,15 +1767,12 @@ DEFTEST (ws_cands)
     {
       setup_ws (L(Package: foo            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L()
 		L(Package: foo            )
 		L(Version: 1.1            )
-		L(Architecture: all       )
 		L()
 		L(Package: bar            )
-		L(Version: 1.0            )
-		L(Architecture: all       ));
+		L(Version: 1.0            ));
 		
       dpm_package p = dpm_db_package_find ("foo");
 
@@ -1809,22 +1798,18 @@ DEFTEST (ws_deps)
     {
       setup_ws (L(Package: foo            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L(Depends: bar (>= 1.1)   )
 		L(Conflicts: not-there    )
 		L()
 		L(Package: bar            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L()
 		L(Package: bar            )
 		L(Version: 1.1            )
-		L(Architecture: all       )
 		L(Conflicts: baz          )
 		L()
 		L(Package: baz            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L(Provides: bar           ));
 
       check_deps ("foo_1.0",
@@ -1843,31 +1828,25 @@ DEFTEST (ws_cands_and_deps)
     {
       setup_ws_1 (L(Package: foo            )
 		  L(Version: 1.0            )
-		  L(Architecture: all       )
 		  "Depends: bar (>= 1.1), two (= 1.0)\n"
 		  L(Conflicts: not-there    )
 		  L()
 		  L(Package: bar            )
 		  L(Version: 1.0            )
-		  L(Architecture: all       )
 		  L()
 		  L(Package: bar            )
 		  L(Version: 1.1            )
-		  L(Architecture: all       )
 		  L(Conflicts: baz          )
 		  L()
 		  L(Package: baz            )
 		  L(Version: 1.0            )
-		  L(Architecture: all       )
 		  L(Provides: bar           )
 		  L()
 		  L(Package: two            )
 		  L(Version: 1.0            )
-		  L(Architecture: all       )
 		  L()
 		  L(Package: two            )
-		  L(Version: 2.0            )
-		  L(Architecture: all       ),
+		  L(Version: 2.0            ),
 		  "foo");
 
       EXPECT (try_cand ("foo_1.0") != NULL);
@@ -1885,22 +1864,18 @@ DEFTEST (ws_select)
     {
       setup_ws (L(Package: foo            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L(Depends: bar (>= 1.1)   )
 		L(Conflicts: not-there    )
 		L()
 		L(Package: bar            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L()
 		L(Package: bar            )
 		L(Version: 1.1            )
-		L(Architecture: all       )
 		L(Conflicts: baz          )
 		L()
 		L(Package: baz            )
 		L(Version: 1.0            )
-		L(Architecture: all       )
 		L(Provides: bar           ));
 
       dpm_cand foo_10 = find_cand ("foo_1.0");
@@ -1938,35 +1913,28 @@ DEFTEST (ws_goal_cand)
       const char *meta =
 	L(Package: foo            )
 	L(Version: 1.0            )
-	L(Architecture: all       )
 	"Depends: bar (>= 1.1), two (= 1.0)\n"
 	L(Conflicts: not-there    )
 	L()
 	L(Package: bar            )
 	L(Version: 1.0            )
-	L(Architecture: all       )
 	L()
 	L(Package: bar            )
 	L(Version: 1.1            )
-	L(Architecture: all       )
 	L(Conflicts: baz          )
 	L()
 	L(Package: baz            )
 	L(Version: 1.0            )
-	L(Architecture: all       )
 	L(Provides: bar           )
 	L()
 	L(Package: two            )
 	L(Version: 1.0            )
-	L(Architecture: all       )
 	L()
 	L(Package: two            )
 	L(Version: 2.0            )
-	L(Architecture: all       )
 	L(                        )
 	L(Package: irrelevant     )
-	L(Version: 1.0            )
-	L(Architecture: all       );
+	L(Version: 1.0            );
 
       dyn_let (dpm_database_name, testdst ("test.db"));
 
@@ -2042,35 +2010,27 @@ DEFTEST (alg_queue)
     {
       setup_ws (L(Package: foo          )
 		L(Version: 1            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 2            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 3            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 4            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 5            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 6            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 7            )
-		L(Architecture: all     )
 		L()
 		L(Package: foo          )
 		L(Version: 8            )
-		L(Architecture: all     )
 		L());
 
       dpm_candpq q = dpm_candpq_new ();
@@ -2116,5 +2076,12 @@ DEFTEST (alg_queue)
 	  EXPECT (cand == c[i]);
 	  EXPECT (prio == i + 9990);
 	}
+    }
+}
+
+DEFTEST (alg_install_naively)
+{
+  dyn_block
+    {
     }
 }
