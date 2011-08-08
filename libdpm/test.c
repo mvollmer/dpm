@@ -2099,6 +2099,63 @@ check_selected (const char *expected)
 }
 
 void
+setup_scenario (const char *meta,
+                const char *originally_installed,
+                const char *goal)
+{
+  dyn_let (dpm_database_name, testdst ("test.db"));
+
+  dpm_db_open ();
+  dpm_origin o = dpm_db_origin_find ("origin");
+  
+  dpm_db_origin_update (o, I(meta));
+  dpm_db_checkpoint ();
+  
+  dpm_ws_create (1);
+  
+  dyn_foreach_iter (i, dpm_parse_comma_fields, I(originally_installed))
+    {
+      char p[200];
+      EXPECT (i.len < 200);
+      strncpy (p, i.field, i.len);
+      p[i.len] = '\0';
+      char *v = strchr (p, '_');
+      EXPECT (v != NULL);
+      *v++ = '\0';
+      
+      if (strcmp (v, "null") == 0)
+        continue;
+
+      dpm_package pkg = dpm_db_package_find (p);
+      EXPECT (pkg != NULL);
+      bool found = false;
+      dyn_foreach (ver, dpm_db_origin_package_versions, o, pkg)
+        {
+          if (ss_streq (dpm_ver_version (ver), v))
+            {
+              dpm_cand c = dpm_ws_add_cand (ver);
+              dpm_ws_select (c, 0);
+              found = true;
+              break;
+            }
+        }
+      EXPECT (found, "%ls not found", i.field, i.len);
+    }
+  
+  dpm_candspec spec = dpm_candspec_new ();
+  dpm_candspec_begin_rel (spec, false);
+  dpm_package pkg = dpm_db_package_find (goal);
+  EXPECT (pkg != NULL);
+  dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
+  dpm_ws_set_goal_candspec (spec);
+  dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
+  
+  dpm_ws_start ();
+  
+  check_selected (originally_installed);
+}
+
+void
 check_install (const char *meta,
                const char *originally_installed,
                const char *goal, bool result,
@@ -2106,56 +2163,9 @@ check_install (const char *meta,
 {
   dyn_block
     {
-      dyn_let (dpm_database_name, testdst ("test.db"));
-
-      dpm_db_open ();
-      dpm_origin o = dpm_db_origin_find ("origin");
-
-      dpm_db_origin_update (o, I(meta));
-      dpm_db_checkpoint ();
-
-      dpm_ws_create (1);
-
-      dyn_foreach_iter (i, dpm_parse_comma_fields, I(originally_installed))
-        {
-          char p[200];
-          EXPECT (i.len < 200);
-          strncpy (p, i.field, i.len);
-          p[i.len] = '\0';
-          char *v = strchr (p, '_');
-          EXPECT (v != NULL);
-          *v++ = '\0';
-
-          if (strcmp (v, "null") == 0)
-            continue;
-
-          dpm_package pkg = dpm_db_package_find (p);
-          EXPECT (pkg != NULL);
-          bool found = false;
-          dyn_foreach (ver, dpm_db_origin_package_versions, o, pkg)
-            {
-              if (ss_streq (dpm_ver_version (ver), v))
-                {
-                  dpm_cand c = dpm_ws_add_cand (ver);
-                  dpm_ws_select (c, 0);
-                  found = true;
-                  break;
-                }
-            }
-          EXPECT (found, "%ls not found", i.field, i.len);
-        }
-
-      dpm_candspec spec = dpm_candspec_new ();
-      dpm_candspec_begin_rel (spec, false);
-      dpm_package pkg = dpm_db_package_find (goal);
-      EXPECT (pkg != NULL);
-      dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
-      dpm_ws_set_goal_candspec (spec);
-      dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
-
-      dpm_ws_start ();
-
-      check_selected (originally_installed);
+      setup_scenario (meta,
+                      originally_installed,
+                      goal);
 
       EXPECT (dpm_alg_install_naively () == result);
 
@@ -2225,5 +2235,71 @@ DEFTEST (alg_install_naively)
                  "",
                  "foo", true,
                  "foo_1, bar_1");
+
+}
+
+void
+check_order (const char *meta,
+             const char *selected,
+             const char *goal)
+{
+  dyn_block
+    {
+      setup_scenario (meta, selected, goal);
+      dpm_ws_select (dpm_ws_get_goal_cand (), 0);
+      
+      dpm_ws_dump (0);
+
+      void visit_component (dpm_seat *seats, int n_seats)
+      {
+        dyn_print ("Handling ");
+        for (int i = 0; i < n_seats; i++)
+          dyn_print ("%{seat} ", seats[i]);
+        dyn_print ("\n");
+      }
+
+      dpm_alg_order (visit_component);
+      dyn_print ("\n");
+    }
+}
+
+DEFTEST (alg_order)
+{
+  check_order ("Package: foo          \n"
+               "Version: 1            \n",
+               
+               "foo_1",
+               "foo");
+
+  check_order ("Package: foo          \n"
+               "Version: 1            \n"
+               "Depends: bar          \n"
+               "\n"
+               "Package: bar          \n"
+               "Version: 1            \n",
+               
+               "foo_1, bar_1",
+               "foo");
+
+  check_order ("Package: foo          \n"
+               "Version: 1            \n"
+               "Depends: bar          \n"
+               "\n"
+               "Package: bar          \n"
+               "Version: 1            \n"
+               "Depends: foo          \n",
+               
+               "foo_1, bar_1",
+               "foo");
+
+  check_order ("Package: foo          \n"
+               "Version: 1            \n"
+               "Conflicts: bar        \n"
+               "\n"
+               "Package: bar          \n"
+               "Version: 1            \n",
+               
+               "foo_1, bar_1",
+               "foo");
 
 }
