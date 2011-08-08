@@ -381,7 +381,7 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
   int tag;
   int *seat_tag;
   
-  dpm_seat stack[200];  // XXX - max size of str. conn. comp.
+  dpm_seat stack[200];  // XXX
   int stack_top;
 
   int visit (dpm_seat s)
