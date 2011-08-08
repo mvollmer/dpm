@@ -2246,15 +2246,15 @@ check_order (const char *meta,
   dyn_block
     {
       setup_scenario (meta, selected, goal);
-      dpm_ws_select (dpm_ws_get_goal_cand (), 0);
+      EXPECT (dpm_alg_install_naively () == true);
       
-      dpm_ws_dump (0);
+      // dpm_ws_dump (0);
 
       void visit_component (dpm_seat *seats, int n_seats)
       {
         dyn_print ("Handling ");
         for (int i = 0; i < n_seats; i++)
-          dyn_print ("%{seat} ", seats[i]);
+          dyn_print ("%{cand} ", dpm_ws_selected (seats[i], 0));
         dyn_print ("\n");
       }
 
@@ -2268,7 +2268,7 @@ DEFTEST (alg_order)
   check_order ("Package: foo          \n"
                "Version: 1            \n",
                
-               "foo_1",
+               "",
                "foo");
 
   check_order ("Package: foo          \n"
@@ -2278,7 +2278,7 @@ DEFTEST (alg_order)
                "Package: bar          \n"
                "Version: 1            \n",
                
-               "foo_1, bar_1",
+               "",
                "foo");
 
   check_order ("Package: foo          \n"
@@ -2289,7 +2289,7 @@ DEFTEST (alg_order)
                "Version: 1            \n"
                "Depends: foo          \n",
                
-               "foo_1, bar_1",
+               "",
                "foo");
 
   check_order ("Package: foo          \n"
@@ -2299,7 +2299,29 @@ DEFTEST (alg_order)
                "Package: bar          \n"
                "Version: 1            \n",
                
-               "foo_1, bar_1",
+               "bar_1",
                "foo");
+
+  check_order ("Package: p1          \n"
+               "Version: 1           \n"
+               "Depends: p2          \n"
+               "\n"
+	       "Package: p2          \n"
+               "Version: 1           \n"
+               "Depends: p3          \n"
+               "\n"
+	       "Package: p3          \n"
+               "Version: 1           \n"
+               "Depends: p2, p4      \n"
+               "\n"
+	       "Package: p4          \n"
+               "Version: 1           \n"
+               "Depends: p3, p5      \n"
+               "\n"
+	       "Package: p5          \n"
+               "Version: 1           \n",
+               
+               "",
+               "p1");
 
 }
