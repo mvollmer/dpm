@@ -34,6 +34,8 @@
 
 /* XXX - better support for unstored objects, including some form of
          garbage collection.
+
+       - Don't mmap MAX_SIZE for read-only stores.
  */
 
 /* Object layout 
@@ -324,7 +326,7 @@ ss_store_unref (dyn_type *type, void *object)
       }
 
   if (ss->head)
-    munmap (ss->head, ss->file_size);
+    munmap (ss->head, MAX_SIZE);
 
   close (ss->fd);
   free (ss->filename);
