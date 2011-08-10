@@ -2236,6 +2236,25 @@ DEFTEST (alg_install_naively)
                  "foo", true,
                  "foo_1, bar_1");
 
+  check_install ("Package: foo          \n"
+                 "Version: 1            \n"
+                 "Depends: bar (>= 1)   \n"
+                 "\n"
+                 "Package: foo          \n"
+                 "Version: 2            \n"
+                 "Depends: bar (>= 2)   \n"
+                 "\n"
+                 "Package: bar          \n"
+                 "Version: 1            \n"
+                 "\n"
+                 "Package: bar          \n"
+                 "Version: 2            \n"
+                 "Conflicts: foo (<< 2) \n",
+
+                 "foo_1, bar_1",
+                 "foo", true,
+                 "foo_2, bar_2");
+
 }
 
 void
