@@ -19,6 +19,7 @@
 
 #include <stdbool.h>
 #include <obstack.h>
+#include <assert.h>
 
 #include "ws.h"
 #include "alg.h"
@@ -43,6 +44,9 @@ struct dpm_cand_struct {
 
   int n_unsatisfied[MAX_UNIVERSES];
 };
+
+#define SEAT_ID_GOAL 0
+#define SEAT_ID_UGLY 1
 
 struct dpm_seat_struct {
   dpm_package pkg;
@@ -79,6 +83,9 @@ struct dpm_ws_struct {
   struct dpm_seat_struct goal_seat;
   struct dpm_cand_struct goal_cand;
   dpm_candspec goal_spec;
+
+  struct dpm_seat_struct ugly_seat;
+  struct dpm_cand_struct ugly_cand;
 
   int next_seat_id;
   int next_cand_id;
@@ -154,8 +161,8 @@ dpm_ws_create (int n_universe)
   int cand_id = 0;
   int seat_id = 0;
 
+  void setup_special_seat (dpm_seat s, dpm_cand c)
   {
-    dpm_seat s = &(ws->goal_seat);
     s->id = seat_id++;
     dpm_cand n = &(s->null_cand);
     n->seat = s;
@@ -164,13 +171,18 @@ dpm_ws_create (int n_universe)
     for (int i = 0; i < MAX_UNIVERSES; i++)
       s->selected[i] = n;
 
-    dpm_cand g = &(ws->goal_cand);
-    g->seat = s;
-    g->ver = NULL;
-    g->id = cand_id++;
-    g->next = s->cands;
-    s->cands = g;
+    c->seat = s;
+    c->ver = NULL;
+    c->id = cand_id++;
+    c->next = s->cands;
+    s->cands = c;
   }
+
+  setup_special_seat (&(ws->goal_seat), &(ws->goal_cand));
+  setup_special_seat (&(ws->ugly_seat), &(ws->ugly_cand));
+
+  assert (ws->goal_seat.id == SEAT_ID_GOAL);
+  assert (ws->ugly_seat.id == SEAT_ID_UGLY);
 
   dyn_foreach (pkg, dpm_db_packages)
     {
@@ -440,6 +452,13 @@ dpm_ws_get_goal_cand ()
 {
   dpm_ws ws = dpm_ws_current ();
   return &(ws->goal_cand);
+}
+
+dpm_cand
+dpm_ws_get_ugly_cand ()
+{
+  dpm_ws ws = dpm_ws_current ();
+  return &(ws->ugly_cand);
 }
 
 void
@@ -1322,8 +1341,12 @@ seat_formatter (dyn_output out,
       dpm_package p = dpm_seat_package (s);
       if (p)
 	dyn_write (out, "%{pkg}", p);
-      else
+      else if (s->id == SEAT_ID_GOAL)
 	dyn_write (out, "goal");
+      else if (s->id == SEAT_ID_UGLY)
+	dyn_write (out, "ugly");
+      else
+	dyn_write (out, "???");
     }
   else
     dyn_write (out, "<null seat>");

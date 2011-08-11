@@ -146,6 +146,8 @@ void dpm_candspec_add_alt (dpm_candspec spec,
 void dpm_ws_set_goal_candspec (dpm_candspec spec);
 dpm_cand dpm_ws_get_goal_cand ();
 
+dpm_cand dpm_ws_get_ugly_cand ();
+
 DYN_DECLARE_STRUCT_ITER (dpm_seat, dpm_ws_package_seats, dpm_package pkg)
 {
   dpm_seat cur;
