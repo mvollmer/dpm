@@ -2283,6 +2283,26 @@ check_order (const char *meta,
   dpm_cand **expected_cands[50];
   int n_steps = 0;
 
+  void print_expected_cands ()
+  {
+    for (int s = 0; s < n_steps; s++)
+      {
+	if (expected_cands[s] == NULL)
+	  dyn_print ("Step %d: done\n", s);
+	else
+	  {
+	    dyn_print ("Step %d:\n", s);
+	    for (int c = 1; expected_cands[s][c] != NULL; c++)
+	      {
+		dyn_print (" Component:");
+		for (int i = 0; expected_cands[s][c][i]; i++)
+		  dyn_print (" %{cand}", expected_cands[s][c][i]);
+		dyn_print ("\n");
+	      }
+	  }
+      }
+  }
+
   void setup_expected_cands ()
   {
     dyn_foreach_iter (l, dpm_parse_lines, I(expected_order))
@@ -2304,31 +2324,19 @@ check_order (const char *meta,
               cands[i] = find_cand (p);
           }
         cands[l.n_fields] = NULL;
-        dpm_cand **comps = dyn_malloc (sizeof (dpm_cand*)*n_comps+1);
+        dpm_cand **comps = dyn_malloc (sizeof (dpm_cand*)*(n_comps+2));
         dpm_cand *ptr = cands;
+	comps[0] = cands;
         for (int i = 0; i < n_comps; i++)
           {
-            comps[i] = ptr;
+            comps[i+1] = ptr;
             while (*ptr++)
               ;
           }
-        comps[n_comps] = NULL;
+        comps[n_comps+1] = NULL;
         expected_cands[n_steps++] = comps;
       }
 
-#if 0
-    for (int s = 0; s < n_steps; s++)
-      {
-        dyn_print ("Step %d:\n", s);
-        for (int c = 0; expected_cands[s][c] != NULL; c++)
-          {
-            dyn_print (" Component:");
-            for (int i = 0; expected_cands[s][c][i]; i++)
-              dyn_print (" %{cand}", expected_cands[s][c][i]);
-            dyn_print ("\n");
-          }
-      }
-#endif
   }
 
   bool has_same_cands (dpm_cand *cands, dpm_seat *seats, int n_seats)
@@ -2370,33 +2378,44 @@ check_order (const char *meta,
           }
 
         bool found = false;
-        for (int c = 0; expected_cands[cur_step][c]; c++)
+        for (int c = 1; expected_cands[cur_step][c]; c++)
           {
-            if (has_same_cands (expected_cands[cur_step][c], seats, n_seats))
+            if (has_same_cands (expected_cands[cur_step][c],
+				seats, n_seats))
               {
                 found = true;
-                while ((expected_cands[cur_step][c] = expected_cands[cur_step][c+1]))
-                  ;
+                while ((expected_cands[cur_step][c]
+			= expected_cands[cur_step][c+1]))
+                  c++;
+		break;
               }
-            if (!found)
-              {
-                dyn_print ("Visited: ");
-                for (int i = 0; i < n_seats; i++)
-                  dyn_print (" %{cand}", dpm_ws_selected (seats[i]));
-                dyn_print ("\n");
-                dyn_print ("Expected:");
-                for (int c = 0; expected_cands[cur_step][c]; c++)
-                  {
-                    for (dpm_cand *e = expected_cands[cur_step][c]; *e; e++)
-                      dyn_print (" %{cand}", *e);
-                    if (expected_cands[cur_step][c+1])
-                      dyn_print ("\n      or:");
-                  }
-                dyn_print ("\n");
-                EXPECT (false, "Unexpected order");
-              }
-          }
-        cur_step++;
+	  }
+
+	if (!found)
+	  {
+	    dyn_print ("Visited: ");
+	    for (int i = 0; i < n_seats; i++)
+	      dyn_print (" %{cand}", dpm_ws_selected (seats[i]));
+	    dyn_print ("\n");
+	    dyn_print ("Expected:");
+	    for (int c = 1; expected_cands[cur_step][c]; c++)
+	      {
+		for (dpm_cand *e = expected_cands[cur_step][c]; *e; e++)
+		  dyn_print (" %{cand}", *e);
+		if (expected_cands[cur_step][c+1])
+		  dyn_print ("\n      or:");
+	      }
+	    dyn_print ("\n");
+	    EXPECT (found, "Unexpected order");
+	  }
+
+	if (expected_cands[cur_step][1] == NULL)
+	  {
+	    free (expected_cands[cur_step][0]);
+	    free (expected_cands[cur_step]);
+	    expected_cands[cur_step] = NULL;
+	    cur_step++;
+	  }
       }
 
       dpm_alg_order (visit_component);
@@ -2496,4 +2515,21 @@ DEFTEST (alg_order)
                "foo_2",
                
                "foo_2 bar_2           \n");
+
+  check_order ("Package: foo          \n"
+	       "Version: 1            \n"
+	       "Depends: bar-1, bar-2 \n"
+	       "\n"
+	       "Package: bar-1        \n"
+	       "Version: 1            \n"
+	       "\n"
+	       "Package: bar-2        \n"
+	       "Version: 1            \n",
+
+	       "",
+	       "foo_1",
+
+	       "bar-1_1 | bar-2_1     \n"
+	       "foo_1                 \n");
+
 }
