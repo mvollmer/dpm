@@ -333,16 +333,19 @@ add_candspec_relation_cands (dpm_ws ws, struct candspec_rel *r)
 {
   for (struct candspec_alt *a = r->alts; a; a = a->next)
     {
-      bool accept_by_rel (dpm_version ver)
-      {
-	return dpm_db_check_versions_str (dpm_ver_version (ver),
-					  a->op,
-					  a->ver, a->ver? strlen (a->ver) : 0);
-      }
-
-      dpm_version ver = dpm_pol_get_best_version (a->pkg, accept_by_rel);
-      if (ver)
-	dpm_ws_add_cand_and_deps (ver);
+      if (a->op != DPM_EQ || a->ver != NULL)
+        {
+          bool accept_by_rel (dpm_version ver)
+          {
+            return dpm_db_check_versions_str (dpm_ver_version (ver),
+                                              a->op,
+                                              a->ver, a->ver? strlen (a->ver) : 0);
+          }
+          
+          dpm_version ver = dpm_pol_get_best_version (a->pkg, accept_by_rel);
+          if (ver)
+            dpm_ws_add_cand_and_deps (ver);
+        }
 
       dpm_seat s = get_seat (ws, a->pkg);
       if (!s->providers_added)
@@ -610,11 +613,17 @@ find_providers ()
 static bool
 satisfies_rel_str (dpm_cand c, bool conf, int op, const char *version)
 {
-  bool res = (c->ver
-	      && dpm_db_check_versions_str (dpm_ver_version (c->ver),
-					    op,
-					    version,
-					    version? strlen (version) : 0));
+  bool res;
+
+  if (op == DPM_EQ && version == NULL)
+    res = (c->ver == NULL);
+  else
+    res = (c->ver
+           && dpm_db_check_versions_str (dpm_ver_version (c->ver),
+                                         op,
+                                         version,
+                                         version? strlen (version) : 0));
+
   if (conf)
     return !res;
   else
