@@ -2141,12 +2141,21 @@ setup_scenario (const char *meta,
         }
       EXPECT (found, "%ls not found", i.field, i.len);
     }
+
+  char p[200];
+  strcpy (p, goal);
+  char *v = strchr (p, '_');
+  EXPECT (v != NULL);
+  *v++ = '\0';
   
+  if (strcmp (v, "null") == 0)
+    v = NULL;
+
   dpm_candspec spec = dpm_candspec_new ();
   dpm_candspec_begin_rel (spec, false);
-  dpm_package pkg = dpm_db_package_find (goal);
+  dpm_package pkg = dpm_db_package_find (p);
   EXPECT (pkg != NULL);
-  dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
+  dpm_candspec_add_alt (spec, pkg, DPM_EQ, v);
   dpm_ws_set_goal_candspec (spec);
   dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
   
@@ -2179,7 +2188,7 @@ DEFTEST (alg_install_naively)
                  "Version: 1            \n",
 
                  "",
-                 "foo", true,
+                 "foo_1", true,
                  "foo_1");
 
   check_install ("Package: foo          \n"
@@ -2187,7 +2196,7 @@ DEFTEST (alg_install_naively)
                  "Depends: bar          \n",
 
                  "",
-                 "foo", false,
+                 "foo_1", false,
                  "");
 
   check_install ("Package: foo          \n"
@@ -2198,7 +2207,7 @@ DEFTEST (alg_install_naively)
                  "Version: 1            \n",
 
                  "",
-                 "foo", true,
+                 "foo_1", true,
                  "foo_1, bar_1");
 
   check_install ("Package: foo          \n"
@@ -2209,7 +2218,7 @@ DEFTEST (alg_install_naively)
                  "Version: 1            \n",
 
                  "bar_1",
-                 "foo", true,
+                 "foo_1", true,
                  "foo_1, bar_null");
 
   check_install ("Package: foo          \n"
@@ -2221,7 +2230,7 @@ DEFTEST (alg_install_naively)
                  "Provides: bar         \n",
 
                  "",
-                 "foo", true,
+                 "foo_1", true,
                  "foo_1, pbar_1");
 
   check_install ("Package: foo          \n"
@@ -2233,7 +2242,7 @@ DEFTEST (alg_install_naively)
                  "Depends: foo          \n",
 
                  "",
-                 "foo", true,
+                 "foo_1", true,
                  "foo_1, bar_1");
 
   check_install ("Package: foo          \n"
@@ -2252,33 +2261,145 @@ DEFTEST (alg_install_naively)
                  "Conflicts: foo (<< 2) \n",
 
                  "foo_1, bar_1",
-                 "foo", true,
+                 "foo_2", true,
                  "foo_2, bar_2");
 
+  check_install ("Package: foo          \n"
+                 "Version: 1            \n",
+                 
+                 "foo_1",
+                 "foo_null", true,
+                 "foo_null");
 }
 
 void
 check_order (const char *meta,
              const char *selected,
-             const char *goal)
+             const char *goal,
+             const char *expected_order)
 {
+  // Where is Lisp when you need it?
+
+  dpm_cand **expected_cands[50];
+  int n_steps = 0;
+
+  void setup_expected_cands ()
+  {
+    dyn_foreach_iter (l, dpm_parse_lines, I(expected_order))
+      {
+        EXPECT (n_steps < 50);
+        dpm_cand *cands = dyn_malloc (sizeof(dpm_cand)*l.n_fields+1);
+        int n_comps = 1;
+        for (int i = 0; i < l.n_fields; i++)
+          {
+            char p[200];
+            strncpy (p, l.fields[i], l.field_lens[i]);
+            p[l.field_lens[i]] = '\0';
+            if (strcmp (p, "|") == 0)
+              {
+                cands[i] = NULL;
+                n_comps++;
+              }
+            else
+              cands[i] = find_cand (p);
+          }
+        cands[l.n_fields] = NULL;
+        dpm_cand **comps = dyn_malloc (sizeof (dpm_cand*)*n_comps+1);
+        dpm_cand *ptr = cands;
+        for (int i = 0; i < n_comps; i++)
+          {
+            comps[i] = ptr;
+            while (*ptr++)
+              ;
+          }
+        comps[n_comps] = NULL;
+        expected_cands[n_steps++] = comps;
+      }
+
+#if 0
+    for (int s = 0; s < n_steps; s++)
+      {
+        dyn_print ("Step %d:\n", s);
+        for (int c = 0; expected_cands[s][c] != NULL; c++)
+          {
+            dyn_print (" Component:");
+            for (int i = 0; expected_cands[s][c][i]; i++)
+              dyn_print (" %{cand}", expected_cands[s][c][i]);
+            dyn_print ("\n");
+          }
+      }
+#endif
+  }
+
+  bool has_same_cands (dpm_cand *cands, dpm_seat *seats, int n_seats)
+  {
+    int n_found = 0;
+    while (*cands)
+      {
+        for (int i = 0; i < n_seats; i++)
+          if (dpm_ws_selected (seats[i], 0) == *cands)
+            {
+              n_found++;
+              break;
+            }
+        cands++;
+      }
+    return n_found == n_seats;
+  }
+
   dyn_block
     {
       setup_scenario (meta, selected, goal);
+      setup_expected_cands ();
       EXPECT (dpm_alg_install_naively () == true);
       
       // dpm_ws_dump (0);
 
+      int cur_step = 0;
+
       void visit_component (dpm_seat *seats, int n_seats)
       {
-        dyn_print ("Handling ");
-        for (int i = 0; i < n_seats; i++)
-          dyn_print ("%{cand} ", dpm_ws_selected (seats[i], 0));
-        dyn_print ("\n");
+        EXPECT (cur_step <= n_steps);
+
+        if (cur_step == n_steps)
+          {
+            EXPECT (n_seats == 1);
+            EXPECT (dpm_ws_selected (seats[0], 0) == dpm_ws_get_goal_cand ());
+            cur_step++;
+            return;
+          }
+
+        bool found = false;
+        for (int c = 0; expected_cands[cur_step][c]; c++)
+          {
+            if (has_same_cands (expected_cands[cur_step][c], seats, n_seats))
+              {
+                found = true;
+                while ((expected_cands[cur_step][c] = expected_cands[cur_step][c+1]))
+                  ;
+              }
+            if (!found)
+              {
+                dyn_print ("Visited: ");
+                for (int i = 0; i < n_seats; i++)
+                  dyn_print (" %{cand}", dpm_ws_selected (seats[i], 0));
+                dyn_print ("\n");
+                dyn_print ("Expected:");
+                for (int c = 0; expected_cands[cur_step][c]; c++)
+                  {
+                    for (dpm_cand *e = expected_cands[cur_step][c]; *e; e++)
+                      dyn_print (" %{cand}", *e);
+                    if (expected_cands[cur_step][c+1])
+                      dyn_print ("\n      or:");
+                  }
+                dyn_print ("\n");
+                EXPECT (false, "Unexpected order");
+              }
+          }
+        cur_step++;
       }
 
       dpm_alg_order (visit_component);
-      dyn_print ("\n");
     }
 }
 
@@ -2288,7 +2409,8 @@ DEFTEST (alg_order)
                "Version: 1            \n",
                
                "",
-               "foo");
+               "foo_1",
+               "foo_1");
 
   check_order ("Package: foo          \n"
                "Version: 1            \n"
@@ -2298,7 +2420,10 @@ DEFTEST (alg_order)
                "Version: 1            \n",
                
                "",
-               "foo");
+               "foo_1",
+
+               "bar_1                 \n"
+               "foo_1                 \n");
 
   check_order ("Package: foo          \n"
                "Version: 1            \n"
@@ -2309,7 +2434,9 @@ DEFTEST (alg_order)
                "Depends: foo          \n",
                
                "",
-               "foo");
+               "foo_1",
+
+               "foo_1 bar_1           \n");
 
   check_order ("Package: foo          \n"
                "Version: 1            \n"
@@ -2319,7 +2446,10 @@ DEFTEST (alg_order)
                "Version: 1            \n",
                
                "bar_1",
-               "foo");
+               "foo_1",
+
+               "bar_null              \n"
+               "foo_1                 \n");
 
   check_order ("Package: p1          \n"
                "Version: 1           \n"
@@ -2341,6 +2471,29 @@ DEFTEST (alg_order)
                "Version: 1           \n",
                
                "",
-               "p1");
+               "p1_1",
 
+               "p5_1                 \n"
+               "p4_1 p3_1 p2_1       \n"
+               "p1_1                 \n");
+
+  check_order ("Package: foo          \n"
+               "Version: 1            \n"
+               "Depends: bar (>= 1)   \n"
+               "\n"
+               "Package: foo          \n"
+               "Version: 2            \n"
+               "Depends: bar (>= 2)   \n"
+               "\n"
+               "Package: bar          \n"
+               "Version: 1            \n"
+               "\n"
+               "Package: bar          \n"
+               "Version: 2            \n"
+               "Conflicts: foo (<< 2) \n",
+               
+               "foo_1, bar_1",
+               "foo_2",
+               
+               "foo_2 bar_2           \n");
 }
