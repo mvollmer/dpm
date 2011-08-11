@@ -353,13 +353,13 @@ dpm_alg_install_naively ()
 	// dyn_print ("Selecting %{cand}\n", c);
 
 	dpm_seatset_add (touched, dpm_cand_seat (c));
-	dpm_ws_select (c, 0);
+	dpm_ws_select (c);
 
 	dyn_foreach (d, dpm_cand_deps, c)
-	  if (!dpm_dep_satisfied (d, 0))
+	  if (!dpm_dep_satisfied (d))
 	    {
 	      visit (find_best (d));
-	      if (!dpm_dep_satisfied (d, 0))
+	      if (!dpm_dep_satisfied (d))
 		failed = true;
 	    }
       }
@@ -395,14 +395,14 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
     int stack_pos = stack_top;
     stack[stack_top++] = s;
 
-    dpm_cand c = dpm_ws_selected (s, 0);
-    if (!dpm_cand_satisfied (c, 0))
+    dpm_cand c = dpm_ws_selected (s);
+    if (!dpm_cand_satisfied (c))
       dyn_error ("Broken dependencies during ordering.");
 
     int min_tag = seat_tag[s_id];
-    dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s, 0))
+    dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
       dyn_foreach (a, dpm_dep_alts, d)
-        if (dpm_ws_is_selected (a, 0))
+        if (dpm_ws_is_selected (a))
 	  {
 	    int t = visit (dpm_cand_seat (a));
 	    if (t > 0 && t < min_tag)

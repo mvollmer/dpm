@@ -82,11 +82,6 @@
 
    A cand is "broken" when it is selected but not satisfied.
 
-   In fact, a workspace keeps track of any number of 'selection
-   universes'.  A seat has the same cands in each universe, and a cand
-   has the same deps, but different cands can be selected for their
-   seat in different universes.
-
    A workspace has some special seats and associated cands that do not
    belong to any real package.
 
@@ -114,11 +109,11 @@ DYN_DECLARE_TYPE (dpm_ws);
 /* Workspace creation
  */
 
-void dpm_ws_create (int n_universes);
+void dpm_ws_create ();
 dpm_ws dpm_ws_current ();
 
-void dpm_ws_dump (int universe);
-void dpm_ws_dump_pkg (dpm_package p, int universe);
+void dpm_ws_dump ();
+void dpm_ws_dump_pkg (dpm_package p);
 
 /* Adding candidates to the current workspace.
 */
@@ -218,13 +213,13 @@ bool dpm_dep_for_setup (dpm_dep d);
 /* Selecting cands.
  */
 
-void dpm_ws_select (dpm_cand cand, int universe);
-dpm_cand dpm_ws_selected (dpm_seat, int universe);
-bool dpm_ws_is_selected (dpm_cand, int universe);
+void dpm_ws_select (dpm_cand cand);
+dpm_cand dpm_ws_selected (dpm_seat);
+bool dpm_ws_is_selected (dpm_cand);
 
-bool dpm_dep_satisfied (dpm_dep d, int universe);
-bool dpm_cand_satisfied (dpm_cand c, int universe);
+bool dpm_dep_satisfied (dpm_dep d);
+bool dpm_cand_satisfied (dpm_cand c);
 
-void dpm_ws_show_broken (int universe);
+void dpm_ws_show_broken ();
 
 #endif /* !DPM_WS_H */

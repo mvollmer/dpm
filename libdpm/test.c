@@ -1885,24 +1885,24 @@ DEFTEST (ws_select)
       dpm_cand baz_10 = find_cand ("baz_1.0");
       dpm_cand baz_null = find_cand ("baz_null");
 
-      EXPECT (!dpm_cand_satisfied (foo_10, 0));
-      EXPECT (dpm_cand_satisfied (bar_11, 0));
-      EXPECT (dpm_cand_satisfied (bar_10, 0));
-      EXPECT (dpm_cand_satisfied (baz_10, 0));
+      EXPECT (!dpm_cand_satisfied (foo_10));
+      EXPECT (dpm_cand_satisfied (bar_11));
+      EXPECT (dpm_cand_satisfied (bar_10));
+      EXPECT (dpm_cand_satisfied (baz_10));
 
-      dpm_ws_select (bar_11, 0);
-      EXPECT (dpm_cand_satisfied (foo_10, 0));
-      dpm_ws_select (bar_10, 0);
-      EXPECT (!dpm_cand_satisfied (foo_10, 0));
-      dpm_ws_select (bar_null, 0);
-      EXPECT (!dpm_cand_satisfied (foo_10, 0));
+      dpm_ws_select (bar_11);
+      EXPECT (dpm_cand_satisfied (foo_10));
+      dpm_ws_select (bar_10);
+      EXPECT (!dpm_cand_satisfied (foo_10));
+      dpm_ws_select (bar_null);
+      EXPECT (!dpm_cand_satisfied (foo_10));
 
-      dpm_ws_select (baz_10, 0);
-      EXPECT (dpm_cand_satisfied (foo_10, 0));
-      EXPECT (!dpm_cand_satisfied (bar_11, 0));
-      dpm_ws_select (baz_null, 0);
-      EXPECT (!dpm_cand_satisfied (foo_10, 0));
-      EXPECT (dpm_cand_satisfied (bar_11, 0));
+      dpm_ws_select (baz_10);
+      EXPECT (dpm_cand_satisfied (foo_10));
+      EXPECT (!dpm_cand_satisfied (bar_11));
+      dpm_ws_select (baz_null);
+      EXPECT (!dpm_cand_satisfied (foo_10));
+      EXPECT (dpm_cand_satisfied (bar_11));
     }
 }
 
@@ -2090,9 +2090,9 @@ check_selected (const char *expected)
       p[i.len] = '\0';
       
       dpm_cand c = find_cand (p);
-      if (!dpm_ws_is_selected (c, 0))
+      if (!dpm_ws_is_selected (c))
         {
-          dpm_ws_dump (0);
+          dpm_ws_dump ();
           EXPECT (false, "%{cand} should be selected, but isn't", c);
         }
     }
@@ -2134,7 +2134,7 @@ setup_scenario (const char *meta,
           if (ss_streq (dpm_ver_version (ver), v))
             {
               dpm_cand c = dpm_ws_add_cand (ver);
-              dpm_ws_select (c, 0);
+              dpm_ws_select (c);
               found = true;
               break;
             }
@@ -2337,7 +2337,7 @@ check_order (const char *meta,
     while (*cands)
       {
         for (int i = 0; i < n_seats; i++)
-          if (dpm_ws_selected (seats[i], 0) == *cands)
+          if (dpm_ws_selected (seats[i]) == *cands)
             {
               n_found++;
               break;
@@ -2364,7 +2364,7 @@ check_order (const char *meta,
         if (cur_step == n_steps)
           {
             EXPECT (n_seats == 1);
-            EXPECT (dpm_ws_selected (seats[0], 0) == dpm_ws_get_goal_cand ());
+            EXPECT (dpm_ws_selected (seats[0]) == dpm_ws_get_goal_cand ());
             cur_step++;
             return;
           }
@@ -2382,7 +2382,7 @@ check_order (const char *meta,
               {
                 dyn_print ("Visited: ");
                 for (int i = 0; i < n_seats; i++)
-                  dyn_print (" %{cand}", dpm_ws_selected (seats[i], 0));
+                  dyn_print (" %{cand}", dpm_ws_selected (seats[i]));
                 dyn_print ("\n");
                 dyn_print ("Expected:");
                 for (int c = 0; expected_cands[cur_step][c]; c++)

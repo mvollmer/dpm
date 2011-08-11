@@ -496,7 +496,7 @@ install (char **packages, bool show_deps, bool execute)
 		if (dpm_seat_package (s) == NULL)
 		  continue;
 		
-		dpm_version cand = dpm_cand_version (dpm_ws_selected (s, 0));
+		dpm_version cand = dpm_cand_version (dpm_ws_selected (s));
 		dpm_version inst = dpm_db_installed (dpm_seat_package (s));
 		
 		if (cand != inst)
