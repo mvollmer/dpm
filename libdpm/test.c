@@ -2532,4 +2532,20 @@ DEFTEST (alg_order)
 	       "bar-1_1 | bar-2_1     \n"
 	       "foo_1                 \n");
 
+  check_order ("Package: foo          \n"
+	       "Version: 1            \n"
+	       "Depends: bar-1, bar-2 \n"
+	       "\n"
+	       "Package: bar-1        \n"
+	       "Version: 1            \n"
+	       "\n"
+	       "Package: bar-2        \n"
+	       "Version: 1            \n",
+
+	       "",
+	       "foo_1",
+
+	       "bar-2_1 | bar-1_1     \n"
+	       "foo_1                 \n");
+
 }
