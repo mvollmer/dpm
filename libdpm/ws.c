@@ -176,6 +176,7 @@ dpm_ws_create ()
 
   setup_special_seat (&(ws->goal_seat), &(ws->goal_cand));
   setup_special_seat (&(ws->ugly_seat), &(ws->ugly_cand));
+  ws->ugly_seat.selected = &(ws->ugly_cand);
 
   assert (ws->goal_seat.id == SEAT_ID_GOAL);
   assert (ws->ugly_seat.id == SEAT_ID_UGLY);
@@ -408,6 +409,7 @@ dpm_ws_add_cand_deps (dpm_cand cand)
       }
       do_rels (dpm_rels_pre_depends (dpm_ver_relations (cand->ver)));
       do_rels (dpm_rels_depends (dpm_ver_relations (cand->ver)));
+      do_rels (dpm_rels_recommends (dpm_ver_relations (cand->ver)));
     }
 }
 
@@ -490,16 +492,17 @@ void
 dpm_ws_seats_init (dpm_ws_seats *iter)
 {
   iter->ws = dpm_ws_current ();
-  iter->i = -1;
+  iter->i = -2;
 }
 
 void
 dpm_ws_seats_step (dpm_ws_seats *iter)
 {
   iter->i++;
-  while (iter->i < iter->ws->n_pkgs
-	 && iter->ws->pkg_seats[iter->i].cands == NULL)
-    iter->i++;
+  if (iter->i >= 0)
+    while (iter->i < iter->ws->n_pkgs
+	   && iter->ws->pkg_seats[iter->i].cands == NULL)
+      iter->i++;
 }
 
 bool
@@ -516,8 +519,10 @@ dpm_ws_seats_fini (dpm_ws_seats *iter)
 dpm_seat
 dpm_ws_seats_elt (dpm_ws_seats *iter)
 {
-  if (iter->i < 0)
+  if (iter->i == -2)
     return &(iter->ws->goal_seat);
+  else if (iter->i == -1)
+    return &(iter->ws->ugly_seat);
   else
     return iter->ws->pkg_seats + iter->i;
 }
@@ -800,7 +805,7 @@ compute_deps ()
 	  dpm_cand c = ws->ver_cands + i;
 	  if (c->ver)
 	    {
-	      void do_rels (ss_val rels, bool conf, bool for_unpack)
+	      void do_rels (ss_val rels, bool conf, bool for_unpack, bool recommended)
 	      {
 		dyn_foreach (rel, ss_elts, rels)
 		  {
@@ -822,18 +827,23 @@ compute_deps ()
 			depb_collect_seat_alts (&db, s, satisfies, provides);
 		      }
 
+		    if (recommended)
+		      depb_add_alt (&db, dpm_ws_get_ugly_cand ());
+
 		    depb_finish (&db, c, rel, for_unpack, false);
 		  }
 	      }
 	  
 	      do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)),
-		       false, true);
+		       false, true, false);
 	      do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)),
-		       false, false);
+		       false, false, false);
+	      do_rels (dpm_rels_recommends (dpm_ver_relations (c->ver)),
+		       false, false, true);
 	      do_rels (dpm_rels_conflicts (dpm_ver_relations (c->ver)),
-		       true, true);
+		       true, true, false);
 	      do_rels (dpm_rels_breaks (dpm_ver_relations (c->ver)),
-		       true, false);
+		       true, false, false);
 	    }
 	}
     }
@@ -1213,7 +1223,8 @@ dump_seat (dpm_ws ws, dpm_seat s)
     {
       if (c->ver)
 	dyn_print (" %r", dpm_ver_version (c->ver));
-      else if (c == &(ws->goal_cand))
+      else if (c == &(ws->goal_cand)
+	       || c == &(ws->ugly_cand))
 	dyn_print (" cand");
       else
 	dyn_print (" null");
@@ -1270,6 +1281,9 @@ dpm_ws_dump ()
 	  dyn_print ("\n");
 	}
     }
+
+  dump_seat (ws, &(ws->ugly_seat));
+  dyn_print ("\n");
 }
 
 static void
@@ -1312,6 +1326,8 @@ dpm_ws_show_broken ()
       if (s->cands)
 	dump_broken_seat (ws, s);
     }
+
+  dump_broken_seat (ws, &(ws->ugly_seat));
 }
 
 void
