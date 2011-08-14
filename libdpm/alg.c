@@ -326,7 +326,8 @@ dpm_alg_install_naively ()
 		ss_val a_ver = dpm_ver_version (dpm_cand_version (a));
 		dyn_foreach (b, dpm_dep_alts, d)
 		  {
-		    if (dpm_cand_version (b))
+		    if (dpm_cand_version (b)
+			&& dpm_cand_seat (b) == dpm_cand_seat (a))
 		      {
 			ss_val b_ver = dpm_ver_version (dpm_cand_version (b));
 			if (dpm_db_compare_versions (b_ver, a_ver) > 0)
@@ -342,6 +343,15 @@ dpm_alg_install_naively ()
 	return NULL;
       }
 
+      bool dep_satisfied_by_ugly (dpm_dep d)
+      {
+	dyn_foreach (a, dpm_dep_alts, d)
+	  if (dpm_ws_is_selected (a)
+	      && a != dpm_ws_get_ugly_cand ())
+	    return false;
+	return true;
+      }
+
       void visit (dpm_cand c)
       {
 	if (c == NULL)
@@ -353,10 +363,12 @@ dpm_alg_install_naively ()
 	// dyn_print ("Selecting %{cand}\n", c);
 
 	dpm_seatset_add (touched, dpm_cand_seat (c));
+	bool was_selected = dpm_ws_is_selected (c);
 	dpm_ws_select (c);
 
 	dyn_foreach (d, dpm_cand_deps, c)
-	  if (!dpm_dep_satisfied (d))
+	  if (!dpm_dep_satisfied (d)
+	      || (!was_selected && dep_satisfied_by_ugly (d)))
 	    {
 	      visit (find_best (d));
 	      if (!dpm_dep_satisfied (d))
