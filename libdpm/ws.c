@@ -62,7 +62,6 @@ struct dpm_seat_struct {
 struct dpm_dep_struct {
   dpm_cand cand;
   dpm_relation rel;
-  bool for_unpack;
   bool reversed;
   int n_alts;
   int n_selected;
@@ -761,7 +760,7 @@ depb_collect_seat_alts (depb *db, dpm_seat s,
 
 void
 depb_finish (depb *db, dpm_cand c, dpm_relation rel,
-	     bool for_unpack, bool reversed)
+	     bool reversed)
 {
   dpm_dep d = obstack_finish (&db->ws->mem);
   if (db->n_alts < 0)
@@ -770,7 +769,6 @@ depb_finish (depb *db, dpm_cand c, dpm_relation rel,
     {
       d->cand = c;
       d->rel = rel;
-      d->for_unpack = for_unpack;
       d->reversed = reversed;
       d->n_alts = db->n_alts;
       
@@ -805,7 +803,7 @@ compute_deps ()
 	  dpm_cand c = ws->ver_cands + i;
 	  if (c->ver)
 	    {
-	      void do_rels (ss_val rels, bool conf, bool for_unpack, bool recommended)
+	      void do_rels (ss_val rels, bool conf, bool recommended)
 	      {
 		dyn_foreach (rel, ss_elts, rels)
 		  {
@@ -830,20 +828,20 @@ compute_deps ()
 		    if (recommended)
 		      depb_add_alt (&db, dpm_ws_get_ugly_cand ());
 
-		    depb_finish (&db, c, rel, for_unpack, false);
+		    depb_finish (&db, c, rel, false);
 		  }
 	      }
 	  
 	      do_rels (dpm_rels_pre_depends (dpm_ver_relations (c->ver)),
-		       false, true, false);
+		       false, false);
 	      do_rels (dpm_rels_depends (dpm_ver_relations (c->ver)),
-		       false, false, false);
+		       false, false);
 	      do_rels (dpm_rels_recommends (dpm_ver_relations (c->ver)),
-		       false, false, true);
+		       false, true);
 	      do_rels (dpm_rels_conflicts (dpm_ver_relations (c->ver)),
-		       true, true, false);
+		       true, false);
 	      do_rels (dpm_rels_breaks (dpm_ver_relations (c->ver)),
-		       true, false, false);
+		       true, false);
 	    }
 	}
     }
@@ -884,7 +882,7 @@ compute_goal_deps ()
 	      depb_collect_seat_alts (&db, s, satisfies, provides);
 	    }
 
-	  depb_finish (&db, c, NULL, false, false);
+	  depb_finish (&db, c, NULL, false);
 	}
     }
 }
@@ -989,7 +987,7 @@ compute_reverse_deps ()
     if (all_cands_added)
       depb_kill_cur (&db);
   
-    depb_finish (&db, t, NULL, false, true);
+    depb_finish (&db, t, NULL, true);
   }
 
   void consider_seat_and_seat (dpm_seat t, dpm_seat s)
@@ -1111,18 +1109,6 @@ dpm_dep
 dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
 {
   return iter->n->elt;
-}
-
-bool
-dpm_dep_for_unpack (dpm_dep d)
-{
-  return d->for_unpack;
-}
-
-bool
-dpm_dep_for_setup (dpm_dep d)
-{
-  return true;
 }
 
 /* Starting
