@@ -207,9 +207,6 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
   int i;
 };
 
-bool dpm_dep_for_unpack (dpm_dep d);
-bool dpm_dep_for_setup (dpm_dep d);
-
 /* Selecting cands.
  */
 
