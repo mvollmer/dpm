@@ -2270,6 +2270,37 @@ DEFTEST (alg_install_naively)
                  "foo_1",
                  "foo_null", true,
                  "foo_null");
+
+  check_install ("Package: foo          \n"
+		 "Version: 1            \n"
+		 "Recommends: bar       \n"
+		 "\n"
+		 "Package: bar          \n"
+		 "Version: 1            \n",
+
+		 "",
+		 "foo_1", true,
+		 "foo_1, bar_1");
+
+  check_install ("Package: foo          \n"
+		 "Version: 1            \n"
+		 "Recommends: bar       \n",
+
+		 "",
+		 "foo_1", true,
+		 "foo_1");
+
+  check_install ("Package: foo          \n"
+		 "Version: 1            \n"
+		 "Recommends: bar       \n"
+		 "\n"
+		 "Package: bar          \n"
+		 "Version: 1            \n"
+		 "Depends: not-there    \n",
+
+		 "",
+		 "foo_1", true,
+		 "foo_1, bar_null");
 }
 
 void

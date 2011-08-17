@@ -308,6 +308,8 @@ dpm_candpq_peek (dpm_candpq q)
 bool
 dpm_alg_install_naively ()
 {
+  bool res;
+
   dyn_block
     {
       dpm_seatset touched = dpm_seatset_new ();
@@ -370,10 +372,24 @@ dpm_alg_install_naively ()
             visit (find_best (d));
       }
 
+      dpm_cand *initially_selected =
+	dyn_calloc (dpm_ws_seat_id_limit()*sizeof(dpm_cand));
+
+      dyn_foreach (s, dpm_ws_seats)
+	initially_selected[dpm_seat_id (s)] = dpm_ws_selected (s);
+      dyn_on_unwind_free (seat_info);
+
       visit (dpm_ws_get_goal_cand ());
+
+      void unused (dpm_seat s)
+      {
+	dpm_ws_select (initially_selected[dpm_seat_id (s)]);
+      }
+
+      res = dpm_alg_cleanup_goal (unused);
     }
 
-  return dpm_alg_cleanup_goal (NULL);
+  return res;
 }
 
 /* Executing a plan.
