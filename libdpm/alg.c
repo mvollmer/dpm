@@ -308,8 +308,6 @@ dpm_candpq_peek (dpm_candpq q)
 bool
 dpm_alg_install_naively ()
 {
-  bool failed = false;
-
   dyn_block
     {
       dpm_seatset touched = dpm_seatset_new ();
@@ -369,17 +367,13 @@ dpm_alg_install_naively ()
 	dyn_foreach (d, dpm_cand_deps, c)
 	  if (!dpm_dep_satisfied (d)
 	      || (!was_selected && dep_satisfied_by_ugly (d)))
-	    {
-	      visit (find_best (d));
-	      if (!dpm_dep_satisfied (d))
-		failed = true;
-	    }
+            visit (find_best (d));
       }
 
       visit (dpm_ws_get_goal_cand ());
     }
 
-  return !failed;
+  return dpm_alg_cleanup_goal (NULL);
 }
 
 /* Executing a plan.
@@ -393,7 +387,7 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
   int tag;
   int *seat_tag;
   
-  dpm_seat stack[200];  // XXX
+  dpm_seat stack[20000];  // XXX
   int stack_top;
 
   int visit (dpm_seat s)
@@ -439,4 +433,109 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
 
       visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
     }
+}
+
+bool
+dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
+{
+  struct {
+    bool seen : 1;
+    bool ok : 1;
+    bool needed: 1;
+  } *seat_info;
+
+  bool goal_ok;
+
+  dyn_block
+    {
+      seat_info = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(*seat_info));
+      dyn_on_unwind_free (seat_info);
+
+      void visit (dpm_seat *seats, int n_seats)
+      {
+        /* If a alt is still 'unseen', it must be a cand of a seat in
+           this component, and we ignore it.
+        */
+	bool ok = true;
+	for (int i = 0; i < n_seats && ok; i++)
+          dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (seats[i]))
+            {
+              bool found_internal = false;
+              bool found_ok = false;
+              dyn_foreach (a, dpm_dep_alts, d)
+                if (dpm_ws_is_selected (a))
+                  {
+                    int id = dpm_seat_id (dpm_cand_seat (a));
+                    if (!seat_info[id].seen)
+                      {
+                        found_internal = true;
+                        continue;
+                      }
+                    if (seat_info[id].ok)
+                      {
+                        found_ok = true;
+                        break;
+                    }
+                  }
+              
+              if (!found_ok && !found_internal)
+                {
+                  ok = false;
+                  break;
+                }
+            }
+#if 0        
+        dyn_print ("%s:", ok? "OK":"NOK");
+        for (int i = 0; i < n_seats; i++)
+          dyn_print (" %{seat}", seats[i]);
+        dyn_print ("\n");
+#endif
+
+        for (int i = 0; i < n_seats; i++)
+          {
+            int id = dpm_seat_id (seats[i]);
+            seat_info[id].seen = true;
+            seat_info[id].ok = ok;
+          }
+      }
+
+      dpm_alg_order (visit);
+
+      goal_ok = seat_info[dpm_seat_id (dpm_cand_seat (dpm_ws_get_goal_cand ()))].ok;
+
+      if (goal_ok && unused)
+        {
+          /* Walk the depenency tree from the goal, following only
+             'ok' seats, and sweep away what we don't need.
+          */
+          
+          void visit (dpm_cand c)
+          {
+            if (!dpm_ws_is_selected (c))
+              return;
+            int id = dpm_seat_id (dpm_cand_seat (c));
+            if (!seat_info[id].ok)
+              return;
+            if (seat_info[id].needed)
+              return;
+
+            seat_info[id].needed = true;
+            dyn_foreach (d, dpm_cand_deps, c)
+              dyn_foreach (a, dpm_dep_alts, d)
+                visit (a);
+          }
+          
+          visit (dpm_ws_get_goal_cand ());
+
+          dyn_foreach (s, dpm_ws_seats)
+            {
+              int id = dpm_seat_id (s);
+              if (!seat_info[id].needed)
+                unused (s);
+            }
+        }
+
+    }
+
+  return goal_ok;
 }
