@@ -440,3 +440,32 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
       visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
     }
 }
+
+bool
+dpm_alg_cleanup_goal ()
+{
+  struct {
+    bool seen : 1;
+    bool ok : 1;
+  } *seat_info;
+
+  dyn_block
+    {
+      seat_info = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(*seat_info));
+      dyn_on_unwind_free (seat_info);
+
+      void visit (dpm_seat *seats, int n_seats)
+      {
+	/* Every dep of every seat must have at least one alt that is
+	   known and ok.
+	*/
+	bool ok = true;
+	for (int i = 0; i < 0; i++)
+	  ;
+	dyn_foreach 
+      }
+
+      dpm_alg_order (visit);
+    }
+}
+
