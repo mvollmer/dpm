@@ -488,20 +488,9 @@ install (char **packages, bool show_deps, bool execute)
 	{
 	  void visit_component (dpm_seat *seats, int n_seats)
 	  {
-	    dyn_print ("Installing ");
+	    dyn_print ("Installing", n_seats);
 	    for (int i = 0; i < n_seats; i++)
-	      {
-		dpm_seat s = seats[i];
-		
-		if (dpm_seat_package (s) == NULL)
-		  continue;
-		
-		dpm_version cand = dpm_cand_version (dpm_ws_selected (s));
-		dpm_version inst = dpm_db_installed (dpm_seat_package (s));
-		
-		if (cand != inst)
-		  dyn_print ("%{seat} ", s);
-	      }
+              dyn_print (" %{cand}", dpm_ws_selected (seats[i]));
 	    dyn_print ("\n");
 	  }
 
