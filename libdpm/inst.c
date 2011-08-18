@@ -33,11 +33,17 @@ dpm_inst_can_install (dpm_version ver)
   return true;
 }
 
-void
-dpm_inst_install (dpm_version ver)
+static void
+dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
 {
   dpm_package pkg = dpm_ver_package (ver);
   dpm_status status = dpm_db_status (pkg);
+
+  const char *msg = "";
+  if (unpack)
+    msg = " (unpack)";
+  else if (dpm_stat_flags (status) & DPM_STAT_UNPACKED)
+    msg = " (setup)";
 
   if (dpm_stat_version (status))
     {
@@ -46,27 +52,46 @@ dpm_inst_install (dpm_version ver)
       int cmp = dpm_db_compare_versions (new_version, old_version);
 
       if (cmp > 0)
-	dyn_print ("Upgrading %r %r to version %r\n",
+	dyn_print ("Upgrading %r %r to version %r%s\n",
 		   dpm_pkg_name (pkg),
 		   old_version,
-		   new_version);
+		   new_version,
+		   msg);
       else if (cmp < 0)
-	dyn_print ("Downgrading %r %r to version %r\n",
+	dyn_print ("Downgrading %r %r to version %r%s\n",
 		   dpm_pkg_name (pkg),
 		   old_version,
-		   new_version);
+		   new_version,
+		   msg);
       else
-	dyn_print ("Reinstalling %r %r\n",
+	dyn_print ("Reinstalling %r %r%s\n",
 		   dpm_pkg_name (pkg),
 		   old_version,
-		   new_version);
+		   msg);
     }
   else
-    dyn_print ("Installing %r %r\n", 
+    dyn_print ("Installing %r %r%s\n", 
 	       dpm_pkg_name (pkg),
-	       dpm_ver_version (ver));
+	       dpm_ver_version (ver),
+	       msg);
 
-  dpm_db_set_status (pkg, ver, DPM_STAT_OK);
+  int flags = DPM_STAT_OK;
+  if (unpack)
+    flags |= DPM_STAT_UNPACKED;
+
+  dpm_db_set_status (pkg, ver, flags);
+}
+
+void
+dpm_inst_unpack (dpm_version ver)
+{
+  dpm_inst_unpack_or_setup (ver, true);
+}
+
+void
+dpm_inst_install (dpm_version ver)
+{
+  dpm_inst_unpack_or_setup (ver, false);
 }
 
 void

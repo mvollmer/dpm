@@ -25,5 +25,6 @@
 #include "ws.h"
 #include "alg.h"
 #include "pol.h"
+#include "inst.h"
 
 #endif /* !DPM_H */

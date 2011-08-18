@@ -108,4 +108,6 @@ void dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats));
 */
 bool dpm_alg_cleanup_goal (void (*unused) (dpm_seat s));
 
+void dpm_alg_install_component (dpm_seat *seats, int n_seats);
+
 #endif /* !DPM_ALG_H */

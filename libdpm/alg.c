@@ -18,6 +18,7 @@
 #define _GNU_SOURCE
 
 #include "alg.h"
+#include "inst.h"
 
 /* Cand sets
  */
@@ -554,4 +555,28 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
     }
 
   return goal_ok;
+}
+
+void
+dpm_alg_install_component (dpm_seat *seats, int n_seats)
+{
+  for (int i = 0; i < n_seats; i++)
+    {
+      dpm_package pkg = dpm_seat_package (seats[i]);
+      dpm_version ver = dpm_cand_version (dpm_ws_selected (seats[i]));
+      
+      if (pkg)
+	{
+	  dpm_status status = dpm_db_status (pkg);
+
+	  if (ver != dpm_stat_version (status)
+	      || dpm_stat_flags (status) != DPM_STAT_OK)
+	    {
+	      if (ver)
+		dpm_inst_install (ver);
+	      else
+		dpm_inst_remove (pkg);
+	    }
+	}
+    }
 }
