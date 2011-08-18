@@ -425,7 +425,7 @@ dpm_ws_add_installed ()
 {
   dyn_foreach (p, dpm_db_packages)
     {
-      dpm_version inst = dpm_db_installed (p);
+      dpm_version inst = dpm_stat_version (dpm_db_status (p));
       if (inst)
 	{
 	  dpm_cand c = dpm_ws_add_cand (inst);

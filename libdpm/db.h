@@ -188,8 +188,17 @@ ss_val dpm_db_provides (dpm_package pkg);
 /* Status
  */
 
-void dpm_db_set_installed (dpm_package pkg, dpm_version ver);
-dpm_version dpm_db_installed (dpm_package pkg);
+typedef ss_val dpm_status;
+
+#define dpm_stat_version(s)  ss_ref (s, 0)
+#define dpm_stat_flags(s)    ss_ref_int (s, 1)
+
+#define DPM_STAT_OK          0
+#define DPM_STAT_HALF        1
+#define DPM_STAT_UNPACKED    2
+
+void dpm_db_set_status (dpm_package pkg, dpm_version ver, int flags);
+dpm_status dpm_db_status (dpm_package pkg);
 
 /* Dumping
  */

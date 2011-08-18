@@ -33,7 +33,7 @@ dyn_var dpm_database_name[1];
    - strings             (string table)
    - packages            (string -> package, weak key)
    - versions            (version table)
-   - installed version   (package -> something, maybe version, strong)
+   - status              (package -> status)
    - origin_available    (origin -> (package -> versions, strong), strong)
    - tags                (tag -> versions)
    - reverse_relations   (package -> list of versions, weak sets)
@@ -86,6 +86,11 @@ dyn_var dpm_database_name[1];
    - dist                (interned string, "stable")
    - valid keys          (list of strings, fingerprints)
 
+   A status
+
+   - version             (version)
+   - flags               (unpacked, half)
+
    All strings used as dictionary keys are interned, of course.
    
    Control field values are interned as well, to save space.  Lot's of
@@ -98,7 +103,7 @@ struct dpm_db_struct {
   ss_tab *strings;
   ss_dict *packages;
   ss_tab *versions;
-  ss_dict *installed;
+  ss_dict *status;
   ss_dict *origin_available;
   ss_dict *tags;
   ss_dict *reverse_rels;
@@ -114,8 +119,8 @@ dpm_db_abort (struct dpm_db_struct *db)
     ss_dict_abort (db->packages);
   if (db->versions)
     ss_tab_abort (db->versions);
-  if (db->installed)
-    ss_dict_abort (db->installed);
+  if (db->status)
+    ss_dict_abort (db->status);
   if (db->origin_available)
     ss_dict_abort (db->origin_available);
   if (db->tags)
@@ -128,7 +133,7 @@ dpm_db_abort (struct dpm_db_struct *db)
   db->strings = NULL;
   db->packages = NULL;
   db->versions = NULL;
-  db->installed = NULL;
+  db->status = NULL;
   db->origin_available = NULL;
   db->tags = NULL;
   db->reverse_rels = NULL;
@@ -160,7 +165,7 @@ dpm_db_make (ss_store store)
   db->strings = NULL;
   db->packages = NULL;
   db->versions = NULL;
-  db->installed = NULL;
+  db->status = NULL;
   db->origin_available = NULL;
   db->tags = NULL;
   db->reverse_rels = NULL;
@@ -198,7 +203,7 @@ dpm_db_open ()
     ss_dict_init (db->store, ss_ref_safely (root, 2), SS_DICT_WEAK_KEYS);
   db->versions =
     ss_tab_init (db->store, ss_ref_safely (root, 3));
-  db->installed =
+  db->status =
     ss_dict_init (db->store, ss_ref_safely (root, 4), SS_DICT_STRONG);
   db->origin_available =
     ss_dict_init (db->store, ss_ref_safely (root, 5), SS_DICT_STRONG);
@@ -220,7 +225,7 @@ dpm_db_checkpoint ()
 			ss_tab_store (db->strings), 
 			ss_dict_store (db->packages),
 			ss_tab_store (db->versions),
-			ss_dict_store (db->installed),
+			ss_dict_store (db->status),
 			ss_dict_store (db->origin_available),
 			ss_dict_store (db->tags),
 			ss_dict_store (db->reverse_rels),
@@ -1253,20 +1258,29 @@ dpm_db_alternatives_done (dpm_db_alternatives *iter)
 /* Status
  */
 
-dpm_version
-dpm_db_installed (dpm_package pkg)
+static dpm_status null_status = NULL;
+
+dpm_status
+dpm_db_status (dpm_package pkg)
 {
   dpm_db db = dyn_get (cur_db);
 
-  return ss_dict_get (db->installed, pkg);
+  dpm_status s = ss_dict_get (db->status, pkg);
+  if (s)
+    return s;
+  if (!null_status)
+    null_status = ss_new (NULL, 0, 2, NULL, ss_from_int (0));
+  return null_status;
 }
 
 void
-dpm_db_set_installed (dpm_package pkg, dpm_version ver)
+dpm_db_set_status (dpm_package pkg, dpm_version ver, int flags)
 {
   dpm_db db = dyn_get (cur_db);
 
-  return ss_dict_set (db->installed, pkg, ver);
+  ss_dict_set (db->status, pkg, ss_new (db->store, 0, 2,
+					ver,
+					ss_from_int (flags)));
 }
 
 /* Indexed queries

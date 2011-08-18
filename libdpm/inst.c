@@ -37,11 +37,11 @@ void
 dpm_inst_install (dpm_version ver)
 {
   dpm_package pkg = dpm_ver_package (ver);
-  dpm_version old = dpm_db_installed (pkg);
+  dpm_status status = dpm_db_status (pkg);
 
-  if (old)
+  if (dpm_stat_version (status))
     {
-      ss_val old_version = dpm_ver_version (old);
+      ss_val old_version = dpm_ver_version (dpm_stat_version (status));
       ss_val new_version = dpm_ver_version (ver);
       int cmp = dpm_db_compare_versions (new_version, old_version);
 
@@ -66,21 +66,21 @@ dpm_inst_install (dpm_version ver)
 	       dpm_pkg_name (pkg),
 	       dpm_ver_version (ver));
 
-  dpm_db_set_installed (pkg, ver);
+  dpm_db_set_status (pkg, ver, DPM_STAT_OK);
 }
 
 void
 dpm_inst_remove (dpm_package pkg)
 {
-  dpm_version old = dpm_db_installed (pkg);
+  dpm_status status = dpm_db_status (pkg);
 
-  if (old)
+  if (dpm_stat_version (status))
     dyn_print ("Removing %r %r\n",
 	       dpm_pkg_name (pkg),
-	       dpm_ver_version (old));
+	       dpm_ver_version (dpm_stat_version (status)));
   else
     dyn_print ("No need to remove %r, it is not installed\n",
 	       dpm_pkg_name (pkg));
 
-  dpm_db_set_installed (pkg, NULL);
+  dpm_db_set_status (pkg, NULL, DPM_STAT_OK);
 }
