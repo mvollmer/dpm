@@ -377,7 +377,7 @@ dpm_alg_install_naively ()
 
       dyn_foreach (s, dpm_ws_seats)
 	initially_selected[dpm_seat_id (s)] = dpm_ws_selected (s);
-      dyn_on_unwind_free (seat_info);
+      dyn_on_unwind_free (initially_selected);
 
       visit (dpm_ws_get_goal_cand ());
 
