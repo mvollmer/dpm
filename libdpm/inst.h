@@ -26,9 +26,14 @@
 
    This does nothing for now except recording the action in the
    database.
- */
+*/
 
-void dpm_install (dpm_version ver);
-void dpm_remove (dpm_package pkg);
+bool dpm_inst_can_unpack (dpm_version ver);
+bool dpm_inst_can_install (dpm_version ver);
+bool dpm_inst_can_remove (dpm_package pkg);
+
+void dpm_inst_unpack (dpm_version ver);
+void dpm_inst_install (dpm_version ver);
+void dpm_inst_remove (dpm_package pkg);
 
 #endif /* !DPM_INST_H */

@@ -21,8 +21,20 @@
 #include "db.h"
 #include "inst.h"
 
+bool
+dpm_inst_can_unpack (dpm_version ver)
+{
+  return true;
+}
+
+bool
+dpm_inst_can_install (dpm_version ver)
+{
+  return true;
+}
+
 void
-dpm_install (dpm_version ver)
+dpm_inst_install (dpm_version ver)
 {
   dpm_package pkg = dpm_ver_package (ver);
   dpm_version old = dpm_db_installed (pkg);
@@ -58,7 +70,7 @@ dpm_install (dpm_version ver)
 }
 
 void
-dpm_remove (dpm_package pkg)
+dpm_inst_remove (dpm_package pkg)
 {
   dpm_version old = dpm_db_installed (pkg);
 
