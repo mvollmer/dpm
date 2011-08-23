@@ -1,0 +1,4 @@
+* Improve exception frames and use them for iterator cleanup
+
+Don't malloc each frame; push/pop is only few cycles; get rid of
+dyn_block and use scope with cleanup attribute exclusively.
