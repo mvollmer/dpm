@@ -393,16 +393,25 @@ dpm_alg_install_naively ()
   return res;
 }
 
-/* Executing a plan.
-
-   We leave strongly connected components unbroken for now.
+/* Ordering
  */
 
-void
-dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
-{
-  int tag;
+struct dpm_alg_order_context_struct {
   int *seat_tag;
+};
+
+void
+dpm_alg_order_done (dpm_alg_order_context ctxt, dpm_seat s)
+{
+  ctxt->seat_tag[dpm_seat_id (s)] = -1;
+}
+
+void
+dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
+				   dpm_seat *seats, int n_seats))
+{
+  struct dpm_alg_order_context_struct ctxt;
+  int tag;
   
   dpm_seat stack[20000];  // XXX
   int stack_top;
@@ -411,14 +420,14 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
   {
     int s_id = dpm_seat_id (s);
 
-    if (seat_tag[s_id] != 0)
-      return seat_tag[s_id];
+    if (ctxt.seat_tag[s_id] != 0)
+      return ctxt.seat_tag[s_id];
 
-    seat_tag[s_id] = ++tag;
+    ctxt.seat_tag[s_id] = ++tag;
     int stack_pos = stack_top;
     stack[stack_top++] = s;
 
-    int min_tag = seat_tag[s_id];
+    int min_tag = ctxt.seat_tag[s_id];
     dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
       dyn_foreach (a, dpm_dep_alts, d)
         if (dpm_ws_is_selected (a))
@@ -428,12 +437,12 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
 	      min_tag = t;
 	  }
 
-    if (min_tag == seat_tag[s_id])
+    if (min_tag == ctxt.seat_tag[s_id])
       {
 	for (int i = stack_pos; i < stack_top; i++)
-	  seat_tag[dpm_seat_id(stack[i])] = -1;
+	  dpm_alg_order_done (&ctxt, stack[i]);
 
-	visit_comp (stack + stack_pos, stack_top - stack_pos);
+	visit_comp (&ctxt, stack + stack_pos, stack_top - stack_pos);
 	stack_top = stack_pos;
       }
 
@@ -443,8 +452,8 @@ dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats))
   dyn_block
     {
       tag = 0;
-      seat_tag = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(int));
-      dyn_on_unwind_free (seat_tag);
+      ctxt.seat_tag = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(int));
+      dyn_on_unwind_free (ctxt.seat_tag);
 
       stack_top = 0;
 
@@ -468,7 +477,8 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
       seat_info = dyn_calloc (dpm_ws_seat_id_limit()*sizeof(*seat_info));
       dyn_on_unwind_free (seat_info);
 
-      void visit (dpm_seat *seats, int n_seats)
+      void visit (dpm_alg_order_context ctxt,
+		  dpm_seat *seats, int n_seats)
       {
         /* If a alt is still 'unseen', it must be a cand of a seat in
            this component, and we ignore it.

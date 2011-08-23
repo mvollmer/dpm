@@ -2396,7 +2396,8 @@ check_order (const char *meta,
 
       int cur_step = 0;
 
-      void visit_component (dpm_seat *seats, int n_seats)
+      void visit_component (dpm_alg_order_context ctxt,
+			    dpm_seat *seats, int n_seats)
       {
         EXPECT (cur_step <= n_steps);
 

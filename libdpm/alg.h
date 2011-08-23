@@ -96,10 +96,17 @@ bool dpm_alg_install_naively ();
    doesn't have any dependencies on other components, and ending with
    the goal candidate.
 
-   All selected candidates must be satisfied; otherwise, the function
-   throws an error.
+   The VISIT_COMP function must call dpm_alg_order_done on each seat
+   that should be considered done.  The remaining seats will be
+   visited again.  Of course, VISIT_COMP must call dpm_alg_order_done
+   for at least one seat; otherwise, dpm_alg_order gets into an
+   infinite loop.
 */
-void dpm_alg_order (void (*visit_comp) (dpm_seat *seats, int n_seats));
+typedef struct dpm_alg_order_context_struct *dpm_alg_order_context;
+void dpm_alg_order_done (dpm_alg_order_context ctxt, dpm_seat s);
+
+void dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
+					dpm_seat *seats, int n_seats));
 
 /* Check all direct and indirect dependencies of the goal candidate
    and return true iff all of them are satisfied by the currently
