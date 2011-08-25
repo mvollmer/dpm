@@ -560,6 +560,29 @@ reset ()
   dpm_db_checkpoint ();
 }
 
+void
+print_path (const char *a, const char *b)
+{
+  dpm_db_open ();
+  dpm_ws_create ();
+
+  dpm_ws_add_installed ();
+  dpm_ws_start ();
+
+  dpm_package a_pkg = dpm_db_package_find (a);
+  dpm_package b_pkg = dpm_db_package_find (b);
+  
+  dpm_seat a_seat = NULL;
+  dyn_foreach (s, dpm_ws_package_seats, a_pkg)
+    a_seat = s;
+
+  dpm_seat b_seat = NULL;
+  dyn_foreach (s, dpm_ws_package_seats, b_pkg)
+    b_seat = s;
+
+  dpm_alg_print_path (a_seat, b_seat);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -602,6 +625,8 @@ main (int argc, char **argv)
     reset ();
   else if (strcmp (argv[1], "status") == 0)
     status (argv+2);
+  else if (strcmp (argv[1], "path") == 0)
+    print_path (argv[2], argv[3]);
   else if (strcmp (argv[1], "deps") == 0)
     install (argv+2, true, false);
   else if (strcmp (argv[1], "dump") == 0)

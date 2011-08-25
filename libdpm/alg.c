@@ -687,3 +687,40 @@ dpm_alg_install_component (dpm_alg_order_context ctxt,
 	}
     }
 }
+
+void
+dpm_alg_print_path (dpm_seat a, dpm_seat b)
+{
+  dyn_block
+    {
+      dpm_cand a_cand = dpm_ws_selected (a);
+      dpm_cand b_cand = dpm_ws_selected (b);
+
+      dpm_candset visited = dpm_candset_new ();
+
+      bool visit (dpm_cand c)
+      {
+	if (c == b_cand)
+	  return true;
+
+	if (dpm_candset_has (visited, c))
+	  return false;
+
+	dpm_candset_add (visited, c);
+
+	dyn_foreach (d, dpm_cand_deps, c)
+	  dyn_foreach (a, dpm_dep_alts, d)
+	  {
+	    if (visit (a))
+	      {
+		dyn_print ("%{cand}\n", a);
+		return true;
+	      }
+	  }
+	return false;
+      }
+
+      if (visit (a_cand))
+	dyn_print ("%{cand}\n", a_cand);
+    }
+}
