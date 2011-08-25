@@ -406,6 +406,12 @@ dpm_alg_order_done (dpm_alg_order_context ctxt, dpm_seat s)
   ctxt->seat_tag[dpm_seat_id (s)] = -1;
 }
 
+bool
+dpm_alg_order_is_done (dpm_alg_order_context ctxt, dpm_seat s)
+{
+  return ctxt->seat_tag[dpm_seat_id (s)] == -1;
+}
+
 void
 dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
 				   dpm_seat *seats, int n_seats))
@@ -440,9 +446,16 @@ dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
     if (min_tag == ctxt.seat_tag[s_id])
       {
 	for (int i = stack_pos; i < stack_top; i++)
-	  dpm_alg_order_done (&ctxt, stack[i]);
+	  ctxt.seat_tag[dpm_seat_id (stack[i])] = 0;
 
 	visit_comp (&ctxt, stack + stack_pos, stack_top - stack_pos);
+
+	for (int i = stack_pos; i < stack_top; i++)
+	  {
+	    while (!dpm_alg_order_is_done (&ctxt, stack[i]))
+	      visit (stack[i]);
+	  }
+
 	stack_top = stack_pos;
       }
 
@@ -460,12 +473,80 @@ dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
       visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
     }
 }
+/* Three valued logic, with true, false, and unknown.
+
+   Truth tables:
+
+   OR T F U     AND T F U
+    T T T T       T T F U
+    F T F U       F F F F
+    U T U U       U U F U
+ */
+
+typedef enum { T, F, U } l3;
+l3 l3_or_tab[3][3] =  { { T, T, T }, { T, F, U }, { T, U, U } };
+l3 l3_and_tab[3][3] = { { T, F, U }, { F, F, F }, { U, F, U } };
+
+l3 l3_or (l3 a, l3 b)
+{
+  return l3_or_tab[a][b];
+}
+
+l3 l3_and (l3 a, l3 b)
+{
+  return l3_and_tab[a][b];
+}
+
+void
+dpm_alg_order_lax (void (*visit_comp) (dpm_alg_order_context ctxt,
+				       dpm_seat *seats, int n_seats))
+{
+  void visit_strict (dpm_alg_order_context ctxt,
+		     dpm_seat *seats, int n_seats)
+  {
+    bool some_done = false;
+
+    for (int i = 0; i < n_seats; i++)
+      {
+	bool deps_ok = true;
+	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (seats[i]))
+	  {
+	    bool alts_ok = false;
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      {
+		if (dpm_ws_is_selected (a))
+		  {
+		    if (dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
+		      {
+			alts_ok = true;
+			break;
+		      }
+		  }
+	      }
+	    if (!alts_ok)
+	      {
+		deps_ok = false;
+		break;
+	      }
+	  }
+	if (deps_ok)
+	  {
+	    visit_comp (ctxt, &seats[i], 1);
+	    some_done = true;
+	  }
+      }
+
+    if (!some_done)
+      visit_comp (ctxt, seats, n_seats);
+  }
+
+  dpm_alg_order (visit_strict);
+}
 
 bool
 dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
 {
   struct {
-    bool seen : 1;
     bool ok : 1;
     bool needed: 1;
   } *seat_info;
@@ -480,55 +561,61 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
       void visit (dpm_alg_order_context ctxt,
 		  dpm_seat *seats, int n_seats)
       {
-        /* If a alt is still 'unseen', it must be a cand of a seat in
-           this component, and we ignore it.
-        */
-	bool ok = true;
-	for (int i = 0; i < n_seats && ok; i++)
-          dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (seats[i]))
-            {
-              bool found_internal = false;
-              bool found_ok = false;
-              dyn_foreach (a, dpm_dep_alts, d)
-                if (dpm_ws_is_selected (a))
-                  {
-                    int id = dpm_seat_id (dpm_cand_seat (a));
-                    if (!seat_info[id].seen)
-                      {
-                        found_internal = true;
-                        continue;
-                      }
-                    if (seat_info[id].ok)
-                      {
-                        found_ok = true;
-                        break;
-                    }
-                  }
-              
-              if (!found_ok && !found_internal)
-                {
-                  ok = false;
-                  break;
-                }
-            }
-#if 0        
-        dyn_print ("%s:", ok? "OK":"NOK");
-        for (int i = 0; i < n_seats; i++)
-          dyn_print (" %{seat}", seats[i]);
-        dyn_print ("\n");
-#endif
+	l3 seat_ok (dpm_seat s)
+	{
+	  if (!dpm_alg_order_is_done (ctxt, s))
+	    return U;
+	  else if (seat_info[dpm_seat_id (s)].ok)
+	    return T;
+	  else
+	    return F;
+	}
 
-        for (int i = 0; i < n_seats; i++)
-          {
-            int id = dpm_seat_id (seats[i]);
-            seat_info[id].seen = true;
-            seat_info[id].ok = ok;
-          }
+	bool some_done = false;
+
+	for (int i = 0; i < n_seats; i++)
+	  {
+	    l3 deps_ok = T;
+	    dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (seats[i]))
+	      {
+		l3 alts_ok = F;
+		dyn_foreach (a, dpm_dep_alts, d)
+		  {
+		    if (dpm_ws_is_selected (a))
+		      {
+			alts_ok = l3_or (alts_ok, seat_ok (dpm_cand_seat (a)));
+			if (alts_ok == T)
+			  break;
+		      }
+		  }
+
+		deps_ok = l3_and (deps_ok, alts_ok);
+		if (deps_ok == F)
+		  break;
+	      }
+
+	    if (deps_ok != U)
+	      {
+		seat_info[dpm_seat_id (seats[i])].ok = (deps_ok == T);
+		dpm_alg_order_done (ctxt, seats[i]);
+		some_done = true;
+	      }
+	  }
+
+	if (!some_done)
+	  {
+	    for (int i = 0; i < n_seats; i++)
+	      {
+		seat_info[dpm_seat_id (seats[i])].ok = true;
+		dpm_alg_order_done (ctxt, seats[i]);
+	      }
+	  }
       }
 
       dpm_alg_order (visit);
 
-      goal_ok = seat_info[dpm_seat_id (dpm_cand_seat (dpm_ws_get_goal_cand ()))].ok;
+      goal_ok =
+	seat_info[dpm_seat_id (dpm_cand_seat (dpm_ws_get_goal_cand ()))].ok;
 
       if (goal_ok && unused)
         {
@@ -568,10 +655,16 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
 }
 
 void
-dpm_alg_install_component (dpm_seat *seats, int n_seats)
+dpm_alg_install_component (dpm_alg_order_context ctxt,
+			   dpm_seat *seats, int n_seats)
 {
+  if (n_seats > 1)
+    dyn_print ("Installing %d:\n", n_seats);
+
   for (int i = 0; i < n_seats; i++)
     {
+      dpm_alg_order_done (ctxt, seats[i]);
+
       dpm_package pkg = dpm_seat_package (seats[i]);
       dpm_version ver = dpm_cand_version (dpm_ws_selected (seats[i]));
       
@@ -582,11 +675,15 @@ dpm_alg_install_component (dpm_seat *seats, int n_seats)
 	  if (ver != dpm_stat_version (status)
 	      || dpm_stat_flags (status) != DPM_STAT_OK)
 	    {
+	      if (n_seats > 1)
+		dyn_print (" ");
 	      if (ver)
 		dpm_inst_install (ver);
 	      else
 		dpm_inst_remove (pkg);
 	    }
+	  else if (n_seats > 1)
+	    dyn_print (" Nothing to be done for %{seat}\n", seats[i]);
 	}
     }
 }

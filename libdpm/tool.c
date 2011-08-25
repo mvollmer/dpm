@@ -489,7 +489,7 @@ install (char **packages, bool show_deps, bool execute)
     {
       if (execute)
 	{
-	  dpm_alg_order (dpm_alg_install_component);
+	  dpm_alg_order_lax (dpm_alg_install_component);
 	  if (!flag_simulate)
 	    dpm_db_checkpoint ();
 	  else
@@ -513,33 +513,51 @@ status (char **packages)
       dpm_package pkg = dpm_db_package_find (*packages);
       if (pkg)
 	{
-	  dpm_status status = dpm_db_status (pkg);
-	  dpm_version ver = dpm_stat_version (status);
-	  if (ver)
-	    dyn_print ("%{ver}", ver);
-	  else
-	    dyn_print ("%{pkg} not installed", pkg);
-	  int flags = dpm_stat_flags (status);
-	  switch (flags)
-	    {
-	    case DPM_STAT_OK:
-	      break;
-	    case DPM_STAT_UNPACKED:
-	      dyn_print (", unpacked");
-	      break;
-	    case DPM_STAT_UNPACKED | DPM_STAT_HALF:
-	      dyn_print (", half-unpacked");
-	      break;
-	    case DPM_STAT_HALF:
-	      dyn_print (", half-configured");
-	      break;
-	    }
-	  dyn_print ("\n");
+	  void pkg_status (dpm_package pkg)
+	  {
+	    dpm_status status = dpm_db_status (pkg);
+	    dpm_version ver = dpm_stat_version (status);
+	    if (ver)
+	      dyn_print ("%{ver}", ver);
+	    else
+	      dyn_print ("%{pkg} not installed", pkg);
+	    int flags = dpm_stat_flags (status);
+	    switch (flags)
+	      {
+	      case DPM_STAT_OK:
+		break;
+	      case DPM_STAT_UNPACKED:
+		dyn_print (", unpacked");
+		break;
+	      case DPM_STAT_UNPACKED | DPM_STAT_HALF:
+		dyn_print (", half-unpacked");
+		break;
+	      case DPM_STAT_HALF:
+		dyn_print (", half-configured");
+		break;
+	      }
+	    dyn_print ("\n");
+	  }
+
+	  pkg_status (pkg);
+	  dyn_foreach (ver, ss_elts, dpm_db_provides (pkg))
+	    pkg_status (dpm_ver_package (ver));
 	}
       else
 	dyn_print ("%s not known", *packages);
       packages++;
     }
+}
+
+void
+reset ()
+{
+  dpm_db_open ();
+
+  dyn_foreach (p, dpm_db_packages)
+    dpm_db_set_status (p, NULL, DPM_STAT_OK);
+  
+  dpm_db_checkpoint ();
 }
 
 int
@@ -580,6 +598,8 @@ main (int argc, char **argv)
     list_provides (argv[2]);
   else if (strcmp (argv[1], "install") == 0)
     install (argv+2, false, true);
+  else if (strcmp (argv[1], "reset") == 0)
+    reset ();
   else if (strcmp (argv[1], "status") == 0)
     status (argv+2);
   else if (strcmp (argv[1], "deps") == 0)

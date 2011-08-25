@@ -108,6 +108,9 @@ void dpm_alg_order_done (dpm_alg_order_context ctxt, dpm_seat s);
 void dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
 					dpm_seat *seats, int n_seats));
 
+void dpm_alg_order_lax (void (*visit_comp) (dpm_alg_order_context ctxt,
+					    dpm_seat *seats, int n_seats));
+
 /* Check all direct and indirect dependencies of the goal candidate
    and return true iff all of them are satisfied by the currently
    selected candidates.  Also, if UNUSED is given, it is called for
@@ -115,6 +118,7 @@ void dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
 */
 bool dpm_alg_cleanup_goal (void (*unused) (dpm_seat s));
 
-void dpm_alg_install_component (dpm_seat *seats, int n_seats);
+void dpm_alg_install_component (dpm_alg_order_context ctxt,
+				dpm_seat *seats, int n_seats);
 
 #endif /* !DPM_ALG_H */
