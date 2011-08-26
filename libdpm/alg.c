@@ -654,37 +654,70 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
   return goal_ok;
 }
 
+static void
+print_intradeps (dpm_alg_order_context ctxt,
+		 dpm_seat *seats, int n_seats)
+{
+  for (int i = 0; i < n_seats; i++)
+    {
+      dpm_cand c = dpm_ws_selected (seats[i]);
+      dyn_print ("%{cand}\n", c);
+      dyn_foreach (d, dpm_cand_deps, c)
+	dyn_foreach (a, dpm_dep_alts, d)
+	  {
+	    if (dpm_ws_is_selected (a)
+		&& !dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
+	      dyn_print (" -> %{cand}\n", a);
+	  }
+    }
+}
+
 void
 dpm_alg_install_component (dpm_alg_order_context ctxt,
 			   dpm_seat *seats, int n_seats)
 {
+  bool some_done = false;
+
+  dpm_package pkgs[n_seats];
+  dpm_version vers[n_seats];
+
+  for (int i = 0; i < n_seats; i++)
+    {
+      pkgs[i] = dpm_seat_package (seats[i]);
+      vers[i] = dpm_cand_version (dpm_ws_selected (seats[i]));
+      
+      if (pkgs[i])
+	{
+	  dpm_status status = dpm_db_status (pkgs[i]);
+
+	  if (!(vers[i] != dpm_stat_version (status)
+		|| dpm_stat_flags (status) != DPM_STAT_OK))
+	    {
+	      dpm_alg_order_done (ctxt, seats[i]);
+	      some_done = true;
+	    }
+	}
+    }
+  
+  if (some_done)
+    return;
+
   if (n_seats > 1)
-    dyn_print ("Installing %d:\n", n_seats);
+    {
+      print_intradeps (ctxt, seats, n_seats);
+      dyn_print ("Installing %d:\n", n_seats);
+    }
 
   for (int i = 0; i < n_seats; i++)
     {
       dpm_alg_order_done (ctxt, seats[i]);
 
-      dpm_package pkg = dpm_seat_package (seats[i]);
-      dpm_version ver = dpm_cand_version (dpm_ws_selected (seats[i]));
-      
-      if (pkg)
-	{
-	  dpm_status status = dpm_db_status (pkg);
-
-	  if (ver != dpm_stat_version (status)
-	      || dpm_stat_flags (status) != DPM_STAT_OK)
-	    {
-	      if (n_seats > 1)
-		dyn_print (" ");
-	      if (ver)
-		dpm_inst_install (ver);
-	      else
-		dpm_inst_remove (pkg);
-	    }
-	  else if (n_seats > 1)
-	    dyn_print (" Nothing to be done for %{seat}\n", seats[i]);
-	}
+      if (n_seats > 1)
+	dyn_print (" ");
+      if (vers[i])
+	dpm_inst_install (vers[i]);
+      else if (pkgs[i])
+	dpm_inst_remove (pkgs[i]);
     }
 }
 
