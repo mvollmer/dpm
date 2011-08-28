@@ -2304,157 +2304,94 @@ DEFTEST (alg_install_naively)
 }
 
 void
-check_order (const char *meta,
-             const char *selected,
-             const char *goal,
-             const char *expected_order)
+check_order_strict_or_lax (const char *meta,
+			   const char *selected,
+			   const char *goal,
+			   bool lax)
 {
-  // Where is Lisp when you need it?
-
-  dpm_cand **expected_cands[50];
-  int n_steps = 0;
-
-  void print_expected_cands ()
-  {
-    for (int s = 0; s < n_steps; s++)
-      {
-	if (expected_cands[s] == NULL)
-	  dyn_print ("Step %d: done\n", s);
-	else
-	  {
-	    dyn_print ("Step %d:\n", s);
-	    for (int c = 1; expected_cands[s][c] != NULL; c++)
-	      {
-		dyn_print (" Component:");
-		for (int i = 0; expected_cands[s][c][i]; i++)
-		  dyn_print (" %{cand}", expected_cands[s][c][i]);
-		dyn_print ("\n");
-	      }
-	  }
-      }
-  }
-
-  void setup_expected_cands ()
-  {
-    dyn_foreach_iter (l, dpm_parse_lines, I(expected_order))
-      {
-        EXPECT (n_steps < 50);
-        dpm_cand *cands = dyn_malloc (sizeof(dpm_cand)*l.n_fields+1);
-        int n_comps = 1;
-        for (int i = 0; i < l.n_fields; i++)
-          {
-            char p[200];
-            strncpy (p, l.fields[i], l.field_lens[i]);
-            p[l.field_lens[i]] = '\0';
-            if (strcmp (p, "|") == 0)
-              {
-                cands[i] = NULL;
-                n_comps++;
-              }
-            else
-              cands[i] = find_cand (p);
-          }
-        cands[l.n_fields] = NULL;
-        dpm_cand **comps = dyn_malloc (sizeof (dpm_cand*)*(n_comps+2));
-        dpm_cand *ptr = cands;
-	comps[0] = cands;
-        for (int i = 0; i < n_comps; i++)
-          {
-            comps[i+1] = ptr;
-            while (*ptr++)
-              ;
-          }
-        comps[n_comps+1] = NULL;
-        expected_cands[n_steps++] = comps;
-      }
-
-  }
-
-  bool has_same_cands (dpm_cand *cands, dpm_seat *seats, int n_seats)
-  {
-    int n_found = 0;
-    while (*cands)
-      {
-        for (int i = 0; i < n_seats; i++)
-          if (dpm_ws_selected (seats[i]) == *cands)
-            {
-              n_found++;
-              break;
-            }
-        cands++;
-      }
-    return n_found == n_seats;
-  }
-
   dyn_block
     {
       setup_scenario (meta, selected, goal);
-      setup_expected_cands ();
       EXPECT (dpm_alg_install_naively () == true);
       
       // dpm_ws_dump (0);
 
-      int cur_step = 0;
+      dpm_seatset seen = dpm_seatset_new ();
+
+      void check_strict (dpm_seat s)
+      {
+	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
+	  dyn_foreach (a, dpm_dep_alts, d)
+	    if (dpm_ws_is_selected (a))
+	      EXPECT (dpm_seatset_has (seen, dpm_cand_seat (a)));
+      }
+
+      void check_lax (dpm_seat s)
+      {
+	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
+	  {
+	    bool found_one = false;
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      if (dpm_ws_is_selected (a)
+		  && dpm_seatset_has (seen, dpm_cand_seat (a)))
+		{
+		  found_one = true;
+		  break;
+		}
+	    EXPECT (found_one);
+	  }
+      }
 
       void visit_component (dpm_alg_order_context ctxt,
 			    dpm_seat *seats, int n_seats)
       {
 	for (int i = 0; i < n_seats; i++)
-	  dpm_alg_order_done (ctxt, seats[i]);
- 
-        EXPECT (cur_step <= n_steps);
-
-        if (cur_step == n_steps)
-          {
-            EXPECT (n_seats == 1);
-            EXPECT (dpm_ws_selected (seats[0]) == dpm_ws_get_goal_cand ());
-            cur_step++;
-            return;
-          }
-
-        bool found = false;
-        for (int c = 1; expected_cands[cur_step][c]; c++)
-          {
-            if (has_same_cands (expected_cands[cur_step][c],
-				seats, n_seats))
-              {
-                found = true;
-                while ((expected_cands[cur_step][c]
-			= expected_cands[cur_step][c+1]))
-                  c++;
-		break;
-              }
-	  }
-
-	if (!found)
 	  {
-	    dyn_print ("Visited: ");
-	    for (int i = 0; i < n_seats; i++)
-	      dyn_print (" %{cand}", dpm_ws_selected (seats[i]));
-	    dyn_print ("\n");
-	    dyn_print ("Expected:");
-	    for (int c = 1; expected_cands[cur_step][c]; c++)
-	      {
-		for (dpm_cand *e = expected_cands[cur_step][c]; *e; e++)
-		  dyn_print (" %{cand}", *e);
-		if (expected_cands[cur_step][c+1])
-		  dyn_print ("\n      or:");
-	      }
-	    dyn_print ("\n");
-	    EXPECT (found, "Unexpected order");
+	    dpm_seatset_add (seen, seats[i]);
+	    dpm_alg_order_done (ctxt, seats[i]);
 	  }
-
-	if (expected_cands[cur_step][1] == NULL)
+	    
+	for (int i = 0; i < n_seats; i++)
 	  {
-	    free (expected_cands[cur_step][0]);
-	    free (expected_cands[cur_step]);
-	    expected_cands[cur_step] = NULL;
-	    cur_step++;
+	    if (lax)
+	      check_lax (seats[i]);
+	    else
+	      check_strict (seats[i]);
 	  }
       }
 
-      dpm_alg_order (visit_component);
+      if (lax)
+	dpm_alg_order_lax (visit_component);
+      else
+	dpm_alg_order (visit_component);
+
+      dpm_seatset seen_again = dpm_seatset_new ();
+
+      void visit (dpm_seat s)
+      {
+	EXPECT (dpm_seatset_has (seen, s));
+	
+	if (dpm_seatset_has (seen_again, s))
+	  return;
+
+	dpm_seatset_add (seen_again, s);
+	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
+	  dyn_foreach (a, dpm_dep_alts, d)
+	    if (dpm_ws_is_selected (a))
+	      visit (dpm_cand_seat (a));
+      }
+
+      visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
     }
+}
+
+void
+check_order (const char *meta,
+	     const char *selected,
+	     const char *goal)
+{
+  check_order_strict_or_lax (meta, selected, goal, true);
+  check_order_strict_or_lax (meta, selected, goal, false);
 }
 
 DEFTEST (alg_order)
@@ -2463,7 +2400,6 @@ DEFTEST (alg_order)
                "Version: 1            \n",
                
                "",
-               "foo_1",
                "foo_1");
 
   check_order ("Package: foo          \n"
@@ -2474,10 +2410,7 @@ DEFTEST (alg_order)
                "Version: 1            \n",
                
                "",
-               "foo_1",
-
-               "bar_1                 \n"
-               "foo_1                 \n");
+               "foo_1");
 
   check_order ("Package: foo          \n"
                "Version: 1            \n"
@@ -2488,9 +2421,7 @@ DEFTEST (alg_order)
                "Depends: foo          \n",
                
                "",
-               "foo_1",
-
-               "foo_1 bar_1           \n");
+               "foo_1");
 
   check_order ("Package: foo          \n"
                "Version: 1            \n"
@@ -2500,10 +2431,7 @@ DEFTEST (alg_order)
                "Version: 1            \n",
                
                "bar_1",
-               "foo_1",
-
-               "bar_null              \n"
-               "foo_1                 \n");
+               "foo_1");
 
   check_order ("Package: p1          \n"
                "Version: 1           \n"
@@ -2525,11 +2453,7 @@ DEFTEST (alg_order)
                "Version: 1           \n",
                
                "",
-               "p1_1",
-
-               "p5_1                 \n"
-               "p4_1 p3_1 p2_1       \n"
-               "p1_1                 \n");
+               "p1_1");
 
   check_order ("Package: foo          \n"
                "Version: 1            \n"
@@ -2547,9 +2471,7 @@ DEFTEST (alg_order)
                "Conflicts: foo (<< 2) \n",
                
                "foo_1, bar_1",
-               "foo_2",
-               
-               "foo_2 bar_2           \n");
+               "foo_2");
 
   check_order ("Package: foo          \n"
 	       "Version: 1            \n"
@@ -2562,25 +2484,5 @@ DEFTEST (alg_order)
 	       "Version: 1            \n",
 
 	       "",
-	       "foo_1",
-
-	       "bar-1_1 | bar-2_1     \n"
-	       "foo_1                 \n");
-
-  check_order ("Package: foo          \n"
-	       "Version: 1            \n"
-	       "Depends: bar-1, bar-2 \n"
-	       "\n"
-	       "Package: bar-1        \n"
-	       "Version: 1            \n"
-	       "\n"
-	       "Package: bar-2        \n"
-	       "Version: 1            \n",
-
-	       "",
-	       "foo_1",
-
-	       "bar-2_1 | bar-1_1     \n"
-	       "foo_1                 \n");
-
+	       "foo_1");
 }
