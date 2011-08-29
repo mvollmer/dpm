@@ -246,6 +246,19 @@ dpm_db_done ()
   dyn_set (cur_db, NULL);
 }
 
+void
+dpm_db_gc_and_done ()
+{
+  dpm_db db = dyn_get (cur_db);
+
+  dpm_db_abort (db);
+  ss_gc (db->store);
+  dyn_unref (db->store);
+  db->store = NULL;
+
+  dyn_set (cur_db, NULL);
+}
+
 int
 dpm_db_package_id_limit ()
 {

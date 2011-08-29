@@ -55,6 +55,7 @@ int dpm_db_check_versions_str (ss_val a, int op, const char *b, int b_len);
 void dpm_db_open ();
 void dpm_db_checkpoint ();
 void dpm_db_done ();
+void dpm_db_gc_and_done ();
 
 int dpm_db_package_id_limit ();
 int dpm_db_version_id_limit ();

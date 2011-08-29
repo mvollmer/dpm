@@ -21,6 +21,7 @@ usage ()
   fprintf (stderr, "       dpm-tool [OPTIONS] deps PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] dump\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] gc\n");
   exit (1);
 }
 
@@ -583,6 +584,13 @@ print_path (const char *a, const char *b)
   dpm_alg_print_path (a_seat, b_seat);
 }
 
+void
+cmd_gc ()
+{
+  dpm_db_open ();
+  dpm_db_gc_and_done ();
+}
+
 int
 main (int argc, char **argv)
 {
@@ -631,6 +639,8 @@ main (int argc, char **argv)
     install (argv+2, true, false);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
+  else if (strcmp (argv[1], "gc") == 0)
+    cmd_gc ();
   else
     usage ();
 
