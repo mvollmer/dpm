@@ -18,7 +18,7 @@ usage ()
   fprintf (stderr, "       dpm-tool [OPTIONS] relations PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] provides PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] install PACKAGE\n");
-  fprintf (stderr, "       dpm-tool [OPTIONS] deps PACKAGE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] remove PACKAGE\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] dump\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] gc\n");
@@ -461,7 +461,8 @@ dump (const char *origin)
 }
 
 void
-install (char **packages, bool show_deps, bool execute)
+cmd_install (char **packages,
+	     bool show_deps, bool execute, bool remove)
 {
   dpm_package pkg;
 
@@ -478,7 +479,10 @@ install (char **packages, bool show_deps, bool execute)
 	dyn_error ("No such package: %s", *packages);
   
       dpm_candspec_begin_rel (spec, false);
-      dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
+      if (remove)
+	dpm_candspec_add_alt (spec, pkg, DPM_EQ, NULL);
+      else
+	dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
       packages++;
     }
 
@@ -628,7 +632,9 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
   else if (strcmp (argv[1], "install") == 0)
-    install (argv+2, false, true);
+    cmd_install (argv+2, false, true, false);
+  else if (strcmp (argv[1], "remove") == 0)
+    cmd_install (argv+2, false, true, true);
   else if (strcmp (argv[1], "reset") == 0)
     reset ();
   else if (strcmp (argv[1], "status") == 0)
@@ -636,7 +642,7 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "path") == 0)
     print_path (argv[2], argv[3]);
   else if (strcmp (argv[1], "deps") == 0)
-    install (argv+2, true, false);
+    cmd_install (argv+2, true, false, false);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else if (strcmp (argv[1], "gc") == 0)
