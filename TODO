@@ -4,3 +4,5 @@ Don't malloc each frame; push/pop is only few cycles; get rid of
 dyn_block and use scope with cleanup attribute exclusively.
 
 * candspec deps on null cand don't work right with virtual packages.
+
+* autoinst flags, arbitrary status fields.

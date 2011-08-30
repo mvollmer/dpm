@@ -1291,9 +1291,14 @@ dpm_db_set_status (dpm_package pkg, dpm_version ver, int flags)
 {
   dpm_db db = dyn_get (cur_db);
 
-  ss_dict_set (db->status, pkg, ss_new (db->store, 0, 2,
-					ver,
-					ss_from_int (flags)));
+  dpm_status old = dpm_db_status (pkg);
+  if (ver != dpm_stat_version (old)
+      || flags != dpm_stat_flags (old))
+    {
+      ss_dict_set (db->status, pkg, ss_new (db->store, 0, 2,
+					    ver,
+					    ss_from_int (flags)));
+    }
 }
 
 /* Indexed queries
