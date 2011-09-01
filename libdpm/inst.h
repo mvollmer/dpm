@@ -36,4 +36,6 @@ void dpm_inst_unpack (dpm_version ver);
 void dpm_inst_install (dpm_version ver);
 void dpm_inst_remove (dpm_package pkg);
 
+void dpm_inst_set_manual (dpm_package pkg, bool manual);
+
 #endif /* !DPM_INST_H */

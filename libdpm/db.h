@@ -192,13 +192,17 @@ ss_val dpm_db_provides (dpm_package pkg);
 typedef ss_val dpm_status;
 
 #define dpm_stat_version(s)  ss_ref (s, 0)
-#define dpm_stat_flags(s)    ss_ref_int (s, 1)
+#define dpm_stat_status(s)   ss_ref_int (s, 1)
+#define dpm_stat_flags(s)    ss_ref_int (s, 2)
 
-#define DPM_STAT_OK          0
-#define DPM_STAT_HALF        1
-#define DPM_STAT_UNPACKED    2
+// All the tricky half-states come later...
+#define DPM_STAT_OK        0
+#define DPM_STAT_UNPACKED  1
 
-void dpm_db_set_status (dpm_package pkg, dpm_version ver, int flags);
+#define DPM_STAT_MANUAL    0x01
+
+void dpm_db_set_status (dpm_package pkg, dpm_version ver, int status);
+void dpm_db_set_status_flags (dpm_package pkg, int flags);
 dpm_status dpm_db_status (dpm_package pkg);
 
 /* Dumping

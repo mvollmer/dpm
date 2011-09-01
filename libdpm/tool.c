@@ -462,7 +462,7 @@ dump (const char *origin)
 
 void
 cmd_install (char **packages,
-	     bool show_deps, bool execute, bool remove)
+	     bool show_deps, bool execute, bool remove, bool manual)
 {
   dpm_package pkg;
 
@@ -494,6 +494,14 @@ cmd_install (char **packages,
     {
       if (execute)
 	{
+	  if (manual)
+	    dyn_foreach (d, dpm_cand_deps, dpm_ws_get_goal_cand ())
+	      dyn_foreach (a, dpm_dep_alts, d)
+	        {
+		  if (dpm_ws_is_selected (a))
+		    dpm_inst_set_manual (dpm_seat_package (dpm_cand_seat (a)),
+					 true);
+		}
 	  dpm_alg_order_lax (dpm_alg_install_component);
 	  if (!flag_simulate)
 	    dpm_db_checkpoint ();
@@ -526,21 +534,17 @@ status (char **packages)
 	      dyn_print ("%{ver}", ver);
 	    else
 	      dyn_print ("%{pkg} not installed", pkg);
-	    int flags = dpm_stat_flags (status);
-	    switch (flags)
+	    switch (dpm_stat_status (status))
 	      {
 	      case DPM_STAT_OK:
 		break;
 	      case DPM_STAT_UNPACKED:
 		dyn_print (", unpacked");
 		break;
-	      case DPM_STAT_UNPACKED | DPM_STAT_HALF:
-		dyn_print (", half-unpacked");
-		break;
-	      case DPM_STAT_HALF:
-		dyn_print (", half-configured");
-		break;
 	      }
+	    int f = dpm_stat_flags (status);
+	    if (f & DPM_STAT_MANUAL)
+	      dyn_print (", manual");
 	    dyn_print ("\n");
 	  }
 
@@ -560,8 +564,11 @@ reset ()
   dpm_db_open ();
 
   dyn_foreach (p, dpm_db_packages)
-    dpm_db_set_status (p, NULL, DPM_STAT_OK);
-  
+    {
+      dpm_db_set_status (p, NULL, DPM_STAT_OK);
+      dpm_db_set_status_flags (p, 0);
+    }
+
   dpm_db_checkpoint ();
 }
 
@@ -632,9 +639,9 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
   else if (strcmp (argv[1], "install") == 0)
-    cmd_install (argv+2, false, true, false);
+    cmd_install (argv+2, false, true, false, true);
   else if (strcmp (argv[1], "remove") == 0)
-    cmd_install (argv+2, false, true, true);
+    cmd_install (argv+2, false, true, true, false);
   else if (strcmp (argv[1], "reset") == 0)
     reset ();
   else if (strcmp (argv[1], "status") == 0)
@@ -642,7 +649,7 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "path") == 0)
     print_path (argv[2], argv[3]);
   else if (strcmp (argv[1], "deps") == 0)
-    cmd_install (argv+2, true, false, false);
+    cmd_install (argv+2, true, false, false, false);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else if (strcmp (argv[1], "gc") == 0)

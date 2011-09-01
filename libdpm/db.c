@@ -1282,21 +1282,40 @@ dpm_db_status (dpm_package pkg)
   if (s)
     return s;
   if (!null_status)
-    null_status = ss_new (NULL, 0, 2, NULL, ss_from_int (0));
+    null_status = ss_new (NULL, 0, 3,
+			  NULL,
+			  ss_from_int (DPM_STAT_OK),
+			  ss_from_int (0));
   return null_status;
 }
 
 void
-dpm_db_set_status (dpm_package pkg, dpm_version ver, int flags)
+dpm_db_set_status (dpm_package pkg, dpm_version ver, int status)
 {
   dpm_db db = dyn_get (cur_db);
 
   dpm_status old = dpm_db_status (pkg);
   if (ver != dpm_stat_version (old)
-      || flags != dpm_stat_flags (old))
+      || status != dpm_stat_status (old))
     {
-      ss_dict_set (db->status, pkg, ss_new (db->store, 0, 2,
+      ss_dict_set (db->status, pkg, ss_new (db->store, 0, 3,
 					    ver,
+					    ss_from_int (status),
+					    ss_ref (old, 2)));
+    }
+}
+
+void
+dpm_db_set_status_flags (dpm_package pkg, int flags)
+{
+  dpm_db db = dyn_get (cur_db);
+
+  dpm_status old = dpm_db_status (pkg);
+  if (flags != dpm_stat_flags (old))
+    {
+      ss_dict_set (db->status, pkg, ss_new (db->store, 0, 3,
+					    ss_ref (old, 0),
+					    ss_ref (old, 1),
 					    ss_from_int (flags)));
     }
 }

@@ -42,7 +42,7 @@ dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
   const char *msg = "";
   if (unpack)
     msg = " (unpack)";
-  else if (dpm_stat_flags (status) & DPM_STAT_UNPACKED)
+  else if (dpm_stat_status (status) & DPM_STAT_UNPACKED)
     msg = " (setup)";
 
   if (dpm_stat_version (status))
@@ -75,11 +75,7 @@ dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
 	       dpm_ver_version (ver),
 	       msg);
 
-  int flags = DPM_STAT_OK;
-  if (unpack)
-    flags |= DPM_STAT_UNPACKED;
-
-  dpm_db_set_status (pkg, ver, flags);
+  dpm_db_set_status (pkg, ver, unpack? DPM_STAT_UNPACKED : DPM_STAT_OK);
 }
 
 void
@@ -108,4 +104,11 @@ dpm_inst_remove (dpm_package pkg)
 	       dpm_pkg_name (pkg));
 
   dpm_db_set_status (pkg, NULL, DPM_STAT_OK);
+  dpm_db_set_status_flags (pkg, 0);
+}
+
+void
+dpm_inst_set_manual (dpm_package pkg, bool manual)
+{
+  dpm_db_set_status_flags (pkg, manual? DPM_STAT_MANUAL : 0);
 }
