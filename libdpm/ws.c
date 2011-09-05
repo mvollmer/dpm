@@ -605,6 +605,12 @@ dpm_seat_is_relevant (dpm_seat s)
   return s->relevant;
 }
 
+dpm_cand
+dpm_seat_null_cand (dpm_seat s)
+{
+  return &(s->null_cand);
+}
+
 void
 dpm_seat_set_relevant (dpm_seat s, bool relevant)
 {
