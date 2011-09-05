@@ -92,9 +92,7 @@ bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 bool dpm_alg_install_naively ();
 
 /* Call VISIT_COMP with the strongly connected components formed by
-   the dependencies of the selected cands, beginning with the one that
-   doesn't have any dependencies on other components, and ending with
-   the goal candidate.
+   the dependencies of the selected cands of the relevant seats.
 
    The VISIT_COMP function must call dpm_alg_order_done on each seat
    that should be considered done.  The remaining seats will be
@@ -114,7 +112,8 @@ void dpm_alg_order_lax (void (*visit_comp) (dpm_alg_order_context ctxt,
 /* Check all direct and indirect dependencies of the goal candidate
    and return true iff all of them are satisfied by the currently
    selected candidates.  Also, if UNUSED is given, it is called for
-   all each seat that is not needed to satisfy the goal.
+   all each seat that is not needed to satisfy the goal.  The ones
+   that are needed are marked as relevant.
 */
 bool dpm_alg_cleanup_goal (void (*unused) (dpm_seat s));
 

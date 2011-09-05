@@ -470,9 +470,12 @@ dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
 
       stack_top = 0;
 
-      visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
+      dyn_foreach (s, dpm_ws_seats)
+        if (dpm_seat_is_relevant (s))
+          visit (s);
     }
 }
+
 /* Three valued logic, with true, false, and unknown.
 
    Truth tables:
@@ -612,6 +615,7 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
 	  }
       }
 
+      dpm_seat_set_relevant (dpm_cand_seat (dpm_ws_get_goal_cand ()), true);
       dpm_alg_order (visit);
 
       goal_ok =

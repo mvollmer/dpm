@@ -600,9 +600,15 @@ dpm_seat_id (dpm_seat s)
 }
 
 bool
-dpm_seat_relevant (dpm_seat s)
+dpm_seat_is_relevant (dpm_seat s)
 {
   return s->relevant;
+}
+
+void
+dpm_seat_set_relevant (dpm_seat s, bool relevant)
+{
+  s->relevant = relevant;
 }
 
 /* Deps
@@ -1114,35 +1120,13 @@ dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
 /* Starting
  */
 
-
-static void
-mark_relevant ()
-{
-  void mark (dpm_cand c)
-  {
-    if (c->seat->relevant)
-      return;
-    
-    c->seat->relevant = true;
-    dyn_foreach (d, dpm_cand_deps, c)
-      dyn_foreach (a, dpm_dep_alts, d)
-        mark (a);
-  }
-
-  dpm_ws ws = dpm_ws_current ();
-  mark (&(ws->goal_cand));
-}
-
 void
 dpm_ws_start ()
 {
-  dpm_ws ws = dpm_ws_current ();
-  
   find_providers ();
   compute_deps ();
   compute_goal_deps ();
   compute_reverse_deps ();
-  mark_relevant (ws);
 }
 
 /* Selecting
