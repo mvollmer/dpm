@@ -122,4 +122,10 @@ void dpm_alg_install_component (dpm_alg_order_context ctxt,
 
 void dpm_alg_print_path (dpm_seat a, dpm_seat b);
 
+/* Schedule all seats for removal that are not needed to satisfy
+   dependencies of manually managed packages (or the goal).
+*/
+void dpm_alg_remove_unused ();
+
+
 #endif /* !DPM_ALG_H */

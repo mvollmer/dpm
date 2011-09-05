@@ -492,6 +492,7 @@ cmd_install (char **packages,
   dpm_ws_start ();
   if (dpm_alg_install_naively ())
     {
+      dpm_alg_remove_unused ();
       if (execute)
 	{
 	  if (manual)

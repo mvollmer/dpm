@@ -695,7 +695,7 @@ dpm_alg_install_component (dpm_alg_order_context ctxt,
 	  dpm_status status = dpm_db_status (pkgs[i]);
 
 	  if (!(vers[i] != dpm_stat_version (status)
-		|| dpm_stat_flags (status) != DPM_STAT_OK))
+		|| dpm_stat_status (status) != DPM_STAT_OK))
 	    {
 	      dpm_alg_order_done (ctxt, seats[i]);
 	      some_done = true;
@@ -759,5 +759,47 @@ dpm_alg_print_path (dpm_seat a, dpm_seat b)
 
       if (visit (a_cand))
 	dyn_print ("%{cand}\n", a_cand);
+    }
+}
+
+void
+dpm_alg_remove_unused ()
+{
+  dyn_block
+    {
+      dpm_seatset marked = dpm_seatset_new ();
+
+      void mark (dpm_seat s)
+      {
+        if (dpm_seatset_has (marked, s))
+          return;
+
+        dpm_seatset_add (marked, s);
+        dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
+          dyn_foreach (a, dpm_dep_alts, d)
+          if (dpm_ws_is_selected (a))
+            mark (dpm_cand_seat (a));
+      }
+       
+      void sweep ()
+      {
+        dyn_foreach (s, dpm_ws_seats)
+          if (!dpm_seatset_has (marked, s))
+            {
+              dpm_ws_select (dpm_seat_null_cand (s));
+              dpm_seat_set_relevant (s, true);
+            }
+      }
+
+      mark (dpm_cand_seat (dpm_ws_get_goal_cand ()));
+      dyn_foreach (p, dpm_db_packages)
+        {
+          dpm_status stat = dpm_db_status (p);
+          if (dpm_stat_flags (stat) & DPM_STAT_MANUAL)
+            dyn_foreach (s, dpm_ws_package_seats, p)
+              mark (s);
+        }
+
+      sweep ();
     }
 }
