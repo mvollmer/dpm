@@ -104,7 +104,6 @@ dpm_inst_remove (dpm_package pkg)
 	       dpm_pkg_name (pkg));
 
   dpm_db_set_status (pkg, NULL, DPM_STAT_OK);
-  dpm_db_set_status_flags (pkg, 0);
 }
 
 void
