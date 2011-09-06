@@ -2486,3 +2486,39 @@ DEFTEST (alg_order)
 	       "",
 	       "foo_1");
 }
+
+void
+check_autoremove (const char *meta,
+		  const char *originally_installed,
+		  const char *goal,
+		  const char *expected_installed)
+{
+  dyn_block
+    {
+      setup_scenario (meta,
+                      originally_installed,
+                      goal);
+
+      EXPECT (dpm_alg_install_naively () == true);
+      dpm_alg_remove_unused ();
+
+      check_selected (expected_installed);
+    }
+}
+
+DEFTEST (alg_autoremove)
+{
+  check_autoremove ("Package: foo         \n"
+		    "Version: 1           \n"
+		    "Depends: bar         \n"
+		    "\n"
+		    "Package: bar         \n"
+		    "Version: 1           \n"
+		    "\n"
+		    "Package: baz         \n"
+		    "Version: 1           \n",
+		    
+		    "baz_1",
+		    "foo_1",
+		    "foo_1, bar_1");
+}
