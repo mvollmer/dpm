@@ -777,8 +777,8 @@ dpm_alg_remove_unused ()
         dpm_seatset_add (marked, s);
         dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
           dyn_foreach (a, dpm_dep_alts, d)
-          if (dpm_ws_is_selected (a))
-            mark (dpm_cand_seat (a));
+            if (dpm_ws_is_selected (a))
+	      mark (dpm_cand_seat (a));
       }
        
       void sweep ()
