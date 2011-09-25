@@ -24,6 +24,8 @@
 /* Policy
  */
 
+extern dyn_var dpm_pol_origin[1];
+
 dpm_version dpm_pol_get_best_version (dpm_package pkg,
 				      bool (*accept) (dpm_version ver));
 

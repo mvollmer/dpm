@@ -613,6 +613,11 @@ main (int argc, char **argv)
           dyn_set (dpm_database_name, dyn_from_string (argv[2]));
           argv += 2;
         }
+      else if (strcmp (argv[1], "--origin") == 0)
+	{
+          dyn_set (dpm_pol_origin, dyn_from_string (argv[2]));
+          argv += 2;
+	}
       else if (strcmp (argv[1], "--simulate") == 0)
 	{
 	  flag_simulate = true;
