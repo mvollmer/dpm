@@ -1268,12 +1268,18 @@ dump_broken_seat (dpm_ws ws, dpm_seat s)
   dpm_cand c = dpm_ws_selected (s);
   if (!dpm_cand_satisfied (c))
     {
-      dyn_print ("%{cand} is broken\n", c);
+      bool header_shown = false;
 
       dyn_foreach (d, dpm_cand_deps, c)
 	{
-	  if (!dpm_dep_satisfied (d))
+	  if (!d->reversed && !dpm_dep_satisfied (d))
 	    {
+	      if (!header_shown)
+		{
+		  dyn_print ("%{cand} is broken\n", c);
+		  header_shown = true;
+		}
+
 	      dyn_print (" it depends on");
 	      bool first = true;
 	      dyn_foreach (a, dpm_dep_alts, d)
@@ -1284,9 +1290,18 @@ dump_broken_seat (dpm_ws ws, dpm_seat s)
 		  first = false;
 		}
 	      dyn_print (", but none of them is selected.\n");
+
+#if 0
+	      dpm_alg_print_path (dpm_cand_seat (dpm_ws_get_goal_cand ()),
+				  dpm_cand_seat (c));
+	      dyn_foreach (a, dpm_dep_alts, d)
+		dpm_alg_print_path (dpm_cand_seat (dpm_ws_get_goal_cand ()),
+				    dpm_cand_seat (a));
+#endif
 	    }
 	}
-      dyn_print ("\n");
+      if (header_shown)
+	dyn_print ("\n");
     }
 }
 
