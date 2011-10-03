@@ -620,38 +620,43 @@ dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
       goal_ok =
 	seat_info[dpm_seat_id (dpm_cand_seat (dpm_ws_get_goal_cand ()))].ok;
 
-      if (goal_ok && unused)
-        {
-          /* Walk the depenency tree from the goal, following only
-             'ok' seats, and sweep away what we don't need.
-          */
+      /* Walk the depenency tree from the goal, following only
+	 'ok' seats, and sweep away what we don't need.
+      */
+      
+      void visit_needed (dpm_cand c)
+      {
+	if (!dpm_ws_is_selected (c))
+	  return;
+	int id = dpm_seat_id (dpm_cand_seat (c));
+	if (seat_info[id].needed)
+	  return;
+	
+	seat_info[id].needed = true;
+	dyn_foreach (d, dpm_cand_deps, c)
+	  {
+	    bool found_ok = false;
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      if (seat_info[dpm_seat_id (dpm_cand_seat (a))].ok)
+		{
+		  found_ok = true;
+		  visit_needed (a);
+		}
+	    if (!found_ok)
+	      dyn_foreach (a, dpm_dep_alts, d)
+		visit_needed (a);
+	  }
+      }
           
-          void visit (dpm_cand c)
-          {
-            if (!dpm_ws_is_selected (c))
-              return;
-            int id = dpm_seat_id (dpm_cand_seat (c));
-            if (!seat_info[id].ok)
-              return;
-            if (seat_info[id].needed)
-              return;
+      visit_needed (dpm_ws_get_goal_cand ());
 
-            seat_info[id].needed = true;
-            dyn_foreach (d, dpm_cand_deps, c)
-              dyn_foreach (a, dpm_dep_alts, d)
-                visit (a);
-          }
-          
-          visit (dpm_ws_get_goal_cand ());
-
-          dyn_foreach (s, dpm_ws_seats)
-            {
-              int id = dpm_seat_id (s);
-              if (!seat_info[id].needed)
-                unused (s);
-            }
-        }
-
+      if (unused)
+	dyn_foreach (s, dpm_ws_seats)
+	  {
+	    int id = dpm_seat_id (s);
+	    if (!seat_info[id].needed)
+	      unused (s);
+	  }
     }
 
   return goal_ok;
@@ -746,13 +751,13 @@ dpm_alg_print_path (dpm_seat a, dpm_seat b)
 
 	dyn_foreach (d, dpm_cand_deps, c)
 	  dyn_foreach (a, dpm_dep_alts, d)
-	  {
-	    if (visit (a))
-	      {
-		dyn_print ("%{cand}\n", a);
-		return true;
-	      }
-	  }
+	    {
+	      if (dpm_ws_is_selected (a) && visit (a))
+		{
+		  dyn_print ("%{cand}\n", a);
+		  return true;
+		}
+	    }
 	return false;
       }
 
