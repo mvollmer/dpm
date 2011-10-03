@@ -368,7 +368,8 @@ dpm_alg_install_naively ()
 	dpm_ws_select (c);
 
 	dyn_foreach (d, dpm_cand_deps, c)
-	  if (!dpm_dep_satisfied (d) || !was_selected)
+	  if (!dpm_dep_satisfied (d)
+	      || (!was_selected && dep_satisfied_by_ugly (d)))
             visit (find_best (d));
       }
 
