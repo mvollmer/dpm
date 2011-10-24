@@ -474,15 +474,38 @@ cmd_install (char **packages,
   dpm_candspec spec = dpm_candspec_new ();
   while (*packages)
     {
-      pkg = dpm_db_package_find (*packages);
+      char *name = *packages;
+      char *version;
+      bool rem;
+
+      if (name[0] == '-')
+	{
+	  rem = true;
+	  name++;
+	}
+      else if (name[0] == '+')
+	{
+	  rem = false;
+	  name++;
+	}
+      else
+	rem = remove;
+
+      if (version = strchr (name, '='))
+	*version++ = '\0';
+
+      pkg = dpm_db_package_find (name);
       if (pkg == NULL)
-	dyn_error ("No such package: %s", *packages);
+	dyn_error ("No such package: %s", name);
   
       dpm_candspec_begin_rel (spec, false);
-      if (remove)
+      if (rem)
 	dpm_candspec_add_alt (spec, pkg, DPM_EQ, NULL);
+      else if (version == NULL)
+ 	dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
       else
-	dpm_candspec_add_alt (spec, pkg, DPM_ANY, NULL);
+ 	dpm_candspec_add_alt (spec, pkg, DPM_EQ, version);
+	
       packages++;
     }
 
