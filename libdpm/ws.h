@@ -209,6 +209,8 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
   int i;
 };
 
+dpm_relation dpm_dep_relation (dpm_dep d);
+
 /* Selecting cands.
  */
 

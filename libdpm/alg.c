@@ -676,7 +676,7 @@ print_intradeps (dpm_alg_order_context ctxt,
 	  {
 	    if (dpm_ws_is_selected (a)
 		&& !dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
-	      dyn_print (" -> %{cand}\n", a);
+	      dyn_print (" -> %{cand} (%{rel})\n", a, dpm_dep_relation (d));
 	  }
     }
 }

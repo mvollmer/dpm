@@ -1123,6 +1123,12 @@ dpm_cand_revdeps_elt (dpm_cand_revdeps *iter)
   return iter->n->elt;
 }
 
+dpm_relation
+dpm_dep_relation (dpm_dep d)
+{
+  return d->rel;
+}
+
 /* Starting
  */
 

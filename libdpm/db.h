@@ -98,21 +98,36 @@ typedef ss_val dpm_version;
 
 typedef ss_val dpm_relations;
 
-#define dpm_rels_pre_depends(r) ss_ref(r,0)
-#define dpm_rels_depends(r)     ss_ref(r,1)
-#define dpm_rels_conflicts(r)   ss_ref(r,2)
-#define dpm_rels_provides(r)    ss_ref(r,3)
-#define dpm_rels_replaces(r)    ss_ref(r,4)
-#define dpm_rels_breaks(r)      ss_ref(r,5)
-#define dpm_rels_recommends(r)  ss_ref(r,6)
-#define dpm_rels_enhances(r)    ss_ref(r,7)
-#define dpm_rels_suggests(r)    ss_ref(r,8)
+enum {
+  DPM_PRE_DEPENDS,
+  DPM_DEPENDS, 
+  DPM_CONFLICTS,
+  DPM_PROVIDES,
+  DPM_REPLACES,
+  DPM_BREAKS,
+  DPM_RECOMMENDS,
+  DPM_ENHANCES,
+  DPM_SUGGESTS,
+  DPM_NUM_RELATION_TYPES
+};
+
+#define dpm_rels_pre_depends(r) ss_ref(r,DPM_PRE_DEPENDS)
+#define dpm_rels_depends(r)     ss_ref(r,DPM_DEPENDS)
+#define dpm_rels_conflicts(r)   ss_ref(r,DPM_CONFLICTS)
+#define dpm_rels_provides(r)    ss_ref(r,DPM_PROVIDES)
+#define dpm_rels_replaces(r)    ss_ref(r,DPM_REPLACES)
+#define dpm_rels_breaks(r)      ss_ref(r,DPM_BREAKS)
+#define dpm_rels_recommends(r)  ss_ref(r,DPM_RECOMMENDS)
+#define dpm_rels_enhances(r)    ss_ref(r,DPM_ENHANCES)
+#define dpm_rels_suggests(r)    ss_ref(r,DPM_SUGGESTS)
 
 typedef ss_val dpm_relation;
 
 #define dpm_rel_op(r,i)         ss_ref_int((r),(i))
 #define dpm_rel_package(r,i)    ss_ref((r),(i)+1)
 #define dpm_rel_version(r,i)    ss_ref((r),(i)+2)
+
+int dpm_rel_type (dpm_relation r);
 
 DYN_DECLARE_STRUCT_ITER (void, dpm_db_alternatives, dpm_relation rel)
 {

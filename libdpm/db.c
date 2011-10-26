@@ -27,6 +27,8 @@
 
 dyn_var dpm_database_name[1];
 
+#define DPM_REL_TAGBASE 32
+
 /* The root:
 
    - format              (string, "dpm-0")
@@ -402,7 +404,7 @@ typedef struct {
 } update_data;
 
 ss_val
-parse_relations (update_data *ud, const char *value, int value_len)
+parse_relations (update_data *ud, int t, const char *value, int value_len)
 {
   dyn_input in = dyn_open_string (value, value_len);
 
@@ -456,7 +458,8 @@ parse_relations (update_data *ud, const char *value, int value_len)
 	  if (n_relations >= 2048)
 	    dyn_error ("Too many relations: %r", dpm_pkg_name (ud->package));
       
-	  relations[n_relations++] = ss_newv (ud->db->store, 0,
+	  relations[n_relations++] = ss_newv (ud->db->store,
+					      DPM_REL_TAGBASE + t,
 					      n_alternatives, 
 					      alternatives);
 	}
@@ -637,23 +640,24 @@ parse_package_stanza (update_data *ud, dyn_input in)
 	    }
 	}
       else if (key == ud->pre_depends_key)
-	pre_depends = parse_relations (ud, f.value, f.value_len);
+	pre_depends = parse_relations (ud, DPM_PRE_DEPENDS, 
+				       f.value, f.value_len);
       else if (key == ud->depends_key)
-	depends = parse_relations (ud, f.value, f.value_len);
+	depends = parse_relations (ud, DPM_DEPENDS, f.value, f.value_len);
       else if (key == ud->conflicts_key)
-	conflicts = parse_relations (ud, f.value, f.value_len);
+	conflicts = parse_relations (ud, DPM_CONFLICTS, f.value, f.value_len);
       else if (key == ud->provides_key)
-	provides = parse_relations (ud, f.value, f.value_len);
+	provides = parse_relations (ud, DPM_PROVIDES, f.value, f.value_len);
       else if (key == ud->replaces_key)
-	replaces = parse_relations (ud, f.value, f.value_len);
+	replaces = parse_relations (ud, DPM_REPLACES, f.value, f.value_len);
       else if (key == ud->breaks_key)
-	breaks = parse_relations (ud, f.value, f.value_len);
+	breaks = parse_relations (ud, DPM_BREAKS, f.value, f.value_len);
       else if (key == ud->recommends_key)
-	recommends = parse_relations (ud, f.value, f.value_len);
+	recommends = parse_relations (ud, DPM_RECOMMENDS, f.value, f.value_len);
       else if (key == ud->enhances_key)
-	enhances = parse_relations (ud, f.value, f.value_len);
+	enhances = parse_relations (ud, DPM_ENHANCES, f.value, f.value_len);
       else if (key == ud->suggests_key)
-	suggests = parse_relations (ud, f.value, f.value_len);
+	suggests = parse_relations (ud, DPM_SUGGESTS, f.value, f.value_len);
       else
 	{
 	  ss_val val = ss_tab_intern_blob (db->strings,
@@ -1113,12 +1117,24 @@ dpm_db_compare_versions (ss_val a, ss_val b)
   return dpm_db_compare_versions_str (a, ss_blob_start (b), ss_len (b));
 }
 
-static const char *relname[] = {
+static const char *opname[] = {
   [DPM_EQ] = "=",
   [DPM_LESS] = "<<",
   [DPM_LESSEQ] = "<=",
   [DPM_GREATER] = ">>",
   [DPM_GREATEREQ] = ">="
+};
+
+static char *relname[] = {
+  [DPM_PRE_DEPENDS] = "Pre-Depends",
+  [DPM_DEPENDS] = "Depends",
+  [DPM_CONFLICTS] = "Conflicts",
+  [DPM_PROVIDES] = "Provides",
+  [DPM_REPLACES] = "Replaces",
+  [DPM_BREAKS] = "Breaks",
+  [DPM_RECOMMENDS] = "Recommends",
+  [DPM_ENHANCES] = "Enhances",
+  [DPM_SUGGESTS] = "Suggests"
 };
 
 int
@@ -1166,7 +1182,7 @@ dpm_db_version_get (dpm_version ver, const char *field)
 }
 
 static void
-show_relation (ss_val rel)
+show_relation (dyn_output out, ss_val rel)
 {
   for (int i = 0; i < ss_len (rel); i += 3)
     {
@@ -1175,14 +1191,14 @@ show_relation (ss_val rel)
 	dyn_print (" | ");
       dyn_print ("%r", dpm_pkg_name (dpm_rel_package (rel, i)));
       if (op != DPM_ANY)
-	dyn_print (" (%s %r)", relname[op], dpm_rel_version (rel, i));
+	dyn_print (" (%s %r)", opname[op], dpm_rel_version (rel, i));
     }
 }
 
 void
 dpm_dump_relation (dpm_relation rel)
 {
-  show_relation (rel);
+  show_relation (dyn_stdout, rel);
 }
 
 static void
@@ -1195,7 +1211,7 @@ show_relations (const char *field, ss_val rels)
 	{
 	  if (i > 0)
 	    dyn_print (", ");
-	  show_relation (ss_ref (rels, i));
+	  show_relation (dyn_stdout, ss_ref (rels, i));
 	}
       dyn_print ("\n");
     }
@@ -1210,15 +1226,8 @@ dpm_db_version_show (dpm_version ver)
 
   ss_val relations = dpm_ver_relations (ver);
 
-  show_relations ("Pre-Depends", ss_ref (relations, 0));
-  show_relations ("Depends", ss_ref (relations, 1));
-  show_relations ("Conflicts", ss_ref (relations, 2));
-  show_relations ("Provides", ss_ref (relations, 3));
-  show_relations ("Replaces", ss_ref (relations, 4));
-  show_relations ("Breaks", ss_ref (relations, 5));
-  show_relations ("Recommends", ss_ref (relations, 6));
-  show_relations ("Enhances", ss_ref (relations, 7));
-  show_relations ("Suggests", ss_ref (relations, 8));
+  for (int i = 0; i < DPM_NUM_RELATION_TYPES; i++)
+    show_relations (relname[i], ss_ref (relations, i));
 
   ss_val fields = dpm_ver_fields (ver);
   for (int i = 0; i < ss_len (fields); i += 2)
@@ -1375,6 +1384,24 @@ dpm_db_stats ()
 
 /* Formatters
  */
+
+static void
+rel_formatter (dyn_output out,
+	       const char *id, int id_len,
+	       const char *parms, int parms_len,
+	       va_list *ap)
+{
+  dpm_relation rel = va_arg (*ap, dpm_relation);
+  if (rel)
+    {
+      dyn_write (out, "%s: ", relname[ss_tag (rel) - DPM_REL_TAGBASE]);
+      show_relation (out, rel);
+    }
+  else
+    dyn_write (out, "<null relation>");
+}
+
+DYN_DEFINE_FORMATTER ("rel", rel_formatter);
 
 static void
 ver_formatter (dyn_output out,
