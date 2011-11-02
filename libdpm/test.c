@@ -2176,7 +2176,7 @@ check_install (const char *meta,
                       originally_installed,
                       goal);
 
-      EXPECT (dpm_alg_install_naively () == result);
+      EXPECT (dpm_alg_install_naively (false) == result);
 
       check_selected (expected_installed);
     }
@@ -2312,7 +2312,7 @@ check_order_strict_or_lax (const char *meta,
   dyn_block
     {
       setup_scenario (meta, selected, goal);
-      EXPECT (dpm_alg_install_naively () == true);
+      EXPECT (dpm_alg_install_naively (false) == true);
       
       // dpm_ws_dump (0);
 
@@ -2499,7 +2499,7 @@ check_autoremove (const char *meta,
                       originally_installed,
                       goal);
 
-      EXPECT (dpm_alg_install_naively () == true);
+      EXPECT (dpm_alg_install_naively (false) == true);
       dpm_alg_remove_unused ();
 
       check_selected (expected_installed);

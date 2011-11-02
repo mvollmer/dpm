@@ -1129,6 +1129,12 @@ dpm_dep_relation (dpm_dep d)
   return d->rel;
 }
 
+bool
+dpm_dep_is_reversed (dpm_dep d)
+{
+  return d->reversed;
+}
+
 /* Starting
  */
 

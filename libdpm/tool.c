@@ -462,7 +462,11 @@ dump (const char *origin)
 
 void
 cmd_install (char **packages,
-	     bool show_deps, bool execute, bool remove, bool manual)
+	     bool show_deps,
+	     bool execute,
+	     bool remove,
+	     bool manual,
+	     bool upgrade)
 {
   dpm_package pkg;
 
@@ -491,7 +495,7 @@ cmd_install (char **packages,
       else
 	rem = remove;
 
-      if (version = strchr (name, '='))
+      if ((version = strchr (name, '=')))
 	*version++ = '\0';
 
       pkg = dpm_db_package_find (name);
@@ -513,7 +517,7 @@ cmd_install (char **packages,
   dpm_ws_add_cand_deps (dpm_ws_get_goal_cand ());
 
   dpm_ws_start ();
-  if (dpm_alg_install_naively ())
+  if (dpm_alg_install_naively (upgrade))
     {
       dpm_alg_remove_unused ();
       if (execute)
@@ -668,9 +672,11 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
   else if (strcmp (argv[1], "install") == 0)
-    cmd_install (argv+2, false, true, false, true);
+    cmd_install (argv+2, false, true, false, true, false);
+  else if (strcmp (argv[1], "upgrade") == 0)
+    cmd_install (argv+2, false, true, false, false, true);
   else if (strcmp (argv[1], "remove") == 0)
-    cmd_install (argv+2, false, true, true, false);
+    cmd_install (argv+2, false, true, true, false, false);
   else if (strcmp (argv[1], "reset") == 0)
     reset ();
   else if (strcmp (argv[1], "status") == 0)
@@ -678,7 +684,7 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "path") == 0)
     print_path (argv[2], argv[3]);
   else if (strcmp (argv[1], "deps") == 0)
-    cmd_install (argv+2, true, false, false, false);
+    cmd_install (argv+2, true, false, false, false, false);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else if (strcmp (argv[1], "gc") == 0)

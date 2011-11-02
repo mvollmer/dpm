@@ -307,7 +307,7 @@ dpm_candpq_peek (dpm_candpq q)
 */
 
 bool
-dpm_alg_install_naively ()
+dpm_alg_install_naively (bool upgrade)
 {
   bool res;
 
@@ -315,7 +315,7 @@ dpm_alg_install_naively ()
     {
       dpm_seatset touched = dpm_seatset_new ();
 
-      dpm_cand find_best (dpm_dep d)
+      dpm_cand old_find_best (dpm_dep d)
       {
 	dyn_foreach (a, dpm_dep_alts, d)
 	  {
@@ -344,6 +344,61 @@ dpm_alg_install_naively ()
 	return NULL;
       }
 
+      bool better_than (dpm_cand a, dpm_cand b)
+      {
+	return (a == NULL
+		|| dpm_cand_version (a) == NULL
+		|| (dpm_cand_version (b)
+		    && (dpm_db_compare_versions 
+			(dpm_ver_version (dpm_cand_version (b)),
+			 dpm_ver_version (dpm_cand_version (a)))
+			> 0)));
+      }
+
+      dpm_cand find_best (dpm_dep d)
+      {
+	dpm_seat best_seat = NULL;
+	dpm_cand best_cand = NULL;
+	bool best_by_default = false;
+
+	dyn_foreach (a, dpm_dep_alts, d)
+	  {
+	    dpm_seat s = dpm_cand_seat (a);
+	    if (s == best_seat)
+	      {
+		if (better_than (best_cand, a))
+		  best_cand = a;
+	      }
+	    else if (best_seat == NULL)
+	      {
+		best_seat = s;
+		best_cand = a;
+		best_by_default = true;
+	      }
+	    else if (best_by_default)
+	      {
+		if (dpm_ws_is_selected (a)
+		    && a != dpm_ws_get_ugly_cand ())
+		  {
+		    best_seat = s;
+		    best_cand = a;
+		    best_by_default = false;
+		  }
+	      }
+	  }
+
+	dpm_cand old_best = old_find_best (d);
+	if (old_best != best_cand)
+	  {
+	    dyn_print ("%{cand} now, %{cand} earlier:\n", best_cand, old_best);
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      dyn_print (" %{cand}", a);
+	    dyn_print ("\n");
+	  }
+
+	return best_cand;
+      }
+
       bool dep_satisfied_by_ugly (dpm_dep d)
       {
 	dyn_foreach (a, dpm_dep_alts, d)
@@ -359,7 +414,12 @@ dpm_alg_install_naively ()
 	  return;
 
 	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
-	  return;
+	  {
+	    if (dpm_ws_selected (dpm_cand_seat (c)) != c)
+	      dyn_print ("rejecting %{cand}, using %{cand}\n",
+			 c, dpm_ws_selected (dpm_cand_seat (c)));
+	    return;
+	  }
 
 	// dyn_print ("Selecting %{cand}\n", c);
 
@@ -369,6 +429,7 @@ dpm_alg_install_naively ()
 
 	dyn_foreach (d, dpm_cand_deps, c)
 	  if (!dpm_dep_satisfied (d)
+	      || (upgrade && !dpm_dep_is_reversed (d))
 	      || (!was_selected && dep_satisfied_by_ugly (d)))
             visit (find_best (d));
       }
