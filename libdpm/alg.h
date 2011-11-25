@@ -123,6 +123,8 @@ bool dpm_alg_cleanup_goal (void (*unused) (dpm_seat s));
 void dpm_alg_install_component (dpm_alg_order_context ctxt,
 				dpm_seat *seats, int n_seats);
 
+void dpm_alg_execute ();
+
 void dpm_alg_print_path (dpm_seat a, dpm_seat b);
 
 /* Schedule all seats for removal that are not needed to satisfy

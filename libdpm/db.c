@@ -1201,6 +1201,12 @@ dpm_dump_relation (dpm_relation rel)
   show_relation (dyn_stdout, rel);
 }
 
+int
+dpm_rel_type (dpm_relation rel)
+{
+  return ss_tag (rel) - DPM_REL_TAGBASE;
+}
+
 static void
 show_relations (const char *field, ss_val rels)
 {

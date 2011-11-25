@@ -530,7 +530,7 @@ cmd_install (char **packages,
 		    dpm_inst_set_manual (dpm_seat_package (dpm_cand_seat (a)),
 					 true);
 		}
-	  dpm_alg_order_lax (dpm_alg_install_component);
+	  dpm_alg_execute ();
 	  if (!flag_simulate)
 	    dpm_db_checkpoint ();
 	  else

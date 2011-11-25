@@ -393,7 +393,7 @@ dpm_alg_install_naively (bool upgrade)
 	    dyn_print ("%{cand} now, %{cand} earlier:\n", best_cand, old_best);
 	    dyn_foreach (a, dpm_dep_alts, d)
 	      dyn_print (" %{cand}", a);
-	    dyn_print ("\n");
+	    dyn_print ("\n%{rel}\n", dpm_dep_relation (d));
 	  }
 
 	return best_cand;
@@ -731,13 +731,13 @@ print_intradeps (dpm_alg_order_context ctxt,
   for (int i = 0; i < n_seats; i++)
     {
       dpm_cand c = dpm_ws_selected (seats[i]);
-      dyn_print ("%{cand}\n", c);
+      dyn_print ("  %{cand}\n", c);
       dyn_foreach (d, dpm_cand_deps, c)
 	dyn_foreach (a, dpm_dep_alts, d)
 	  {
 	    if (dpm_ws_is_selected (a)
 		&& !dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
-	      dyn_print (" -> %{cand} (%{rel})\n", a, dpm_dep_relation (d));
+	      dyn_print ("    %{rel}  [%{cand}]\n", dpm_dep_relation (d), a);
 	  }
     }
 }
@@ -868,4 +868,273 @@ dpm_alg_remove_unused ()
 
       sweep ();
     }
+}
+
+void
+dpm_alg_execute ()
+{
+  /* When faced with a strongly connected component, we try to find
+     something to do for one of its seats.  If that is possible, we do
+     it and mark those seats as done and let the ordering proceed.  If
+     nothing can be done, we mark all seats as done and continue
+     anyway.
+
+     We consider these options in turn when looking for things to do:
+
+     - If a candidate is already fully installed, it is trivially
+       done.
+
+     - If a candidate has all its deps satisfied with the
+       currently installed versions, we install it.
+
+     - If a candidate has all deps satisfied with currently installed
+       version that are necessary for unpacking, we unpack it, but
+       don't mark it as done.  Instead we start over with the whole
+       component.
+   */
+
+  bool satisfied_for_install (dpm_dep d)
+  {
+    /* At least one alternative must be fully installed.
+     */
+    dyn_foreach (a, dpm_dep_alts, d)
+      {
+	dpm_package p = dpm_seat_package (dpm_cand_seat (a));
+	dpm_version v = dpm_cand_version (a);
+
+	if (p == NULL)
+	  return dpm_ws_is_selected (a);
+
+	dpm_status status = dpm_db_status (p);
+	if (v == dpm_stat_version (status)
+	    && dpm_stat_status (status) == DPM_STAT_OK)
+	  return true;
+      }
+
+    return false;
+  }
+
+  bool satisfied_for_install_optimistic (dpm_alg_order_context ctxt, 
+					 dpm_dep d)
+  {
+    /* At least one alternative must be fully installed, and
+       not-yet-done seats are assumed to be fully installed.
+     */
+    dyn_foreach (a, dpm_dep_alts, d)
+      {
+	if (!dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
+	  return true;
+
+	dpm_package p = dpm_seat_package (dpm_cand_seat (a));
+	dpm_version v = dpm_cand_version (a);
+
+	if (p == NULL)
+	  return dpm_ws_is_selected (a);
+
+	dpm_status status = dpm_db_status (p);
+	if (v == dpm_stat_version (status)
+	    && dpm_stat_status (status) == DPM_STAT_OK)
+	  return true;
+      }
+
+    return false;
+  }
+
+  bool satisfied_for_unpack (dpm_dep d)
+  {
+    /* Pre-Depends must be fully installed, Conflicts must at least be
+       unpacked, the rest is ignored.
+    */
+    dpm_relation rel = dpm_dep_relation (d);
+
+    if (rel == NULL)
+      return true;
+    else if (dpm_rel_type (rel) == DPM_PRE_DEPENDS)
+      return satisfied_for_install (d);
+    else if (dpm_rel_type (rel) == DPM_CONFLICTS)
+      {
+	dyn_foreach (a, dpm_dep_alts, d)
+	  {
+	    dpm_package p = dpm_seat_package (dpm_cand_seat (a));
+	    dpm_version v = dpm_cand_version (a);
+	    
+	    if (p == NULL)
+	      return dpm_ws_is_selected (a);
+
+	    dpm_status status = dpm_db_status (p);
+	    if (v == dpm_stat_version (status)
+		&& (dpm_stat_status (status) == DPM_STAT_OK
+		    || dpm_stat_status (status) == DPM_STAT_UNPACKED))
+	      return true;
+	  }
+	return false;
+      }
+    else
+      return true;
+  }
+
+  void handle_comp (dpm_alg_order_context ctxt,
+		    dpm_seat *seats, int n_seats)
+  {
+    bool some_done = false;
+
+    dpm_package pkgs[n_seats];
+    dpm_version vers[n_seats];
+
+    /* Check if some don't need any work at all.
+     */
+    for (int i = 0; i < n_seats; i++)
+      {
+	pkgs[i] = dpm_seat_package (seats[i]);
+	vers[i] = dpm_cand_version (dpm_ws_selected (seats[i]));
+	
+	if (pkgs[i])
+	  {
+	    dpm_status status = dpm_db_status (pkgs[i]);
+
+	    if (vers[i] == dpm_stat_version (status)
+		&& dpm_stat_status (status) == DPM_STAT_OK)
+	      {
+		dpm_alg_order_done (ctxt, seats[i]);
+		some_done = true;
+	      }
+	  }
+	else
+	  {
+	    dpm_alg_order_done (ctxt, seats[i]);
+	    some_done = true;
+	  }
+      }
+
+    if (some_done)
+      return;
+
+    /* Check if some have all their dependencies satisfied.
+     */
+    for (int i = 0; i < n_seats; i++)
+      {
+	dpm_cand c = dpm_ws_selected (seats[i]);
+
+	bool all_satisfied = true;
+	dyn_foreach (d, dpm_cand_deps, c)
+	  if (!satisfied_for_install (d))
+	    {
+	      all_satisfied = false;
+	      break;
+	    }
+
+	if (all_satisfied)
+	  {
+	    if (vers[i])
+	      dpm_inst_install (vers[i]);
+	    else
+	      dpm_inst_remove (pkgs[i]);
+	    dpm_alg_order_done (ctxt, seats[i]);
+	    some_done = true;
+	  }
+      }
+
+    if (some_done)
+      return;
+
+    /* Now it gets interesting, we might need to break a cycle.
+
+       But first we check whether all seats could be installed with
+       the assumption that all other seats in this component are
+       already installed.  If this is not the case, then some package
+       outside of this component has failed to be installed earlier,
+       and we give up silently.
+    */
+
+    for (int i = 0; i < n_seats; i++)
+      {
+	dpm_cand c = dpm_ws_selected (seats[i]);
+
+	bool all_satisfied = true;
+	dyn_foreach (d, dpm_cand_deps, c)
+	  if (!satisfied_for_install_optimistic (ctxt, d))
+	    {
+	      all_satisfied = false;
+	      break;
+	    }
+
+	if (!all_satisfied)
+	  {
+	    // Give up.
+	    for (int i = 0; i < n_seats; i++)
+	      dpm_alg_order_done (ctxt, seats[i]);
+	    return;
+	  }
+      }
+    
+    /* check whether all can be unpacked
+     */
+
+    bool all_can_be_unpacked = true;
+    for (int i = 0; i < n_seats; i++)
+      {
+	dpm_cand c = dpm_ws_selected (seats[i]);
+
+	bool all_satisfied = true;
+	dyn_foreach (d, dpm_cand_deps, c)
+	  if (!satisfied_for_unpack (d))
+	    {
+	      all_satisfied = false;
+	      break;
+	    }
+
+	if (!all_satisfied)
+	  {
+	    all_can_be_unpacked = false;
+	    break;
+	  }
+      }
+
+    if (all_can_be_unpacked)
+      {
+	for (int i = 0; i < n_seats; i++)
+	  {
+	    if (vers[i])
+	      dpm_inst_unpack (vers[i]);
+	    else
+	      dpm_inst_remove (pkgs[i]);
+	  }
+
+	for (int i = 0; i < n_seats; i++)
+	  {
+	    dpm_cand c = dpm_ws_selected (seats[i]);
+
+	    bool all_satisfied = true;
+	    dyn_foreach (d, dpm_cand_deps, c)
+	      if (!satisfied_for_install (d))
+		{
+		  all_satisfied = false;
+		  break;
+		}
+
+	    if (all_satisfied)
+	      {
+		if (vers[i])
+		  dpm_inst_install (vers[i]);
+		else
+		  dpm_inst_remove (pkgs[i]);
+		dpm_alg_order_done (ctxt, seats[i]);
+		some_done = true;
+	      }
+	  }
+
+	if (some_done)
+	  return;
+      }
+
+    /* Didn't find any way to make progress.  Give up on this
+       component.
+    */
+    dyn_print ("Unbreakable cycle:\n");
+    print_intradeps (ctxt, seats, n_seats);
+    for (int i = 0; i < n_seats; i++)
+      dpm_alg_order_done (ctxt, seats[i]);
+  }
+
+  dpm_alg_order (handle_comp);
 }

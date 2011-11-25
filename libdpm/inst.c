@@ -42,7 +42,7 @@ dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
   const char *msg = "";
   if (unpack)
     msg = " (unpack)";
-  else if (dpm_stat_status (status) & DPM_STAT_UNPACKED)
+  else if (dpm_stat_status (status) == DPM_STAT_UNPACKED)
     msg = " (setup)";
 
   if (dpm_stat_version (status))
@@ -62,6 +62,11 @@ dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
 		   dpm_pkg_name (pkg),
 		   old_version,
 		   new_version,
+		   msg);
+      else if (*msg)
+	dyn_print ("Installing %r %r%s\n",
+		   dpm_pkg_name (pkg),
+		   old_version,
 		   msg);
       else
 	dyn_print ("Reinstalling %r %r%s\n",
