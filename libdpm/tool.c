@@ -22,6 +22,9 @@ usage ()
   fprintf (stderr, "       dpm-tool [OPTIONS] stats\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] dump\n");
   fprintf (stderr, "       dpm-tool [OPTIONS] gc\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] force-install PACKAGE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] force-unpack PACKAGE\n");
+  fprintf (stderr, "       dpm-tool [OPTIONS] force-remove PACKAGE\n");
   exit (1);
 }
 
@@ -630,6 +633,49 @@ cmd_gc ()
   dpm_db_gc_and_done ();
 }
 
+void
+cmd_force_install (const char *package)
+{
+  dpm_db_open ();
+  dpm_package pkg = dpm_db_package_find (package);
+  if (pkg == NULL)
+    dyn_error ("No such package: %s\n", package);
+  
+  dpm_package ver = dpm_pol_get_best_version (pkg, NULL);
+
+  dpm_inst_install (ver);
+
+  dpm_db_checkpoint ();
+}
+
+void
+cmd_force_unpack (const char *package)
+{
+  dpm_db_open ();
+  dpm_package pkg = dpm_db_package_find (package);
+  if (pkg == NULL)
+    dyn_error ("No such package: %s\n", package);
+  
+  dpm_package ver = dpm_pol_get_best_version (pkg, NULL);
+
+  dpm_inst_unpack (ver);
+
+  dpm_db_checkpoint ();
+}
+
+void
+cmd_force_remove (const char *package)
+{
+  dpm_db_open ();
+  dpm_package pkg = dpm_db_package_find (package);
+  if (pkg == NULL)
+    dyn_error ("No such package: %s\n", package);
+  
+  dpm_inst_remove (pkg);
+
+  dpm_db_checkpoint ();
+}
+
 int
 main (int argc, char **argv)
 {
@@ -689,6 +735,12 @@ main (int argc, char **argv)
     dump (argv[2]);
   else if (strcmp (argv[1], "gc") == 0)
     cmd_gc ();
+  else if (strcmp (argv[1], "force-install") == 0)
+    cmd_force_install (argv[2]);
+  else if (strcmp (argv[1], "force-unpack") == 0)
+    cmd_force_unpack (argv[2]);
+  else if (strcmp (argv[1], "force-remove") == 0)
+    cmd_force_remove (argv[2]);
   else
     usage ();
 

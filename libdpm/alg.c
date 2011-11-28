@@ -922,8 +922,11 @@ dpm_alg_execute ()
      */
     dyn_foreach (a, dpm_dep_alts, d)
       {
-	if (!dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
-	  return true;
+	if (dpm_ws_is_selected (a)
+	    && !dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
+	  {
+	    return true;
+	  }
 
 	dpm_package p = dpm_seat_package (dpm_cand_seat (a));
 	dpm_version v = dpm_cand_version (a);
@@ -980,6 +983,15 @@ dpm_alg_execute ()
 
     dpm_package pkgs[n_seats];
     dpm_version vers[n_seats];
+
+#if 0
+    dyn_print ("on");
+    for (int i = 0; i < n_seats; i++)
+      {
+	dyn_print (" %{seat}", seats[i]);
+      }
+    dyn_print ("\n");
+#endif
 
     /* Check if some don't need any work at all.
      */
@@ -1067,7 +1079,7 @@ dpm_alg_execute ()
 	  }
       }
     
-    /* check whether all can be unpacked
+    /* Check whether all can be unpacked
      */
 
     bool all_can_be_unpacked = true;
@@ -1125,6 +1137,20 @@ dpm_alg_execute ()
 
 	if (some_done)
 	  return;
+	
+	/* Pick one to install even without having all dependencies
+	   satisfied.
+	*/
+	int break_seat = 0;
+
+	dyn_print ("Breaking cycle at %{seat}\n", seats[break_seat]);
+
+	if (vers[break_seat])
+	  dpm_inst_install (vers[break_seat]);
+	else
+	  dpm_inst_remove (pkgs[break_seat]);
+	dpm_alg_order_done (ctxt, seats[break_seat]);
+	return;
       }
 
     /* Didn't find any way to make progress.  Give up on this
