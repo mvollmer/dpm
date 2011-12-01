@@ -314,35 +314,7 @@ dpm_alg_install_naively (bool upgrade)
   dyn_block
     {
       dpm_seatset touched = dpm_seatset_new ();
-
-      dpm_cand old_find_best (dpm_dep d)
-      {
-	dyn_foreach (a, dpm_dep_alts, d)
-	  {
-	    dpm_seat s = dpm_cand_seat (a);
-	    if (!dpm_seatset_has (touched, s))
-	      {
-		if (dpm_cand_version (a) == NULL)
-		  return a;
-		ss_val a_ver = dpm_ver_version (dpm_cand_version (a));
-		dyn_foreach (b, dpm_dep_alts, d)
-		  {
-		    if (dpm_cand_version (b)
-			&& dpm_cand_seat (b) == dpm_cand_seat (a))
-		      {
-			ss_val b_ver = dpm_ver_version (dpm_cand_version (b));
-			if (dpm_db_compare_versions (b_ver, a_ver) > 0)
-			  {
-			    a = b;
-			    a_ver = b_ver;
-			  }
-		      }
-		  }
-		return a;
-	      }
-	  }
-	return NULL;
-      }
+      dpm_seat winner[dpm_ws_seat_id_limit()];
 
       bool better_than (dpm_cand a, dpm_cand b)
       {
@@ -355,7 +327,7 @@ dpm_alg_install_naively (bool upgrade)
 			> 0)));
       }
 
-      dpm_cand find_best (dpm_dep d)
+      dpm_cand find_best (dpm_dep d, bool accept_ugly)
       {
 	dpm_seat best_seat = NULL;
 	dpm_cand best_cand = NULL;
@@ -366,7 +338,9 @@ dpm_alg_install_naively (bool upgrade)
 	    dpm_seat s = dpm_cand_seat (a);
 	    if (s == best_seat)
 	      {
-		if (better_than (best_cand, a))
+		if ((best_by_default
+		     || (upgrade && !dpm_dep_is_reversed (d)))
+		    && better_than (best_cand, a))
 		  best_cand = a;
 	      }
 	    else if (best_seat == NULL)
@@ -378,22 +352,14 @@ dpm_alg_install_naively (bool upgrade)
 	    else if (best_by_default)
 	      {
 		if (dpm_ws_is_selected (a)
-		    && a != dpm_ws_get_ugly_cand ())
+		    && (accept_ugly
+			|| a != dpm_ws_get_ugly_cand ()))
 		  {
 		    best_seat = s;
 		    best_cand = a;
 		    best_by_default = false;
 		  }
 	      }
-	  }
-
-	dpm_cand old_best = old_find_best (d);
-	if (old_best != best_cand)
-	  {
-	    dyn_print ("%{cand} now, %{cand} earlier:\n", best_cand, old_best);
-	    dyn_foreach (a, dpm_dep_alts, d)
-	      dyn_print (" %{cand}", a);
-	    dyn_print ("\n%{rel}\n", dpm_dep_relation (d));
 	  }
 
 	return best_cand;
@@ -408,30 +374,35 @@ dpm_alg_install_naively (bool upgrade)
 	return true;
       }
 
-      void visit (dpm_cand c)
+      void visit (dpm_cand c, dpm_seat p)
       {
 	if (c == NULL)
 	  return;
 
-	if (dpm_seatset_has (touched, dpm_cand_seat (c)))
+	dpm_seat s = dpm_cand_seat (c);
+	if (dpm_seatset_has (touched, s))
 	  {
-	    if (dpm_ws_selected (dpm_cand_seat (c)) != c)
-	      dyn_print ("rejecting %{cand}, using %{cand}\n",
-			 c, dpm_ws_selected (dpm_cand_seat (c)));
+	    if (dpm_ws_selected (s) != c)
+	      {
+		dyn_print ("rejecting %{cand} for %{seat}, using %{cand}\n",
+			   c, p, dpm_ws_selected (s));
+		while (s = winner[dpm_seat_id(s)])
+		  dyn_print ("  %{cand}\n", dpm_ws_selected (s));
+	      }
+	    
 	    return;
 	  }
 
-	// dyn_print ("Selecting %{cand}\n", c);
+	winner[dpm_seat_id(s)] = p;
+
+	// dyn_print ("selecting %{cand} for %{seat}\n", c, p);
 
 	dpm_seatset_add (touched, dpm_cand_seat (c));
 	bool was_selected = dpm_ws_is_selected (c);
 	dpm_ws_select (c);
 
 	dyn_foreach (d, dpm_cand_deps, c)
-	  if (!dpm_dep_satisfied (d)
-	      || (upgrade && !dpm_dep_is_reversed (d))
-	      || (!was_selected && dep_satisfied_by_ugly (d)))
-            visit (find_best (d));
+	  visit (find_best (d, true), s);
       }
 
       dpm_cand *initially_selected =
@@ -441,7 +412,7 @@ dpm_alg_install_naively (bool upgrade)
 	initially_selected[dpm_seat_id (s)] = dpm_ws_selected (s);
       dyn_on_unwind_free (initially_selected);
 
-      visit (dpm_ws_get_goal_cand ());
+      visit (dpm_ws_get_goal_cand (), NULL);
 
       void unused (dpm_seat s)
       {
