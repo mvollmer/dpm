@@ -62,11 +62,13 @@ show_versions (dpm_package pkg)
 	  }
     }
 
+#if 0
   if (n_vo == 1)
     {
       dpm_db_version_show (vo[0].ver);
       return;
     }
+#endif
 
   int cmp (const void *_a, const void *_b)
   {

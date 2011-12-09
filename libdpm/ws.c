@@ -1205,7 +1205,7 @@ dpm_ws_is_selected (dpm_cand cand)
 static void
 dump_seat (dpm_ws ws, dpm_seat s)
 {
-  dyn_print ("%{seat}%s\n", s, s->relevant? " (relevant)" : "");
+  dyn_print ("%{seat}:%s\n", s, s->relevant? " (relevant)" : "");
 
   dyn_foreach (c, dpm_seat_cands, s)
     {
