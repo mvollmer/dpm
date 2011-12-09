@@ -329,49 +329,45 @@ dpm_alg_install_naively (bool upgrade)
 
       dpm_cand find_best (dpm_dep d, bool accept_ugly)
       {
-	dpm_seat best_seat = NULL;
-	dpm_cand best_cand = NULL;
-	bool best_by_default = false;
+	/* The best seat is the seat of the first candidate in the
+	   list of alternatives that is selected.  If no candidate is
+	   selected, or if the first selected candidate is the ugly
+	   candidate and accept_ugly is false, then the seat of the
+	   the first alternative is the best.
 
+	   The best alternative is the candidate of the best seat with
+	   the highest version.
+	*/
+
+	dpm_seat best_seat = NULL;
+	dpm_seat first_seat = NULL;
 	dyn_foreach (a, dpm_dep_alts, d)
 	  {
-	    dpm_seat s = dpm_cand_seat (a);
-	    if (s == best_seat)
+	    if (first_seat == NULL)
+	      first_seat = dpm_cand_seat (a);
+
+	    if (dpm_ws_is_selected (a)
+		&& (accept_ugly || a != dpm_ws_get_ugly_cand ()))
 	      {
-		if ((best_by_default
-		     || (upgrade && !dpm_dep_is_reversed (d)))
-		    && better_than (best_cand, a))
+		best_seat = dpm_cand_seat (a);
+		break;
+	      }
+	  }
+
+	if (best_seat == NULL)
+	  best_seat = first_seat;
+
+	dpm_cand best_cand = NULL;
+	dyn_foreach (a, dpm_dep_alts, d)
+	  {
+	    if (dpm_cand_seat (a) == best_seat)
+	      {
+		if (better_than (best_cand, a))
 		  best_cand = a;
-	      }
-	    else if (best_seat == NULL)
-	      {
-		best_seat = s;
-		best_cand = a;
-		best_by_default = true;
-	      }
-	    else if (best_by_default)
-	      {
-		if (dpm_ws_is_selected (a)
-		    && (accept_ugly
-			|| a != dpm_ws_get_ugly_cand ()))
-		  {
-		    best_seat = s;
-		    best_cand = a;
-		    best_by_default = false;
-		  }
 	      }
 	  }
 
 	return best_cand;
-      }
-
-      bool dep_satisfied_by_ugly (dpm_dep d)
-      {
-	dyn_foreach (a, dpm_dep_alts, d)
-	  if (dpm_ws_is_selected (a)
-	      && a != dpm_ws_get_ugly_cand ())
-	    return false;
-	return true;
       }
 
       void visit (dpm_cand c, dpm_seat p)
