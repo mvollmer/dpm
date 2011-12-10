@@ -312,8 +312,10 @@ dpm_alg_install_naively (bool upgrade)
   bool res;
 
   dyn_block
-    {
-      dpm_seatset touched = dpm_seatset_new ();
+     {
+      dpm_seatset visited = dpm_seatset_new ();
+      dpm_seatset changed = dpm_seatset_new ();
+
       dpm_seat winner[dpm_ws_seat_id_limit()];
 
       bool better_than (dpm_cand a, dpm_cand b)
@@ -329,17 +331,14 @@ dpm_alg_install_naively (bool upgrade)
 
       dpm_cand find_best (dpm_dep d, bool accept_ugly)
       {
-	/* The best seat is the seat of the first candidate in the
-	   list of alternatives that is selected.  If no candidate is
+	/* The best candidate is the first candidate in the list of
+	   alternatives that is selected.  If no candidate is
 	   selected, or if the first selected candidate is the ugly
-	   candidate and accept_ugly is false, then the seat of the
-	   the first alternative is the best.
-
-	   The best alternative is the candidate of the best seat with
-	   the highest version.
+	   candidate and accept_ugly is false, then the best candidate
+	   is the candidate with the highest version of the seat of
+	   the the first alternative is the best.
 	*/
 
-	dpm_seat best_seat = NULL;
 	dpm_seat first_seat = NULL;
 	dyn_foreach (a, dpm_dep_alts, d)
 	  {
@@ -348,19 +347,13 @@ dpm_alg_install_naively (bool upgrade)
 
 	    if (dpm_ws_is_selected (a)
 		&& (accept_ugly || a != dpm_ws_get_ugly_cand ()))
-	      {
-		best_seat = dpm_cand_seat (a);
-		break;
-	      }
+	      return a;
 	  }
-
-	if (best_seat == NULL)
-	  best_seat = first_seat;
 
 	dpm_cand best_cand = NULL;
 	dyn_foreach (a, dpm_dep_alts, d)
 	  {
-	    if (dpm_cand_seat (a) == best_seat)
+	    if (dpm_cand_seat (a) == first_seat)
 	      {
 		if (better_than (best_cand, a))
 		  best_cand = a;
@@ -375,30 +368,40 @@ dpm_alg_install_naively (bool upgrade)
 	if (c == NULL)
 	  return;
 
+	bool accept_ugly = true;
+
 	dpm_seat s = dpm_cand_seat (c);
-	if (dpm_seatset_has (touched, s))
+
+	if (dpm_ws_selected (s) == c)
 	  {
-	    if (dpm_ws_selected (s) != c)
+	    if (dpm_seatset_has (visited, s))
+	      return;
+	  }
+	else
+	  {
+	    if (dpm_seatset_has (changed, s))
 	      {
 		dyn_print ("rejecting %{cand} for %{seat}, using %{cand}\n",
 			   c, p, dpm_ws_selected (s));
-		while (s = winner[dpm_seat_id(s)])
+		while ((s = winner[dpm_seat_id(s)]))
 		  dyn_print ("  %{cand}\n", dpm_ws_selected (s));
+		
+		return;
 	      }
-	    
-	    return;
+
+	    winner[dpm_seat_id(s)] = p;
+
+	    // dyn_print ("selecting %{cand} for %{seat}\n", c, p);
+
+	    dpm_seatset_add (changed, dpm_cand_seat (c));
+	    dpm_ws_select (c);
+	    accept_ugly = false;
 	  }
-
-	winner[dpm_seat_id(s)] = p;
-
-	// dyn_print ("selecting %{cand} for %{seat}\n", c, p);
-
-	dpm_seatset_add (touched, dpm_cand_seat (c));
-	bool was_selected = dpm_ws_is_selected (c);
-	dpm_ws_select (c);
+	
+	dpm_seatset_add (visited, s);
 
 	dyn_foreach (d, dpm_cand_deps, c)
-	  visit (find_best (d, true), s);
+	  visit (find_best (d, accept_ugly), s);
       }
 
       dpm_cand *initially_selected =
@@ -1046,7 +1049,7 @@ dpm_alg_execute ()
 	  }
       }
     
-    /* Check whether all can be unpacked
+    /* Check whether all can be unpacked (or are already unpacked)
      */
 
     bool all_can_be_unpacked = true;
@@ -1073,10 +1076,20 @@ dpm_alg_execute ()
       {
 	for (int i = 0; i < n_seats; i++)
 	  {
+	    dpm_status status = dpm_db_status (pkgs[i]);
 	    if (vers[i])
-	      dpm_inst_unpack (vers[i]);
+	      {
+		if (vers[i] != dpm_stat_version (status)
+		    || (dpm_stat_status (status) != DPM_STAT_OK
+			&& dpm_stat_status (status) != DPM_STAT_UNPACKED))
+		  dpm_inst_unpack (vers[i]);
+	      }
 	    else
-	      dpm_inst_remove (pkgs[i]);
+	      {
+		if (dpm_stat_version (status) != NULL
+		    || dpm_stat_status (status) != DPM_STAT_OK)
+		  dpm_inst_remove (pkgs[i]);
+	      }
 	  }
 
 	for (int i = 0; i < n_seats; i++)
