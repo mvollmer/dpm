@@ -1,0 +1,7 @@
+#! /bin/sh
+
+if [ -f dpm.db ]; then
+  ./dpm-tool --db dpm.db reset
+else
+  ./init-db
+fi

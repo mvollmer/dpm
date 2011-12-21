@@ -1,0 +1,6 @@
+#! /bin/bash
+
+rm -f dpm.db
+./dpm-tool --db dpm.db update stable test-data/stable.Packages
+./dpm-tool --db dpm.db update testing test-data/testing.Packages
+./dpm-tool --db dpm.db update unstable test-data/unstable.Packages
