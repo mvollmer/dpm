@@ -316,7 +316,8 @@ dpm_alg_install_naively (bool upgrade)
       dpm_seatset visited = dpm_seatset_new ();
       dpm_seatset changed = dpm_seatset_new ();
 
-      dpm_seat winner[dpm_ws_seat_id_limit()];
+      dpm_seat *winner = dyn_calloc(sizeof(dpm_seat)*dpm_ws_seat_id_limit());
+      dyn_on_unwind_free (winner);
 
       bool better_than (dpm_cand a, dpm_cand b)
       {
