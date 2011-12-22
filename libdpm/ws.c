@@ -63,6 +63,7 @@ struct dpm_dep_struct {
   dpm_cand cand;
   dpm_relation rel;
   bool reversed;
+  bool reversed_conflict;
   int n_alts;
   int n_selected;
   dpm_cand alts[0];
@@ -772,7 +773,7 @@ depb_collect_seat_alts (depb *db, dpm_seat s,
 
 void
 depb_finish (depb *db, dpm_cand c, dpm_relation rel,
-	     bool reversed)
+	     bool reversed, bool reversed_conflict)
 {
   dpm_dep d = obstack_finish (&db->ws->mem);
   if (db->n_alts < 0)
@@ -782,6 +783,7 @@ depb_finish (depb *db, dpm_cand c, dpm_relation rel,
       d->cand = c;
       d->rel = rel;
       d->reversed = reversed;
+      d->reversed_conflict = reversed_conflict;
       d->n_alts = db->n_alts;
       
       c->deps = cons_dep (db->ws, d, c->deps);
@@ -840,7 +842,7 @@ compute_deps ()
 		    if (recommended)
 		      depb_add_alt (&db, dpm_ws_get_ugly_cand ());
 
-		    depb_finish (&db, c, rel, false);
+		    depb_finish (&db, c, rel, false, false);
 		  }
 	      }
 	  
@@ -894,7 +896,7 @@ compute_goal_deps ()
 	      depb_collect_seat_alts (&db, s, satisfies, provides);
 	    }
 
-	  depb_finish (&db, c, NULL, false);
+	  depb_finish (&db, c, NULL, false, false);
 	}
     }
 }
@@ -959,6 +961,7 @@ compute_reverse_deps ()
   {
     depb_start (&db);
     bool all_cands_added = true;
+    bool conflict = false;
 
     dyn_foreach (c, dpm_seat_cands, s)
       {
@@ -984,6 +987,9 @@ compute_reverse_deps ()
 	      {
 		has_sibling_dep = true;
 		all_cands_added = false;
+		if (dpm_dep_relation (d)
+		    && dpm_rel_type (dpm_dep_relation (d)) == DPM_CONFLICTS)
+		  conflict = true;
 		if (other_dep)
 		  dyn_foreach (a, dpm_dep_alts, d)
 		    {
@@ -999,7 +1005,7 @@ compute_reverse_deps ()
     if (all_cands_added)
       depb_kill_cur (&db);
   
-    depb_finish (&db, t, NULL, true);
+    depb_finish (&db, t, NULL, true, conflict);
   }
 
   void consider_seat_and_seat (dpm_seat t, dpm_seat s)
@@ -1133,6 +1139,12 @@ bool
 dpm_dep_is_reversed (dpm_dep d)
 {
   return d->reversed;
+}
+
+bool
+dpm_dep_is_reversed_conflict (dpm_dep d)
+{
+  return d->reversed_conflict;
 }
 
 /* Starting

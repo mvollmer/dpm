@@ -680,7 +680,13 @@ print_intradeps (dpm_alg_order_context ctxt,
 	  {
 	    if (dpm_ws_is_selected (a)
 		&& !dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
-	      dyn_print ("    %{rel}  [%{cand}]\n", dpm_dep_relation (d), a);
+	      {
+		if (dpm_dep_is_reversed (d))
+		  dyn_print ("    (reversed%s)  [%{cand}]\n",
+			     dpm_dep_is_reversed_conflict (d)? " conflict":"", a);
+		else
+		  dyn_print ("    %{rel}  [%{cand}]\n", dpm_dep_relation (d), a);
+	      }
 	  }
     }
 }
@@ -886,6 +892,21 @@ dpm_alg_execute ()
     return false;
   }
 
+  bool satisfied_for_install_allow_breaks (dpm_dep d)
+  {
+    /* At least one alternative must be fully installed, but we ignore
+       Breaks and reversed Depends.
+     */
+
+    dpm_relation rel = dpm_dep_relation (d);
+
+    if ((rel && dpm_rel_type (rel) == DPM_BREAKS)
+	|| (dpm_dep_is_reversed (d) && !dpm_dep_is_reversed_conflict (d)))
+      return true;
+
+    return satisfied_for_install (d);
+  }
+
   bool satisfied_for_unpack (dpm_dep d)
   {
     /* Pre-Depends must be fully installed, Conflicts must at least be
@@ -893,11 +914,10 @@ dpm_alg_execute ()
     */
     dpm_relation rel = dpm_dep_relation (d);
 
-    if (rel == NULL)
-      return true;
-    else if (dpm_rel_type (rel) == DPM_PRE_DEPENDS)
+    if (rel && dpm_rel_type (rel) == DPM_PRE_DEPENDS)
       return satisfied_for_install (d);
-    else if (dpm_rel_type (rel) == DPM_CONFLICTS)
+    else if ((rel && dpm_rel_type (rel) == DPM_CONFLICTS)
+	     || dpm_dep_is_reversed_conflict (d))
       {
 	dyn_foreach (a, dpm_dep_alts, d)
 	  {
@@ -1022,10 +1042,10 @@ dpm_alg_execute ()
 	  }
       }
     
-    /* Check whether all can be unpacked (or are already unpacked)
+    /* Check whether some can be unpacked (or are already unpacked)
      */
 
-    bool all_can_be_unpacked = true;
+    bool some_are_unpacked = true;
     for (int i = 0; i < n_seats; i++)
       {
 	dpm_cand c = dpm_ws_selected (seats[i]);
@@ -1038,16 +1058,7 @@ dpm_alg_execute ()
 	      break;
 	    }
 
-	if (!all_satisfied)
-	  {
-	    all_can_be_unpacked = false;
-	    break;
-	  }
-      }
-
-    if (all_can_be_unpacked)
-      {
-	for (int i = 0; i < n_seats; i++)
+	if (all_satisfied)
 	  {
 	    dpm_status status = dpm_db_status (pkgs[i]);
 	    if (vers[i])
@@ -1063,8 +1074,12 @@ dpm_alg_execute ()
 		    || dpm_stat_status (status) != DPM_STAT_OK)
 		  dpm_inst_remove (pkgs[i]);
 	      }
+	    some_are_unpacked = true;
 	  }
+      }
 
+    if (some_are_unpacked)
+      {
 	for (int i = 0; i < n_seats; i++)
 	  {
 	    dpm_cand c = dpm_ws_selected (seats[i]);
@@ -1072,6 +1087,33 @@ dpm_alg_execute ()
 	    bool all_satisfied = true;
 	    dyn_foreach (d, dpm_cand_deps, c)
 	      if (!satisfied_for_install (d))
+		{
+		  all_satisfied = false;
+		  break;
+		}
+
+	    if (all_satisfied)
+	      {
+		if (vers[i])
+		  dpm_inst_install (vers[i]);
+		else
+		  dpm_inst_remove (pkgs[i]);
+		dpm_alg_order_done (ctxt, seats[i]);
+		some_done = true;
+	      }
+	  }
+
+	if (some_done)
+	  return;
+	
+
+	for (int i = 0; i < n_seats; i++)
+	  {
+	    dpm_cand c = dpm_ws_selected (seats[i]);
+
+	    bool all_satisfied = true;
+	    dyn_foreach (d, dpm_cand_deps, c)
+	      if (!satisfied_for_install_allow_breaks (d))
 		{
 		  all_satisfied = false;
 		  break;

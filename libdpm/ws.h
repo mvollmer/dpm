@@ -210,6 +210,7 @@ DYN_DECLARE_STRUCT_ITER (dpm_cand, dpm_dep_alts, dpm_dep dep)
 };
 
 bool dpm_dep_is_reversed (dpm_dep d);
+bool dpm_dep_is_reversed_conflict (dpm_dep d);
 dpm_relation dpm_dep_relation (dpm_dep d);
 
 /* Selecting cands.
