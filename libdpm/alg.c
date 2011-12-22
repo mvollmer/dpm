@@ -401,9 +401,17 @@ dpm_alg_install_naively (bool upgrade)
 	  }
 	
 	dpm_seatset_add (visited, s);
-
+        
 	dyn_foreach (d, dpm_cand_deps, c)
-	  visit (find_best (d, accept_ugly), s);
+          {
+            visit (find_best (d, accept_ugly), s);
+
+            if (!dpm_ws_is_selected (c))
+              {
+                // dyn_print ("Shit just got real, giving up on %{cand}.\n", c);
+                break;
+              }
+          }
       }
 
       dpm_cand *initially_selected =
