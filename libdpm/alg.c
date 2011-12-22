@@ -383,19 +383,23 @@ dpm_alg_install_naively (bool upgrade)
 	  {
 	    if (dpm_seatset_has (changed, s))
 	      {
-		dyn_print ("rejecting %{cand} for %{seat}, using %{cand}\n",
-			   c, p, dpm_ws_selected (s));
-		while ((s = winner[dpm_seat_id(s)]))
-		  dyn_print ("  %{cand}\n", dpm_ws_selected (s));
-		
+		dyn_print ("Rejecting %{cand} for %{seat}, using %{cand}\n",
+                           c, p, dpm_ws_selected (s));
+                int count = 0;
+		while ((s = winner[dpm_seat_id(s)]) && count < 10)
+                  {
+                    dyn_print ("  %{cand} %d\n", dpm_ws_selected (s), dpm_seat_id (s));
+                    count++;
+                  }
+
 		return;
 	      }
 
 	    winner[dpm_seat_id(s)] = p;
 
-	    // dyn_print ("selecting %{cand} for %{seat}\n", c, p);
+	    // dyn_print ("Selecting %{cand} for %{cand}\n", c, p? dpm_ws_selected (p) : NULL);
 
-	    dpm_seatset_add (changed, dpm_cand_seat (c));
+	    dpm_seatset_add (changed, s);
 	    dpm_ws_select (c);
 	    accept_ugly = false;
 	  }
@@ -425,7 +429,12 @@ dpm_alg_install_naively (bool upgrade)
 
       void unused (dpm_seat s)
       {
-	dpm_ws_select (initially_selected[dpm_seat_id (s)]);
+        dpm_cand r = initially_selected[dpm_seat_id (s)];
+        if (!dpm_ws_is_selected (r))
+          {
+            // dyn_print ("Reverting %{seat} to %{cand}\n", s, initially_selected[dpm_seat_id (s)]);
+            dpm_ws_select (initially_selected[dpm_seat_id (s)]);
+          }
       }
 
       res = dpm_alg_cleanup_goal (unused);
