@@ -333,11 +333,12 @@ dpm_alg_install_naively (bool upgrade)
       dpm_cand find_best (dpm_dep d, bool accept_ugly)
       {
 	/* The best candidate is the first candidate in the list of
-	   alternatives that is selected.  If no candidate is
-	   selected, or if the first selected candidate is the ugly
-	   candidate and accept_ugly is false, then the best candidate
-	   is the candidate with the highest version of the seat of
-	   the the first alternative is the best.
+	   alternatives that is selected and satisfied.  If no
+	   candidate is selected and satisfied, or if the first such
+	   candidate is the ugly candidate and accept_ugly is false,
+	   then the best candidate is the candidate with the highest
+	   version of the seat of the the first alternative is the
+	   best.
 	*/
 
 	dpm_seat first_seat = NULL;
@@ -346,7 +347,7 @@ dpm_alg_install_naively (bool upgrade)
 	    if (first_seat == NULL)
 	      first_seat = dpm_cand_seat (a);
 
-	    if (dpm_ws_is_selected (a)
+	    if (dpm_ws_is_selected (a) && dpm_cand_satisfied (a)
 		&& (accept_ugly || a != dpm_ws_get_ugly_cand ()))
 	      return a;
 	  }
