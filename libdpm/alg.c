@@ -532,52 +532,6 @@ l3 l3_and (l3 a, l3 b)
   return l3_and_tab[a][b];
 }
 
-void
-dpm_alg_order_lax (void (*visit_comp) (dpm_alg_order_context ctxt,
-				       dpm_seat *seats, int n_seats))
-{
-  void visit_strict (dpm_alg_order_context ctxt,
-		     dpm_seat *seats, int n_seats)
-  {
-    bool some_done = false;
-
-    for (int i = 0; i < n_seats; i++)
-      {
-	bool deps_ok = true;
-	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (seats[i]))
-	  {
-	    bool alts_ok = false;
-	    dyn_foreach (a, dpm_dep_alts, d)
-	      {
-		if (dpm_ws_is_selected (a))
-		  {
-		    if (dpm_alg_order_is_done (ctxt, dpm_cand_seat (a)))
-		      {
-			alts_ok = true;
-			break;
-		      }
-		  }
-	      }
-	    if (!alts_ok)
-	      {
-		deps_ok = false;
-		break;
-	      }
-	  }
-	if (deps_ok)
-	  {
-	    visit_comp (ctxt, &seats[i], 1);
-	    some_done = true;
-	  }
-      }
-
-    if (!some_done)
-      visit_comp (ctxt, seats, n_seats);
-  }
-
-  dpm_alg_order (visit_strict);
-}
-
 bool
 dpm_alg_cleanup_goal (void (*unused) (dpm_seat s))
 {
