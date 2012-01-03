@@ -307,7 +307,7 @@ dpm_candpq_peek (dpm_candpq q)
 */
 
 bool
-dpm_alg_install_naively (bool upgrade)
+dpm_alg_install_naively ()
 {
   bool res;
 

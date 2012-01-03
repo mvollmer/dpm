@@ -87,12 +87,9 @@ bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 /* Plan the installation of the goal candidate in the current
    workspace in a naive way, without any back tracking or SAT solving.
  
-   If UPGRADE is true, depedencies that are already installed will be
-   upgraded to their 'best' version.
-
    More sophisticated methods might come later.
 */
-bool dpm_alg_install_naively (bool upgrade);
+bool dpm_alg_install_naively (void);
 
 /* Call VISIT_COMP with the strongly connected components formed by
    the dependencies of the selected cands of the relevant seats.

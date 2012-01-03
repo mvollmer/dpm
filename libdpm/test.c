@@ -1355,8 +1355,6 @@ DEFTEST (db_init)
     }
 }
 
-#define UPDATE (o, x) dyn_db_origin_update (o, I(x))
-
 DEFTEST (db_simple)
 {
   dyn_block
@@ -2176,7 +2174,7 @@ check_install (const char *meta,
                       originally_installed,
                       goal);
 
-      EXPECT (dpm_alg_install_naively (false) == result);
+      EXPECT (dpm_alg_install_naively () == result);
 
       check_selected (expected_installed);
     }
@@ -2304,42 +2302,25 @@ DEFTEST (alg_install_naively)
 }
 
 void
-check_order_strict_or_lax (const char *meta,
-			   const char *selected,
-			   const char *goal,
-			   bool lax)
+check_order (const char *meta,
+	     const char *selected,
+	     const char *goal)
 {
   dyn_block
     {
       setup_scenario (meta, selected, goal);
-      EXPECT (dpm_alg_install_naively (false) == true);
+      EXPECT (dpm_alg_install_naively () == true);
       
       // dpm_ws_dump (0);
 
       dpm_seatset seen = dpm_seatset_new ();
 
-      void check_strict (dpm_seat s)
+      void check (dpm_seat s)
       {
 	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
 	  dyn_foreach (a, dpm_dep_alts, d)
 	    if (dpm_ws_is_selected (a))
 	      EXPECT (dpm_seatset_has (seen, dpm_cand_seat (a)));
-      }
-
-      void check_lax (dpm_seat s)
-      {
-	dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
-	  {
-	    bool found_one = false;
-	    dyn_foreach (a, dpm_dep_alts, d)
-	      if (dpm_ws_is_selected (a)
-		  && dpm_seatset_has (seen, dpm_cand_seat (a)))
-		{
-		  found_one = true;
-		  break;
-		}
-	    EXPECT (found_one);
-	  }
       }
 
       void visit_component (dpm_alg_order_context ctxt,
@@ -2353,17 +2334,11 @@ check_order_strict_or_lax (const char *meta,
 	    
 	for (int i = 0; i < n_seats; i++)
 	  {
-	    if (lax)
-	      check_lax (seats[i]);
-	    else
-	      check_strict (seats[i]);
+	    check (seats[i]);
 	  }
       }
 
-      if (lax)
-	dpm_alg_order_lax (visit_component);
-      else
-	dpm_alg_order (visit_component);
+      dpm_alg_order (visit_component);
 
       dpm_seatset seen_again = dpm_seatset_new ();
 
@@ -2383,15 +2358,6 @@ check_order_strict_or_lax (const char *meta,
 
       visit (dpm_cand_seat (dpm_ws_get_goal_cand ()));
     }
-}
-
-void
-check_order (const char *meta,
-	     const char *selected,
-	     const char *goal)
-{
-  check_order_strict_or_lax (meta, selected, goal, true);
-  check_order_strict_or_lax (meta, selected, goal, false);
 }
 
 DEFTEST (alg_order)
@@ -2499,7 +2465,7 @@ check_autoremove (const char *meta,
                       originally_installed,
                       goal);
 
-      EXPECT (dpm_alg_install_naively (false) == true);
+      EXPECT (dpm_alg_install_naively () == true);
       dpm_alg_remove_unused ();
 
       check_selected (expected_installed);
