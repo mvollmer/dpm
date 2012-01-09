@@ -823,10 +823,10 @@ void
 dpm_alg_execute ()
 {
   /* When faced with a strongly connected component, we try to find
-     something to do for one of its seats.  If that is possible, we do
-     it and mark those seats as done and let the ordering proceed.  If
-     nothing can be done, we mark all seats as done and continue
-     anyway.
+     something to do for one or more of its seats.  If that is
+     possible, we do it and mark those seats as done and let the
+     ordering proceed.  If nothing can be done, we mark all seats as
+     done and continue anyway.
 
      We consider these options in turn when looking for things to do:
 
@@ -836,10 +836,16 @@ dpm_alg_execute ()
      - If a candidate has all its deps satisfied with the
        currently installed versions, we install it.
 
-     - If a candidate has all deps satisfied with currently installed
-       version that are necessary for unpacking, we unpack it, but
-       don't mark it as done.  Instead we start over with the whole
-       component.
+     - If a candidate has all its deps satisfied when one ore more of
+       the seats of the current stongly connected component are
+       unpacked, and those seats can have their deps satisfied for
+       unpacking (maybe after unpacking other seats of the current
+       component), we unpack those seats and install the candidate.
+
+     - Same as the last point, but we allow some deps that ordinarily
+       require their target to be installed, to be satisfied by a
+       target that is only unpacked.
+
    */
 
   bool satisfied_for_install (dpm_dep d)
