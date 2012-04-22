@@ -833,18 +833,28 @@ dpm_alg_execute ()
      - If a candidate is already fully installed, it is trivially
        done.
 
-     - If a candidate has all its deps satisfied with the
-       currently installed versions, we install it.
+     - If a candidate currently has all its deps satisfied, we install it.
 
-     - If a candidate has all its deps satisfied when one ore more of
-       the seats of the current stongly connected component are
-       unpacked, and those seats can have their deps satisfied for
-       unpacking (maybe after unpacking other seats of the current
-       component), we unpack those seats and install the candidate.
+     - Then we try to unpack all of the seats, in some order.  If this
+       does not succeed, we give up.  Otherwise, we go on with the
+       next steps.
 
-     - Same as the last point, but we allow some deps that ordinarily
-       require their target to be installed, to be satisfied by a
-       target that is only unpacked.
+     - We again look for candidates that have all deps satisfied.  We
+       have some chances to now find some installable candidates,
+       since some deps can be satisfied by a unpackaged seat, and when
+       a package doesn't have a postinst script, just unpacking it will
+       actually mark it is as fully installed.
+
+     - Then we look for candidates that have all deps satisfied that
+       are needed to install it, but we allow other seats to be broken
+       by this.  We trust that this is only temporary and later
+       actions on the now broken seats will make them whole again.
+
+     - Then we treat some seats that are only unpacked as if they were
+       fully installed, such as 'lib' packages.
+
+     - If we still haven't found any seat that could be installed, we
+       just try every seat in turn.
 
    */
 
