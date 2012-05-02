@@ -21,19 +21,7 @@
 #include "db.h"
 #include "inst.h"
 
-bool
-dpm_inst_can_unpack (dpm_version ver)
-{
-  return true;
-}
-
-bool
-dpm_inst_can_install (dpm_version ver)
-{
-  return true;
-}
-
-static void
+static bool
 dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
 {
   dpm_package pkg = dpm_ver_package (ver);
@@ -81,21 +69,23 @@ dpm_inst_unpack_or_setup (dpm_version ver, bool unpack)
 	       msg);
 
   dpm_db_set_status (pkg, ver, unpack? DPM_STAT_UNPACKED : DPM_STAT_OK);
+
+  return true;
 }
 
-void
+bool
 dpm_inst_unpack (dpm_version ver)
 {
-  dpm_inst_unpack_or_setup (ver, true);
+  return dpm_inst_unpack_or_setup (ver, true);
 }
 
-void
+bool
 dpm_inst_install (dpm_version ver)
 {
-  dpm_inst_unpack_or_setup (ver, false);
+  return dpm_inst_unpack_or_setup (ver, false);
 }
 
-void
+bool
 dpm_inst_remove (dpm_package pkg)
 {
   dpm_status status = dpm_db_status (pkg);
@@ -109,6 +99,8 @@ dpm_inst_remove (dpm_package pkg)
 	       dpm_pkg_name (pkg));
 
   dpm_db_set_status (pkg, NULL, DPM_STAT_OK);
+
+  return true;
 }
 
 void
