@@ -465,19 +465,26 @@ dump (const char *origin)
     dump_origin (origin);
 }
 
+enum {
+  INST_SHOW_DEPS =  1,
+  INST_EXECUTE   =  2,
+  INST_REMOVE    =  4,
+  INST_MANUAL    =  8,
+  INST_BEST      = 16
+};
+
 void
-cmd_install (char **packages,
-	     bool show_deps,
-	     bool execute,
-	     bool remove,
-	     bool manual)
+cmd_install (char **packages, int flags)
 {
   dpm_package pkg;
 
   dpm_db_open ();
   dpm_ws_create (1);
 
-  dpm_ws_add_installed ();
+  if (flags & INST_BEST)
+    dpm_ws_add_best ();
+  else
+    dpm_ws_add_installed ();
 
   dpm_candspec spec = dpm_candspec_new ();
   while (*packages)
@@ -497,7 +504,7 @@ cmd_install (char **packages,
 	  name++;
 	}
       else
-	rem = remove;
+	rem = (flags & INST_REMOVE) != 0;
 
       if ((version = strchr (name, '=')))
 	*version++ = '\0';
@@ -524,9 +531,9 @@ cmd_install (char **packages,
   if (dpm_alg_install_naively ())
     {
       dpm_alg_remove_unused ();
-      if (execute)
+      if (flags & INST_EXECUTE)
 	{
-	  if (manual)
+	  if (flags & INST_MANUAL)
 	    dyn_foreach (d, dpm_cand_deps, dpm_ws_get_goal_cand ())
 	      dyn_foreach (a, dpm_dep_alts, d)
 	        {
@@ -542,10 +549,10 @@ cmd_install (char **packages,
 	}
     }
   else
-    dpm_ws_show_broken (0);
+    dpm_ws_show_broken ();
   
-  if (show_deps)
-    dpm_ws_dump (0);
+  if (flags & INST_SHOW_DEPS)
+    dpm_ws_dump ();
 }
 
 void
@@ -719,9 +726,11 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "provides") == 0)
     list_provides (argv[2]);
   else if (strcmp (argv[1], "install") == 0)
-    cmd_install (argv+2, false, true, false, true);
+    cmd_install (argv+2, INST_EXECUTE | INST_MANUAL);
+  else if (strcmp (argv[1], "upgrade") == 0)
+    cmd_install (argv+2, INST_EXECUTE | INST_MANUAL | INST_BEST);
   else if (strcmp (argv[1], "remove") == 0)
-    cmd_install (argv+2, false, true, true, false);
+    cmd_install (argv+2, INST_EXECUTE | INST_MANUAL | INST_REMOVE);
   else if (strcmp (argv[1], "reset") == 0)
     reset ();
   else if (strcmp (argv[1], "status") == 0)
@@ -729,7 +738,7 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "path") == 0)
     print_path (argv[2], argv[3]);
   else if (strcmp (argv[1], "deps") == 0)
-    cmd_install (argv+2, true, false, false, false);
+    cmd_install (argv+2, INST_SHOW_DEPS);
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else if (strcmp (argv[1], "gc") == 0)

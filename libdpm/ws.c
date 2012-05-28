@@ -436,6 +436,23 @@ dpm_ws_add_installed ()
 }
 
 void
+dpm_ws_add_best ()
+{
+  dyn_foreach (p, dpm_db_packages)
+    {
+      dpm_version inst = dpm_stat_version (dpm_db_status (p));
+      if (inst)
+	{
+	  dpm_version best = dpm_pol_get_best_version (p, NULL);
+	  if (best == NULL)
+	    best = inst;
+	  dpm_cand c = dpm_ws_add_cand (best);
+	  dpm_ws_select (c);
+	}
+    }
+}
+
+void
 dpm_ws_set_goal_candspec (dpm_candspec spec)
 {
   dpm_ws ws = dpm_ws_current ();

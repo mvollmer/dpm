@@ -87,6 +87,10 @@ bool dpm_candpq_peek_x (dpm_candpq q, dpm_cand *candp, int *priop);
 /* Plan the installation of the goal candidate in the current
    workspace in a naive way, without any back tracking or SAT solving.
  
+   If the currently selected candidate of a seat can satisfy all
+   dependencies, then it is left selected.  Otherwise, the selected
+   candidate of a seat is changed exactly once.
+
    More sophisticated methods might come later.
 */
 bool dpm_alg_install_naively (void);
@@ -106,9 +110,6 @@ void dpm_alg_order_done (dpm_alg_order_context ctxt, dpm_seat s);
 void dpm_alg_order (void (*visit_comp) (dpm_alg_order_context ctxt,
 					dpm_seat *seats, int n_seats));
 
-void dpm_alg_order_lax (void (*visit_comp) (dpm_alg_order_context ctxt,
-					    dpm_seat *seats, int n_seats));
-
 /* Check all direct and indirect dependencies of the goal candidate
    and return true iff all of them are satisfied by the currently
    selected candidates.  Also, if UNUSED is given, it is called for
@@ -116,9 +117,6 @@ void dpm_alg_order_lax (void (*visit_comp) (dpm_alg_order_context ctxt,
    that are needed are marked as relevant.
 */
 bool dpm_alg_cleanup_goal (void (*unused) (dpm_seat s));
-
-void dpm_alg_install_component (dpm_alg_order_context ctxt,
-				dpm_seat *seats, int n_seats);
 
 void dpm_alg_execute ();
 

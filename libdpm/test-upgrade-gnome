@@ -13,4 +13,4 @@ cmd () {
 cmd ./dpm-tool --db dpm.db --origin stable install gnome
 
 # Upgrade it to testing
-cmd ./dpm-tool --db dpm.db --origin testing install gnome=1:2.30+11
+cmd ./dpm-tool --db dpm.db --origin testing upgrade gnome

@@ -126,6 +126,7 @@ dpm_cand dpm_ws_add_cand_and_deps (dpm_version ver);
 void dpm_ws_add_cand_deps (dpm_cand cand);
 
 void dpm_ws_add_installed ();
+void dpm_ws_add_best ();
 
 /* A 'candspec' contains the parameters for a virtual candidate, such
    as the goal cadidate.
