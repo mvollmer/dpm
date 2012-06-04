@@ -24,6 +24,7 @@
 #include "ws.h"
 #include "alg.h"
 #include "pol.h"
+#include "inst.h"
 
 #define obstack_chunk_alloc dyn_malloc
 #define obstack_chunk_free free
@@ -1421,3 +1422,114 @@ cand_formatter (dyn_output out,
 
 DYN_DEFINE_FORMATTER ("cand", cand_formatter);
 
+bool
+dpm_cand_is_unpacked (dpm_cand c)
+{
+  dpm_package p = dpm_seat_package (dpm_cand_seat (c));
+  dpm_version v = dpm_cand_version (c);
+   
+  if (p == NULL)
+    return dpm_ws_is_selected (c);
+   
+  dpm_status status = dpm_db_status (p);
+  if (v == dpm_stat_version (status)
+      && (dpm_stat_status (status) == DPM_STAT_OK
+	  || dpm_stat_status (status) == DPM_STAT_UNPACKED))
+    return true;
+  
+  return false;
+}
+
+bool
+dpm_cand_is_installed (dpm_cand c)
+{
+  dpm_package p = dpm_seat_package (dpm_cand_seat (c));
+  dpm_version v = dpm_cand_version (c);
+  
+  if (p == NULL)
+	return dpm_ws_is_selected (c);
+  
+  dpm_status status = dpm_db_status (p);
+  if (v == dpm_stat_version (status)
+	  && dpm_stat_status (status) == DPM_STAT_OK)
+	return true;
+  
+  return false;
+}
+
+bool
+dpm_cand_install (dpm_cand c)
+{
+  dpm_package p = dpm_seat_package (dpm_cand_seat (c));
+  dpm_version v = dpm_cand_version (c);
+  
+  if (p == NULL)
+    return true;
+  
+  if (v)
+    return dpm_inst_install (v);
+  else
+    return dpm_inst_remove (p);
+}
+
+bool
+dpm_cand_unpack (dpm_cand c)
+{
+  dpm_package p = dpm_seat_package (dpm_cand_seat (c));
+  dpm_version v = dpm_cand_version (c);
+  
+  if (p == NULL)
+    return true;
+   
+  if (v)
+    return dpm_inst_unpack (v);
+  else
+    return dpm_inst_remove (p);
+}
+
+bool
+dpm_dep_is_satisfied_by_unpacked (dpm_dep d)
+{
+  dpm_relation rel = dpm_dep_relation (d);
+  int rel_type = (rel
+		  ? dpm_rel_type (rel)
+		  : (dpm_dep_is_reversed_conflict (d)
+		     ? DPM_CONFLICTS
+		     : DPM_BREAKS));
+  
+  switch (rel_type) {
+  case DPM_PRE_DEPENDS:
+  case DPM_DEPENDS:
+  case DPM_RECOMMENDS:
+  case DPM_ENHANCES:
+  case DPM_SUGGESTS:
+    return false;
+  case DPM_CONFLICTS:
+  case DPM_BREAKS:
+    return true;
+  default:
+    abort ();
+  }
+}
+
+bool
+dpm_dep_must_be_satisfied_for_unpack (dpm_dep d)
+{
+  dpm_relation rel = dpm_dep_relation (d);
+      
+  return (rel
+	  ? (dpm_rel_type (rel) == DPM_PRE_DEPENDS
+	     || dpm_rel_type (rel) == DPM_CONFLICTS)
+	  : dpm_dep_is_reversed_conflict (d));
+}
+
+bool
+dpm_dep_is_required_by_target (dpm_dep d)
+{
+  dpm_relation rel = dpm_dep_relation (d);
+  
+  return (rel
+	  ? dpm_rel_type (rel) == DPM_BREAKS
+	  : (dpm_dep_is_reversed (d)
+	     && !dpm_dep_is_reversed_conflict (d)));
+}

@@ -857,67 +857,26 @@ dpm_alg_execute ()
 		    dpm_seat *seats, int n_seats)
   {
     
-    bool is_unpacked (dpm_cand c)
-    {
-      dpm_package p = dpm_seat_package (dpm_cand_seat (c));
-      dpm_version v = dpm_cand_version (c);
-      
-      if (p == NULL)
-	return dpm_ws_is_selected (c);
-      
-      dpm_status status = dpm_db_status (p);
-      if (v == dpm_stat_version (status)
-	  && (dpm_stat_status (status) == DPM_STAT_OK
-	      || dpm_stat_status (status) == DPM_STAT_UNPACKED))
-	return true;
-
-      return false;
-    }
-
-    bool is_installed (dpm_cand c)
-    {
-      dpm_package p = dpm_seat_package (dpm_cand_seat (c));
-      dpm_version v = dpm_cand_version (c);
-      
-      if (p == NULL)
-	return dpm_ws_is_selected (c);
-      
-      dpm_status status = dpm_db_status (p);
-      if (v == dpm_stat_version (status)
-	  && dpm_stat_status (status) == DPM_STAT_OK)
-	return true;
-      
-      return false;
-    }
-    
     bool satisfied_by_cand (dpm_dep d, dpm_cand c)
     {
-      dpm_relation rel = dpm_dep_relation (d);
-      int rel_type = (rel
-		      ? dpm_rel_type (rel)
-		      : (dpm_dep_is_reversed_conflict (d)
-			 ? DPM_CONFLICTS
-			 : DPM_BREAKS));
-      
-      switch (rel_type) {
-      case DPM_PRE_DEPENDS:
-      case DPM_DEPENDS:
-      case DPM_RECOMMENDS:
-      case DPM_ENHANCES:
-      case DPM_SUGGESTS:
-	return is_installed (c);
-      case DPM_CONFLICTS:
-      case DPM_BREAKS:
-	return is_unpacked (c);
-      default:
-	abort ();
-      }
+      return (dpm_cand_is_installed (c)
+	      || (dpm_dep_is_satisfied_by_unpacked (d)
+		  && dpm_cand_is_unpacked (c)));
     }
 
     bool satisfied_for_install (dpm_dep d)
     {
       dyn_foreach (a, dpm_dep_alts, d)
 	if (satisfied_by_cand (d, a))
+	  return true;
+      
+      return false;
+    }
+
+    bool satisfied_for_install_unpack_is_enough (dpm_dep d)
+    {
+      dyn_foreach (a, dpm_dep_alts, d)
+	if (dpm_cand_is_unpacked (a))
 	  return true;
       
       return false;
@@ -941,71 +900,16 @@ dpm_alg_execute ()
 
     bool satisfied_for_install_allow_breaks (dpm_dep d)
     {
-      /* At least one alternative must be fully installed, but we ignore
-	 Breaks and reversed Depends.
-      */
-      
-      dpm_relation rel = dpm_dep_relation (d);
-      
-      if ((rel && dpm_rel_type (rel) == DPM_BREAKS)
-	  || (dpm_dep_is_reversed (d) && !dpm_dep_is_reversed_conflict (d)))
-	return true;
-      
-      return satisfied_for_install (d);
+      return (dpm_dep_is_required_by_target (d)
+	      || satisfied_for_install (d));
     }
 
     bool satisfied_for_unpack (dpm_dep d)
     {
-      /* Pre-Depends must be fully installed, Conflicts must at least be
-	 unpacked, the rest is ignored.
-      */
-      dpm_relation rel = dpm_dep_relation (d);
-      
-      if (rel && dpm_rel_type (rel) == DPM_PRE_DEPENDS)
-	return satisfied_for_install (d);
-      else if ((rel && dpm_rel_type (rel) == DPM_CONFLICTS)
-	       || dpm_dep_is_reversed_conflict (d))
-	{
-	  dyn_foreach (a, dpm_dep_alts, d)
-	    if (is_unpacked (a))
-	      return true;
-	  return false;
-	}
-      else
-	return true;
+      return (!dpm_dep_must_be_satisfied_for_unpack (d)
+	      || satisfied_for_install (d));
     }
     
-    bool install (dpm_cand c)
-    {
-      dpm_package p = dpm_seat_package (dpm_cand_seat (c));
-      dpm_version v = dpm_cand_version (c);
-      
-      if (p == NULL)
-	return true;
-      
-      if (v)
-	return dpm_inst_install (v);
-      else
-	return dpm_inst_remove (p);
-    }
-
-    bool unpack (dpm_cand c)
-    {
-      dpm_package p = dpm_seat_package (dpm_cand_seat (c));
-      dpm_version v = dpm_cand_version (c);
-      
-      if (p == NULL)
-	return true;
-      
-      if (v)
-	return dpm_inst_unpack (v);
-      else
-	{
-	  dyn_print ("unpack remove\n");
-	  return dpm_inst_remove (p);
-	}
-    }
-
     bool all_deps (dpm_cand c, bool (*pred) (dpm_dep d))
     {
       dyn_foreach (d, dpm_cand_deps, c)
@@ -1024,7 +928,7 @@ dpm_alg_execute ()
 	  
 	  if (all_deps (c, pred))
 	    {
-	      install (c);
+	      dpm_cand_install (c);
 	      dpm_alg_order_done (ctxt, seats[i]);
 	      some_done = true;
 	    }
@@ -1042,7 +946,7 @@ dpm_alg_execute ()
 	{
 	  dpm_cand c = dpm_ws_selected (seats[i]);
 	  
-	  if (is_installed (c))
+	  if (dpm_cand_is_installed (c))
 	    {
 	      dpm_alg_order_done (ctxt, seats[i]);
 	      some_done = true;
@@ -1056,7 +960,10 @@ dpm_alg_execute ()
 	return true;
 
       if (install_satisfied (satisfied_for_install_allow_breaks))
-	return true;
+	{
+	  dyn_print ("(That broke some packages)\n");
+	  return true;
+	}
 
       return false;
     }
@@ -1108,10 +1015,10 @@ dpm_alg_execute ()
 	  {
 	    dpm_cand c = dpm_ws_selected (seats[i]);
 	    
-	    if (!is_unpacked (c))
+	    if (!dpm_cand_is_unpacked (c))
 	      {
 		if (all_deps (c, satisfied_for_unpack)
-		    && unpack (c))
+		    && dpm_cand_unpack (c))
 		  made_some_progress = true;
 	      }
 	    else
@@ -1132,7 +1039,8 @@ dpm_alg_execute ()
 	  {
 	    dpm_cand c = dpm_ws_selected (seats[i]);
 	    
-	    if (install (c))
+	    if (all_deps (c, satisfied_for_install_unpack_is_enough)
+		&& dpm_cand_install (c))
 	      {
 		dpm_alg_order_done (ctxt, seats[i]);
 		return;

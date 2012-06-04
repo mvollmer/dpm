@@ -226,4 +226,15 @@ bool dpm_cand_satisfied (dpm_cand c);
 
 void dpm_ws_show_broken ();
 
+
+bool dpm_cand_is_installed (dpm_cand c);
+bool dpm_cand_is_unpacked (dpm_cand c);
+
+bool dpm_dep_is_satisfied_by_unpacked (dpm_dep d);
+bool dpm_dep_must_be_satisfied_for_unpack (dpm_dep d);
+bool dpm_dep_is_required_by_target (dpm_dep d);
+
+bool dpm_cand_install (dpm_cand c);
+bool dpm_cand_unpack (dpm_cand c);
+
 #endif /* !DPM_WS_H */
