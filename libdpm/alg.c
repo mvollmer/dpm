@@ -422,7 +422,14 @@ dpm_alg_install_naively ()
 	dyn_calloc (dpm_ws_seat_id_limit()*sizeof(dpm_cand));
 
       dyn_foreach (s, dpm_ws_seats)
-	initially_selected[dpm_seat_id (s)] = dpm_ws_selected (s);
+	{
+	  dpm_version inst = dpm_stat_version (dpm_db_status (dpm_seat_package (s)));
+	  dpm_cand c = (inst
+			? dpm_ws_cand (inst)
+			: dpm_seat_null_cand (s));
+	  initially_selected[dpm_seat_id (s)] = c;
+	}
+
       dyn_on_unwind_free (initially_selected);
 
       visit (dpm_ws_get_goal_cand (), NULL);
@@ -432,8 +439,8 @@ dpm_alg_install_naively ()
         dpm_cand r = initially_selected[dpm_seat_id (s)];
         if (!dpm_ws_is_selected (r))
           {
-            // dyn_print ("Reverting %{seat} to %{cand}\n", s, initially_selected[dpm_seat_id (s)]);
-            dpm_ws_select (initially_selected[dpm_seat_id (s)]);
+            // dyn_print ("Reverting %{seat} to %{cand}\n", s, r);
+            dpm_ws_select (r);
           }
       }
 
@@ -791,9 +798,10 @@ dpm_alg_remove_unused ()
 
         dpm_seatset_add (marked, s);
         dyn_foreach (d, dpm_cand_deps, dpm_ws_selected (s))
-          dyn_foreach (a, dpm_dep_alts, d)
-            if (dpm_ws_is_selected (a))
-	      mark (dpm_cand_seat (a));
+	  if (!dpm_dep_is_required_by_target (d))
+	    dyn_foreach (a, dpm_dep_alts, d)
+	      if (dpm_ws_is_selected (a))
+		mark (dpm_cand_seat (a));
       }
        
       void sweep ()

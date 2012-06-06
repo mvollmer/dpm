@@ -297,6 +297,13 @@ dpm_ws_add_cand (dpm_version ver)
   return c;
 }
 
+dpm_cand
+dpm_ws_cand (dpm_version ver)
+{
+  dpm_ws ws = dpm_ws_current ();
+  return ws->ver_cands + dpm_ver_id(ver);
+}
+
 static void
 add_relation_cands (dpm_ws ws, dpm_relation rel)
 {

@@ -481,10 +481,9 @@ cmd_install (char **packages, int flags)
   dpm_db_open ();
   dpm_ws_create (1);
 
+  dpm_ws_add_installed ();
   if (flags & INST_BEST)
     dpm_ws_add_best ();
-  else
-    dpm_ws_add_installed ();
 
   dpm_candspec spec = dpm_candspec_new ();
   while (*packages)
@@ -531,6 +530,7 @@ cmd_install (char **packages, int flags)
   if (dpm_alg_install_naively ())
     {
       dpm_alg_remove_unused ();
+
       if (flags & INST_EXECUTE)
 	{
 	  if (flags & INST_MANUAL)
@@ -553,6 +553,16 @@ cmd_install (char **packages, int flags)
   
   if (flags & INST_SHOW_DEPS)
     dpm_ws_dump ();
+}
+
+void
+cmd_show_broken ()
+{
+  dpm_db_open ();
+  dpm_ws_create (1);
+  dpm_ws_add_installed ();
+  dpm_ws_start ();
+  dpm_ws_show_broken ();
 }
 
 void
@@ -739,6 +749,8 @@ main (int argc, char **argv)
     print_path (argv[2], argv[3]);
   else if (strcmp (argv[1], "deps") == 0)
     cmd_install (argv+2, INST_SHOW_DEPS);
+  else if (strcmp (argv[1], "broken") == 0)
+    cmd_show_broken ();
   else if (strcmp (argv[1], "dump") == 0)
     dump (argv[2]);
   else if (strcmp (argv[1], "gc") == 0)
